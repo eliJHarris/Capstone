@@ -42,3 +42,13 @@ npm run build
 ```sh
 npm run lint
 ```
+# Student Scheduling Frontend
+
+## Setup
+1. Unzip the project folder
+2. Open terminal in project root
+3. Run `npm install` to install dependencies
+4. Run `npm run dev` to start the development server
+5. Open browser at displayed link
+
+
