@@ -3,6 +3,7 @@
     <div class="login-card">
       <h2 class="login-title">Welcome Back</h2>
       <form @submit.prevent="login" class="login-form">
+        <APIButton/>
         <div class="form-group">
           <label for="user">User Type</label>
           <select v-model="userType" id="user">
@@ -26,6 +27,7 @@
 
 <script>
 import { useUserStore } from '../store'
+import APIButton from './APIButton.vue';
 
 export default {
   name: 'LoginForm',
