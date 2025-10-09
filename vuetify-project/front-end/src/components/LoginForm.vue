@@ -26,7 +26,7 @@
 </template>
 
 <script>
-import { useUserStore } from '../store'
+import { useUserStore } from '@/stores/user';
 import APIButton from './APIButton.vue';
 
 export default {
