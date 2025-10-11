@@ -9,7 +9,7 @@ services:
       MARIADB_ROOT_PASSWORD_FILE: /run/secrets/dbrootpass
       MARIADB_DATABASE: adviseme
       MARIADB_USER: adviseme_app
-      MARIADB_PASSWORD_FILE: /run/secrets/dbapppass
+      MARIADB_PASSWORD_FILE: /run/secrets/db
     volumes:
       - dbdata:/var/lib/mysql
     healthcheck:
