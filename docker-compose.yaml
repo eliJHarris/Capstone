@@ -6,10 +6,10 @@ services:
     container_name: adviseme-db
     restart: unless-stopped
     environment:
-      MARIADB_ROOT_PASSWORD: pass
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/dbrootpass
       MARIADB_DATABASE: adviseme
       MARIADB_USER: adviseme_app
-      MARIADB_PASSWORD: app_pass
+      MARIADB_PASSWORD_FILE: /run/secrets/dbapppass
     volumes:
       - dbdata:/var/lib/mysql
     healthcheck:

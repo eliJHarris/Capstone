@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Logs
 logs
 *.log
@@ -29,3 +30,21 @@ coverage
 *.sw?
 
 *.tsbuildinfo
+=======
+secrets/
+.env
+__pycache__/
+*.pyc
+*.log
+
+*.pid
+*.sock
+*.tmp
+*.bak
+
+.DS_Store
+Thumbs.db
+
+.vscode/
+.idea/
+>>>>>>> 2647b7e (updated docker compose for mariadb security)
