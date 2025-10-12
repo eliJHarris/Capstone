@@ -19,6 +19,33 @@ def index():
 async def read_root():
     return {"message": "Hello from FastAPI in Docker!"}
 
-@app.get("/items/{item_id}")
-async def read_item(item_id: int):
-    return {"item_id": item_id}
+from sqlalchemy import Column, Integer, String
+from sqlalchemy.ext.declarative import declarative_base
+
+Base = declarative_base()
+
+class Students(Base):
+    __tablename__ = "students"
+
+    studentID = Column(Integer, primary_key=True, index=True)
+    username = Column(String, index=True)
+    email = Column(String, index=True)
+
+from sqlalchemy.orm import sessionmaker
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+from fastapi import FastAPI, Depends
+from sqlalchemy.orm import Session
+
+@app.get("/db/students")
+def read_items(db: Session = Depends(get_db)):
+    items = db.query(Students).all()
+    return items

@@ -2,9 +2,9 @@ version: "3.9"
 
 services:
   db:
-    image: mariadb:latest
+    image: mariadb:10
     volumes:
-      - dbdata:/var/lib/mysql
+      - ./DB/test:/docker-entrypoint-initdb.d
     ports:
       - "3306:3306"
     container_name: adviseme-db
@@ -32,6 +32,3 @@ services:
     volumes:
         - ./api:/code
     tty: true
-
-volumes:
-  dbdata:
