@@ -4,7 +4,7 @@ services:
   db:
     image: mariadb:10
     volumes:
-      - ./DB/test:/docker-entrypoint-initdb.d
+      - ./DB/test:/docker-entrypoint-initdb.d #remove /test ot build adviseme db
     ports:
       - "3306:3306"
     container_name: adviseme-db
@@ -14,15 +14,6 @@ services:
       MARIADB_DATABASE: adviseme
       MARIADB_USER: adviseme_app
       MARIADB_PASSWORD: app_pass
-
-#    healthcheck:
-#      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1",
-#             "-u", "adviseme_app", "--password=app_pass"]
-#      interval: 10s
-#      timeout: 5s
-#      retries: 10
-#    networks:
-#      - adviseme-net
 
   api:
     build:
