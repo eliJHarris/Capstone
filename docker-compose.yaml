@@ -6,18 +6,21 @@ services:
     container_name: adviseme-db
     restart: unless-stopped
     environment:
-      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/dbrootpass
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db_root_pass
       MARIADB_DATABASE: adviseme
       MARIADB_USER: adviseme_app
-      MARIADB_PASSWORD_FILE: /run/secrets/db
+      MARIADB_PASSWORD_FILE: /run/secrets/dbapppass
     volumes:
       - dbdata:/var/lib/mysql
+    secrets:
+      - db_root_pass
+      - dbapppass
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1",
-             "-u", "adviseme_app", "--password=app_pass"]
+      test: ["CMD-SHELL", "mariadb -h 127.0.0.1 -uroot -p\"$(cat /run/secrets/db_root_pass)\" -e 'SELECT 1' >/dev/null 2>&1"]
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 60s
     networks:
       - adviseme-net
 
@@ -35,12 +38,13 @@ services:
     volumes:
       - ldap-data:/var/lib/ldap
       - ldap-config:/etc/ldap/slapd.d
+      # - ./ldap/ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom:ro
     ports:
-      - "389:389" 
+      - "389:389"
     networks:
       - adviseme-net
     healthcheck:
-      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:389 -b 'dc=adviseme,dc=local' > /dev/null 2>&1"]
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://127.0.0.1:389 -D 'cn=admin,dc=adviseme,dc=local' -w admin_pass -b 'dc=adviseme,dc=local' -s base '(objectClass=*)' >/dev/null 2>&1"]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -49,6 +53,12 @@ volumes:
   dbdata:
   ldap-data:
   ldap-config:
+
+secrets:
+  db_root_pass:
+    file: ./secrets/db_root_pass.txt
+  dbapppass:
+    file: ./secrets/dbapppass.txt
 
 networks:
   adviseme-net:

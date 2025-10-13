@@ -48,3 +48,4 @@ Thumbs.db
 .vscode/
 .idea/
 >>>>>>> 2647b7e (updated docker compose for mariadb security)
+secrets/

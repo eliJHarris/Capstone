@@ -18,6 +18,35 @@ create table if not exists advisorProfile (
     CONSTRAINT degreePlanAdvisee FOREIGN KEY (adviseeID) REFERENCES adviseeProfile(adviseeID)
 )
 
+create table if not exists adviseeProfile (
+    adviseeID         INT AUTO_INCREMENT PRIMARY KEY,
+    userID            INT NOT NULL,              
+    advisorID         INT NOT NULL,            
+    major             VARCHAR(100) NOT NULL,
+    degree_plan       VARCHAR(100),
+    classification    ENUM('Freshman', 'Sophomore', 'Junior', 'Senior') NOT NULL,
+    gpa               DECIMAL(3,2),
+    credits_completed INT DEFAULT 0,
+    status            ENUM('Active', 'Inactive', 'Graduated', 'Suspended') DEFAULT 'Active',
+    dateCreated       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    lastUpdated       TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    CONSTRAINT fk_advisee_user FOREIGN KEY (user_id)
+        REFERENCES users(user_id) ON DELETE CASCADE,
+    CONSTRAINT fk_advisee_advisor FOREIGN KEY (advisor_id)
+        REFERENCES advisors(advisor_id) ON DELETE SET NULL
+);
+
+create table if not exists advisorAdviseeBridge (
+  advisorID  INT NOT NULL,
+  adviseeID  INT NOT NULL,
+  isActive   BOOLEAN NOT NULL DEFAULT TRUE,
+  PRIMARY KEY (advisorID, adviseeID),
+  CONSTRAINT fkadvisor  FOREIGN KEY (advisorID) REFERENCES AdvisorProfile(advisorID),
+  CONSTRAINT fkadvisee  FOREIGN KEY (adviseeID) REFERENCES AdviseeProfile(adviseeID)
+);
+
+
 create table if not exists terms (
     termID      INT PRIMARY KEY 
     code        VARCHAR(32) NOT NULL,
@@ -98,4 +127,17 @@ create table if not exists notifications (
     description     VARCHAR(500) NOT NULL,
     createdAt       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT notificationUser FOREIGN KEY (userID) REFERENCES user(userID)
+)
+
+create table if not exists degreePlan(
+    degreePlanID    INT AUTO_INCREMENT PRIMARY KEY,
+    adviseeID       INT NOT NULL,
+    name            VARCHAR(120) NOT NULL,
+    catalog         VARCHAR(20) NOT NULL,
+    status          ENUM('Draft', 'Active', 'Archived') NOT NULL DEFAULT 'DRAFT',
+    createdWhen     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedWhen     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    CONSTRAINT fkDegreePlanAdvisee FOREIGN KEY (adviseeID) REFERENCES adviseeProfile(adviseeID)
+
 )

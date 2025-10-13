@@ -1,0 +1,11 @@
+dn: cn=students,ou=Groups,dc=adviseme,dc=local
+objectClass: top
+objectClass: posixGroup
+cn: students
+gidNumber: 2000
+
+dn: cn=advisors,ou=Groups,dc=adviseme,dc=local
+objectClass: top
+objectClass: posixGroup
+cn: advisors
+gidNumber: 2001
