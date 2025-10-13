@@ -12,6 +12,8 @@ services:
       MARIADB_PASSWORD_FILE: /run/secrets/dbapppass
     volumes:
       - dbdata:/var/lib/mysql
+      - ./DB/AdviseMeDB.sql:/docker-entrypoint-initdb.d/01-AdviseMeDB.sql:ro
+      - ./DB/AdviseMeData.sql:/docker-entrypoint-initdb.d/02-AdviseMeData.sql:ro
     secrets:
       - db_root_pass
       - dbapppass
