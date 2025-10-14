@@ -1,5 +1,7 @@
-from sqlalchemy import create_engine, text
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
+from sqlalchemy import Column, Integer, String, create_engine, text
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import Session, sessionmaker
 
 DATABASE_URL = 'mysql+pymysql://root:pass@adviseme-db/adviseme'
 engine = create_engine(DATABASE_URL)
@@ -19,8 +21,7 @@ def index():
 async def read_root():
     return {"message": "Hello from FastAPI in Docker!"}
 
-from sqlalchemy import Column, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
+
 
 Base = declarative_base()
 
@@ -31,7 +32,7 @@ class Students(Base):
     username = Column(String, index=True)
     email = Column(String, index=True)
 
-from sqlalchemy.orm import sessionmaker
+
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -41,9 +42,6 @@ def get_db():
         yield db
     finally:
         db.close()
-
-from fastapi import FastAPI, Depends
-from sqlalchemy.orm import Session
 
 @app.get("/db/students")
 def read_items(db: Session = Depends(get_db)):
