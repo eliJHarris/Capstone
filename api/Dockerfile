@@ -5,7 +5,7 @@ FROM python:3.9-slim-buster
 WORKDIR /code
 
 # Copy the requirements file to the working directory
-COPY ./api/requirements.txt .
+COPY requirements.txt .
 
 # Install the Python dependencies
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
