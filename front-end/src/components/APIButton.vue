@@ -5,7 +5,7 @@
     </v-btn>
 
     <div v-if="error" class="error">{{ error }}</div>
-    <pre v-if="response">{{ response }}</pre>
+    <div v-if="response" class="success">{{ response }}</div>
   </div>
 </template>
 
@@ -18,16 +18,18 @@ const error = ref(null)
 
 async function callApi() {
   loading.value = true
-  error.value = null
   response.value = null
   try {
+    response.value = null
+    error.value = null
+
     // adjust URL/path to match your API endpoint
-    const res = await fetch('http://localhost:8000')
+    const res = await fetch('http://localhost:8000/db/students')
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
     const data = await res.json()
-    response.value = JSON.stringify(data, null, 2)
+    response.value = "Good"
   } catch (e) {
-    error.value = e.message ?? String(e)
+    error.value = "Bad"
   } finally {
     loading.value = false
   }
@@ -36,5 +38,5 @@ async function callApi() {
 
 <style scoped>
 .error { color: red; margin-top: 8px; }
-pre { margin-top: 8px; background:#f6f8fa; padding:8px; }
+.success { color: green; margin-top: 8px; }
 </style>
