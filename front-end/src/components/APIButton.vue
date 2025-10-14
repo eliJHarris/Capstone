@@ -27,9 +27,9 @@ async function callApi() {
     const res = await fetch('http://localhost:8000/db/students')
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
     const data = await res.json()
-    response.value = "Good"
+    response.value = JSON.stringify(data, null, 2)
   } catch (e) {
-    error.value = "Bad"
+    error.value = e.message ?? String(e)
   } finally {
     loading.value = false
   }
