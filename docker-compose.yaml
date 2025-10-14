@@ -1,6 +1,36 @@
 version: "3.9"
 
 services:
+  db:
+    image: mariadb:10
+    container_name: adviseme-db
+    volumes:
+      - ./DB/test:/docker-entrypoint-initdb.d # remove /test to build adviseme db
+    ports:
+      - "3306:3306"
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: pass
+      MARIADB_DATABASE: adviseme
+      MARIADB_USER: adviseme_app
+      MARIADB_PASSWORD: app_pass
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: capstone_api
+    ports:
+      - "8000:8000"    # change if your API uses a different port
+    volumes:
+      - ./api:/code
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - db
+    restart: unless-stopped
+    tty: true
+
   frontend:
     build:
       context: ./front-end
@@ -12,17 +42,6 @@ services:
       - NODE_ENV=development
     depends_on:
       - api
-    restart: unless-stopped
-
-  api:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
-    container_name: capstone_api
-    ports:
-      - "8000:8000"    # change if your API uses a different port
-    environment:
-      - PYTHONUNBUFFERED=1
     restart: unless-stopped
 
 networks:
