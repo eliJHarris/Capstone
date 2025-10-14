@@ -36,10 +36,11 @@ services:
       LDAP_ADMIN_PASSWORD: admin_pass
       LDAP_READONLY_USER: "false"
       LDAP_TLS: "false"
+      LDAP_REMOVE_CONFIG_AFTER_SETUP: "false"
     volumes:
       - ldap-data:/var/lib/ldap
       - ldap-config:/etc/ldap/slapd.d
-      # - ./ldap/ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom:ro
+      - ./ldap/provisions:/container/service/slapd/assets/config/bootstrap/ldif/custom
     ports:
       - "389:389"
     networks:

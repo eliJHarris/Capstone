@@ -1,7 +1,0 @@
-dn: ou=People,dc=adviseme,dc=local
-objectClass: organizationalUnit
-ou: People
-
-dn: ou=Groups,dc=adviseme,dc=local
-objectClass: organizationalUnit
-ou: Groups
