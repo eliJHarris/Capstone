@@ -1,16 +1,20 @@
 # Capstone (Docker Compose)
 
-This repo contains two services (front-end and api). Use Docker Compose to build and run them in separate containers.
+Use Docker Compose to build and run them in separate containers.
 
 Prerequisites
-- Docker (and Docker Compose plugin) installed on Linux.
+- Docker (and Docker Compose plugin) installed on Linux. To install dependencies:
+  ```
+   sudo ./dockerSetup.sh
+  ```
+  
 
-Quick start
+Quick start (may need to run following with ```sudo```)
 1. From the repository root (/home/user/Capstone) run:
    ```
-   docker compose up --build -d
+   docker compose up --build
    ```
-2. Front-end should be available at http://localhost:5173
+2. Front-end should be available at http://localhost:8080
 3. API should be available at http://localhost:8000
 
 Stop and remove containers
