@@ -19,7 +19,7 @@ services:
     build:
         dockerfile: ./api/Dockerfile
     ports:
-        - "8000:80"
+        - "8000:8000"
     volumes:
         - ./api:/code
     tty: true
