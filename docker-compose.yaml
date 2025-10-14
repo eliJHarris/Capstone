@@ -2,7 +2,11 @@ version: "3.9"
 
 services:
   db:
-    image: mariadb:11
+    image: mariadb:10
+    volumes:
+      - ./DB/test:/docker-entrypoint-initdb.d #remove /test ot build adviseme db
+    ports:
+      - "3306:3306"
     container_name: adviseme-db
     restart: unless-stopped
     environment:
@@ -10,45 +14,12 @@ services:
       MARIADB_DATABASE: adviseme
       MARIADB_USER: adviseme_app
       MARIADB_PASSWORD: app_pass
-    volumes:
-      - dbdata:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1",
-             "-u", "adviseme_app", "--password=app_pass"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    networks:
-      - adviseme-net
 
-  openldap:
-    image: osixia/openldap:1.5.0
-    container_name: adviseme-openldap
-    restart: unless-stopped
-    environment:
-      LDAP_ORGANISATION: "UAFS"
-      LDAP_DOMAIN: "adviseme.local"
-      LDAP_BASE_DN: "dc=adviseme,dc=local"
-      LDAP_ADMIN_PASSWORD: admin_pass
-      LDAP_READONLY_USER: "false"
-      LDAP_TLS: "false"
-    volumes:
-      - ldap-data:/var/lib/ldap
-      - ldap-config:/etc/ldap/slapd.d
+  api:
+    build:
+        dockerfile: ./api/Dockerfile
     ports:
-      - "389:389" 
-    networks:
-      - adviseme-net
-    healthcheck:
-      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:389 -b 'dc=adviseme,dc=local' > /dev/null 2>&1"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-
-volumes:
-  dbdata:
-  ldap-data:
-  ldap-config:
-
-networks:
-  adviseme-net:
+        - "8000:8000"
+    volumes:
+        - ./api:/code
+    tty: true
