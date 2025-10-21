@@ -24,7 +24,7 @@ async function callApi() {
     error.value = null
 
     // adjust URL/path to match your API endpoint
-    const res = await fetch('http://localhost:8000/db/students')
+    const res = await fetch('http://localhost:8000/api/schedules/1')
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
     const data = await res.json()
     response.value = JSON.stringify(data, null, 2)

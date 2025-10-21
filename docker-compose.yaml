@@ -42,7 +42,7 @@ services:
       dockerfile: Dockerfile
     container_name: capstone_frontend
     ports:
-      - "4173:4173"
+      - "8080:8080"
     volumes:
       - ./front-end:/code
     environment:
