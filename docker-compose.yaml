@@ -1,19 +1,23 @@
 version: "3.9"
-
 services:
   db:
     image: mariadb:10
     container_name: adviseme-db
     volumes:
-      - ./DB/test:/docker-entrypoint-initdb.d # remove /test to build adviseme db
+      - ./DB/AdviseMeDB.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "3306:3306"
-    restart: unless-stopped
     environment:
       MARIADB_ROOT_PASSWORD: pass
       MARIADB_DATABASE: adviseme
       MARIADB_USER: adviseme_app
       MARIADB_PASSWORD: app_pass
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "--password=pass"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
   api:
     build:
@@ -21,15 +25,16 @@ services:
       dockerfile: Dockerfile
     container_name: capstone_api
     ports:
-      - "8000:8000"    # change if your API uses a different port
+      - "8000:8000"
     volumes:
       - ./api:/code
     environment:
       - PYTHONUNBUFFERED=1
+      - DATABASE_URL=mysql+pymysql://root:pass@adviseme-db/adviseme
     depends_on:
-      - db
-    restart: unless-stopped
-    tty: true
+      db:
+        condition: service_healthy
+    restart: always
 
   frontend:
     build:
@@ -37,13 +42,10 @@ services:
       dockerfile: Dockerfile
     container_name: capstone_frontend
     ports:
-      - "8080:8080"    # change if your front-end uses a different port
+      - "4173:4173"
+    volumes:
+      - ./front-end:/code
     environment:
-      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:8000/api
     depends_on:
       - api
-    restart: unless-stopped
-
-networks:
-  default:
-    driver: bridge
