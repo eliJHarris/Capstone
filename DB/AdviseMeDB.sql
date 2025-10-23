@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   isActive     TINYINT(1)    NOT NULL DEFAULT 1,
   createdDate  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT checkRoles CHECK (role IN ('STUDENT','ADVISOR','ADMIN'))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 CREATE TABLE IF NOT EXISTS advisorProfile (
   advisorID     INT PRIMARY KEY,
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS advisorProfile (
   createdWhen   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fkAdvisorProfileUser FOREIGN KEY (advisorID)
     REFERENCES users(userID) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 CREATE TABLE IF NOT EXISTS adviseeProfile (
   adviseeID         INT AUTO_INCREMENT PRIMARY KEY,
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS adviseeProfile (
     REFERENCES users(userID) ON DELETE CASCADE,
   CONSTRAINT fk_advisee_advisor FOREIGN KEY (advisorID)
     REFERENCES advisorProfile(advisorID) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 CREATE TABLE IF NOT EXISTS advisorAdviseeBridge (
   advisorID  INT NOT NULL,
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS advisorAdviseeBridge (
   PRIMARY KEY (advisorID, adviseeID),
   CONSTRAINT fkBridgeAdvisor  FOREIGN KEY (advisorID) REFERENCES advisorProfile(advisorID) ON DELETE CASCADE,
   CONSTRAINT fkBridgeAdvisee  FOREIGN KEY (adviseeID) REFERENCES adviseeProfile(adviseeID) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 CREATE TABLE IF NOT EXISTS terms (
   termID     INT AUTO_INCREMENT PRIMARY KEY,
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS terms (
   startDate  DATETIME NOT NULL,
   endDate    DATETIME NOT NULL,
   CONSTRAINT checkTerm CHECK (endDate > startDate)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 CREATE TABLE IF NOT EXISTS courses (
   courseID    INT AUTO_INCREMENT PRIMARY KEY,
@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS courses (
   description TEXT,
   credits     INT NOT NULL,
   CONSTRAINT checkCredits CHECK (credits > 0)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 CREATE TABLE IF NOT EXISTS sections (
   sectionID      INT AUTO_INCREMENT PRIMARY KEY,
@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS sections (
   CONSTRAINT sectionCourses FOREIGN KEY (courseID) REFERENCES courses(courseID) ON DELETE RESTRICT,
   CONSTRAINT sectionTerm    FOREIGN KEY (termID)   REFERENCES terms(termID)     ON DELETE RESTRICT,
   CONSTRAINT enrolledCapacity CHECK (enrolled <= capacity)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 CREATE TABLE IF NOT EXISTS schedules (
   scheduleID   INT AUTO_INCREMENT PRIMARY KEY,
@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS schedules (
     (approvedWhen IS NULL OR approvedWhen >= createdWhen) AND
     (rejectedWhen IS NULL OR rejectedWhen >= createdWhen)
   )
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 CREATE TABLE IF NOT EXISTS classes (
   classID      INT AUTO_INCREMENT PRIMARY KEY,
@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS classes (
   CONSTRAINT classSection  FOREIGN KEY (sectionID)  REFERENCES sections(sectionID)   ON DELETE RESTRICT,
   CONSTRAINT classSchedule FOREIGN KEY (scheduleID) REFERENCES schedules(scheduleID) ON DELETE CASCADE,
   UNIQUE KEY uq_scheduleSection (scheduleID, sectionID)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 CREATE TABLE IF NOT EXISTS enrollments (
   enrollmentID    INT AUTO_INCREMENT PRIMARY KEY,
@@ -121,7 +121,7 @@ CREATE TABLE IF NOT EXISTS enrollments (
   CONSTRAINT enrolledSection FOREIGN KEY (sectionID) REFERENCES sections(sectionID)       ON DELETE RESTRICT,
   CONSTRAINT enrolledCourse  FOREIGN KEY (courseID)  REFERENCES courses(courseID)         ON DELETE RESTRICT,
   UNIQUE KEY uq_enrollAdviseeSection (adviseeID, sectionID)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 CREATE TABLE IF NOT EXISTS notifications (
   notificationID  INT AUTO_INCREMENT PRIMARY KEY,
@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   description     VARCHAR(500) NOT NULL,
   createdAt       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT notificationUser FOREIGN KEY (userID) REFERENCES users(userID) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 CREATE TABLE IF NOT EXISTS degreePlan (
   degreePlanID  INT AUTO_INCREMENT PRIMARY KEY,
@@ -140,7 +140,7 @@ CREATE TABLE IF NOT EXISTS degreePlan (
   createdWhen   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updatedWhen   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fkDegreePlanAdvisee FOREIGN KEY (adviseeID) REFERENCES adviseeProfile(adviseeID) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- ---------- Data ----------
 INSERT INTO users (userID, username, email, role, isActive, createdDate) VALUES
