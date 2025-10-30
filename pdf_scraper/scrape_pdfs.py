@@ -68,7 +68,7 @@ class RobotsHandler:
 
         if response.status_code in (401, 403):
             # Respect explicit disallow-all responses to keep us out.
-            parser.disallow_all()
+            parser.parse(["User-agent: *", "Disallow: /"])
             parser.modified()
             return parser
 
@@ -103,6 +103,7 @@ def crawl_for_pdfs(
     request_delay: float,
     session: requests.Session,
     robots: RobotsHandler,
+    keywords: Sequence[str],
 ) -> Set[str]:
     """Breadth-first crawl within the start domain to collect PDF URLs."""
     start_parsed = urlparse(start_url)
@@ -146,9 +147,17 @@ def crawl_for_pdfs(
             resolved = urljoin(current_url, link["href"])
             resolved = normalize_url(resolved)
             # Decide once per link if robots permits us to visit or download it.
+            resolved_lower = resolved.lower()
             allowed_by_robots = robots.can_fetch(resolved)
 
-            if resolved.lower().endswith(".pdf"):
+            if resolved_lower.endswith(".pdf"):
+                if keywords and not any(keyword in resolved_lower for keyword in keywords):
+                    logging.debug(
+                        "Skipping PDF %s (URL did not match keywords: %s)",
+                        resolved,
+                        ", ".join(keywords),
+                    )
+                    continue
                 if not allowed_by_robots:
                     logging.info(
                         "Skipping PDF %s (disallowed by robots.txt)",
@@ -236,17 +245,6 @@ def extract_pdf_title(pdf_bytes: BytesIO) -> Optional[str]:
     return None
 
 
-def title_contains_keywords(title: Optional[str], keywords: Sequence[str]) -> bool:
-    """Return True if the PDF title contains any keyword (or no keywords provided)."""
-    if not keywords:
-        return True
-    if not title:
-        return False
-
-    lower_title = title.lower()
-    return any(keyword in lower_title for keyword in keywords)
-
-
 def parse_args(argv: Iterable[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Crawl a domain for PDFs, extract their text, and combine it.",
@@ -289,7 +287,7 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
         action="append",
         default=[],
         metavar="TERM",
-        help="Only include PDFs whose title contains at least one of the provided keywords. "
+        help="Only include PDFs whose URL contains at least one of the provided keywords. "
         "Repeat the flag for multiple keywords.",
     )
     return parser.parse_args(argv)
@@ -302,6 +300,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     session = requests.Session()
     session.headers.update(DEFAULT_HEADERS)
     robots = RobotsHandler(session=session, user_agent=session.headers.get("User-Agent", "*"))
+    keywords = [keyword.lower() for keyword in args.require_keyword]
 
     logging.info("Starting crawl at %s", args.start_url)
     pdf_urls = crawl_for_pdfs(
@@ -310,6 +309,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         request_delay=max(args.delay, 0.0),
         session=session,
         robots=robots,
+        keywords=keywords,
     )
 
     if not pdf_urls:
@@ -318,7 +318,6 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     logging.info("Found %d PDFs. Beginning extraction.", len(pdf_urls))
     text_chunks: list[Tuple[Optional[str], str]] = []
-    keywords = [keyword.lower() for keyword in args.require_keyword]
 
     for pdf_url in sorted(pdf_urls):
         if not robots.can_fetch(pdf_url):
@@ -331,13 +330,6 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             title, text = extract_pdf_content(pdf_url, session=session)
         except Exception as exc:  # noqa: BLE001
             logging.error("Skipping PDF %s due to unexpected error: %s", pdf_url, exc)
-            continue
-        if not title_contains_keywords(title, keywords):
-            logging.info(
-                "Skipping PDF %s (title did not match keywords: %s)",
-                pdf_url,
-                ", ".join(args.require_keyword),
-            )
             continue
         if text.strip():
             text_chunks.append((title, text))
