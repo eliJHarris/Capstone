@@ -7,8 +7,9 @@ import time
 from collections import deque
 from io import BytesIO
 from pathlib import Path
-from typing import Iterable, Optional, Sequence, Set, Tuple
+from typing import Dict, Iterable, Optional, Sequence, Set, Tuple
 from urllib.parse import urljoin, urlparse
+from urllib.robotparser import RobotFileParser
 
 import requests
 from bs4 import BeautifulSoup
@@ -19,6 +20,64 @@ from pdfminer.pdfparser import PDFParser
 DEFAULT_HEADERS = {
     "User-Agent": "CapstonePDFScraper/1.0 (+https://github.com/)",
 }
+
+
+class RobotsHandler:
+    """Cache and evaluate robots.txt directives per domain."""
+
+    def __init__(self, session: requests.Session, user_agent: str) -> None:
+        self.session = session
+        self.user_agent = user_agent or "*"
+        # Cache RobotFileParser instances so each site's robots.txt is fetched once.
+        self._parsers: Dict[Tuple[str, str], Optional[RobotFileParser]] = {}
+
+    def can_fetch(self, url: str) -> bool:
+        parsed = urlparse(url)
+        if not parsed.scheme or not parsed.netloc:
+            return True
+
+        key = (parsed.scheme, parsed.netloc)
+        if key not in self._parsers:
+            self._parsers[key] = self._load_parser(parsed.scheme, parsed.netloc)
+
+        parser = self._parsers[key]
+        if parser is None:
+            return True
+
+        try:
+            return parser.can_fetch(self.user_agent, url)
+        except Exception as exc:  # noqa: BLE001
+            logging.debug("Robots evaluation failed for %s (%s)", url, exc)
+            return True
+
+    def _load_parser(self, scheme: str, netloc: str) -> Optional[RobotFileParser]:
+        robots_url = f"{scheme}://{netloc}/robots.txt"
+        parser = RobotFileParser()
+        parser.set_url(robots_url)
+
+        try:
+            response = self.session.get(robots_url, timeout=10)
+        except Exception as exc:  # noqa: BLE001
+            logging.debug("Unable to fetch robots.txt at %s (%s)", robots_url, exc)
+            return None
+
+        if response.status_code == 200:
+            parser.parse(response.text.splitlines())
+            parser.modified()
+            return parser
+
+        if response.status_code in (401, 403):
+            # Respect explicit disallow-all responses to keep us out.
+            parser.disallow_all()
+            parser.modified()
+            return parser
+
+        logging.debug(
+            "Robots.txt not available at %s (status %s). Assuming allow all.",
+            robots_url,
+            response.status_code,
+        )
+        return None
 
 
 def is_same_domain(url: str, domain: str) -> bool:
@@ -43,12 +102,14 @@ def crawl_for_pdfs(
     max_pages: int,
     request_delay: float,
     session: requests.Session,
+    robots: RobotsHandler,
 ) -> Set[str]:
     """Breadth-first crawl within the start domain to collect PDF URLs."""
     start_parsed = urlparse(start_url)
     domain = start_parsed.netloc
 
     start_url = normalize_url(start_url)
+    # Queue implements BFS so we fan out evenly without going deep on one branch.
     to_visit = deque([start_url])
     queued_pages: Set[str] = {start_url}
     seen_pages: Set[str] = set()
@@ -58,6 +119,11 @@ def crawl_for_pdfs(
         current_url = to_visit.popleft()
         queued_pages.discard(current_url)
         if current_url in seen_pages:
+            continue
+
+        if not robots.can_fetch(current_url):
+            logging.info("Skipping %s (disallowed by robots.txt)", current_url)
+            seen_pages.add(current_url)
             continue
 
         logging.info("Fetching page: %s", current_url)
@@ -79,8 +145,16 @@ def crawl_for_pdfs(
         for link in soup.find_all("a", href=True):
             resolved = urljoin(current_url, link["href"])
             resolved = normalize_url(resolved)
+            # Decide once per link if robots permits us to visit or download it.
+            allowed_by_robots = robots.can_fetch(resolved)
 
             if resolved.lower().endswith(".pdf"):
+                if not allowed_by_robots:
+                    logging.info(
+                        "Skipping PDF %s (disallowed by robots.txt)",
+                        resolved,
+                    )
+                    continue
                 if resolved not in pdf_urls:
                     pdf_urls.add(resolved)
                     logging.info("Found PDF: %s", resolved)
@@ -90,11 +164,15 @@ def crawl_for_pdfs(
                 is_same_domain(resolved, domain)
                 and resolved not in seen_pages
                 and resolved not in queued_pages
+                and allowed_by_robots
             ):
                 to_visit.append(resolved)
                 queued_pages.add(resolved)
+            elif is_same_domain(resolved, domain) and not allowed_by_robots:
+                logging.debug("Skipping %s (disallowed by robots.txt)", resolved)
 
         if request_delay:
+            # Throttle requests to avoid hammering servers.
             time.sleep(request_delay)
 
     return pdf_urls
@@ -223,6 +301,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     session = requests.Session()
     session.headers.update(DEFAULT_HEADERS)
+    robots = RobotsHandler(session=session, user_agent=session.headers.get("User-Agent", "*"))
 
     logging.info("Starting crawl at %s", args.start_url)
     pdf_urls = crawl_for_pdfs(
@@ -230,6 +309,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         max_pages=args.max_pages,
         request_delay=max(args.delay, 0.0),
         session=session,
+        robots=robots,
     )
 
     if not pdf_urls:
@@ -241,6 +321,12 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     keywords = [keyword.lower() for keyword in args.require_keyword]
 
     for pdf_url in sorted(pdf_urls):
+        if not robots.can_fetch(pdf_url):
+            logging.info(
+                "Skipping PDF %s (disallowed by robots.txt)",
+                pdf_url,
+            )
+            continue
         try:
             title, text = extract_pdf_content(pdf_url, session=session)
         except Exception as exc:  # noqa: BLE001
