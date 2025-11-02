@@ -1,44 +1,33 @@
-# vue-project
+# Capstone (Docker Compose)
 
-This template should help get you started developing with Vue 3 in Vite.
+Use Docker Compose to build and run them in separate containers.
 
-## Recommended IDE Setup
+Prerequisites
+- Docker (and Docker Compose plugin) installed on Linux. To install dependencies:
+  ```
+   sudo ./dockerSetup.sh
+  ```
+  
 
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+Quick start (may need to run following with ```sudo```)
+1. From the repository root (/home/user/Capstone) run:
+   ```
+   docker compose up --build
+   ```
+2. Front-end should be available at http://localhost:8080
+3. API should be available at http://localhost:8000
 
-## Recommended Browser Setup
-
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd) 
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vite.dev/config/).
-
-## Project Setup
-
-```sh
-npm install
+Stop and remove containers
+```
+docker compose down
 ```
 
-### Compile and Hot-Reload for Development
-
-```sh
-npm run dev
-```
-
-### Compile and Minify for Production
-
-```sh
-npm run build
-```
-
-### Lint with [ESLint](https://eslint.org/)
-
-```sh
-npm run lint
-```
+Logs
+- Follow combined logs:
+  ```
+  docker compose logs -f
+  ```
+- Follow only front-end logs:
+  ```
+  docker compose logs -f frontend
+  ```
