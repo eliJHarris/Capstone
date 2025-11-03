@@ -56,7 +56,13 @@
           </v-form>
 
           <div class="text-center mb-4">
-            <v-btn variant="text" color="primary" size="small" class="text-capitalize" @click="forgotPassword">
+            <v-btn
+              variant="text"
+              color="primary"
+              size="small"
+              class="text-capitalize"
+              @click="forgotPassword"
+            >
               Forgot Password?
             </v-btn>
           </div>
@@ -74,7 +80,6 @@
 <script setup>
 import { ref } from "vue";
 import { useRouter } from "vue-router";
-// If "@/services/auth.js" alias fails, use "../services/auth.js"
 import { loginRequest } from "@/services/auth.js";
 
 const router = useRouter();
@@ -86,7 +91,6 @@ const loading = ref(false);
 const errorMsg = ref("");
 
 function forgotPassword() {
-  // TODO: route or dialog
   console.log("Forgot password clicked");
 }
 
@@ -94,7 +98,6 @@ async function handleLogin() {
   errorMsg.value = "";
   loading.value = true;
   try {
-    // For your LDAP demo users: aadvisor / AdvisorPass123!
     await loginRequest(username.value, password.value);
     router.push({ name: "dashboard" });
   } catch (err) {

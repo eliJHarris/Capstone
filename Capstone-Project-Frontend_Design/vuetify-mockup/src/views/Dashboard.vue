@@ -1,6 +1,6 @@
 <template>
   <v-app>
-    <AppNavbar />
+    <AppNavbar @logout="handleLogout" />
     <v-main class="d-flex">
       <AppSidebar :role="role" />
       <v-container fluid style="flex:1;">
@@ -11,11 +11,18 @@
 </template>
 
 <script setup>
-import AppNavbar from '@/components/AppNavbar.vue'
-import AppSidebar from '@/components/AppSidebar.vue'
+import { useRouter } from "vue-router";
+import AppNavbar from "@/components/AppNavbar.vue";
+import AppSidebar from "@/components/AppSidebar.vue";
+import { logout } from "@/services/auth.js";
 
-// Change between 'advisor' or 'student'
-const role = 'advisor'
+const router = useRouter();
+const role = "advisor";
+
+function handleLogout() {
+  logout();
+  router.push({ name: "login" });
+}
 </script>
 
 <style scoped>
