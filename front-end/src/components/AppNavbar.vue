@@ -15,7 +15,7 @@
     <v-menu>
       <template #activator="{ props }">
         <v-btn v-bind="props" variant="text" class="d-flex align-center">
-          <v-avatar size="48" class="mb-2"><img src="/src/assets/mockup/avatar.png" style="width:100%; height:100%; object-fit:cover; border-radius:50%;" />
+          <v-avatar size="48" class="mb-2"><img src="/src/assets/mockup/Avatar.png" style="width:100%; height:100%; object-fit:cover; border-radius:50%;" />
 </v-avatar>
 
 
