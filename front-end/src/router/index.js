@@ -1,36 +1,26 @@
-/**
- * router/index.ts
- *
- * Automatic routes for `./src/pages/*.vue`
- */
-
-// Composables
 import { createRouter, createWebHistory } from 'vue-router'
-import { setupLayouts } from 'virtual:generated-layouts'
-import { routes } from 'vue-router/auto-routes'
+import LandingPage from '@/views/LandingPage.vue'
+import TabView from '@/views/TabView.vue'
+import LoginView from '@/views/LoginView.vue'
+
+
+const routes = [
+  { path: '/login', component: LoginView },
+  { path: '/', component: LandingPage },
+  { path: '/dashboard', component: TabView, props: { tabName: 'Dashboard' } },
+  { path: '/', component: LandingPage },
+  { path: '/dashboard', component: TabView, props: { tabName: 'Dashboard' } },
+  { path: '/notifications', component: TabView, props: { tabName: 'Notifications' } },
+  { path: '/student-list', component: TabView, props: { tabName: 'Student List' } },
+  { path: '/class-history', component: TabView, props: { tabName: 'Class History' } },
+  { path: '/security', component: TabView, props: { tabName: 'Security' } },
+  { path: '/schedules', component: TabView, props: { tabName: 'Schedules / Appointments' } },
+  { path: '/:catchAll(.*)', redirect: '/' } 
+]
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
-  routes: setupLayouts(routes),
-})
-
-// Workaround for https://github.com/vitejs/vite/issues/11804
-router.onError((err, to) => {
-  if (err?.message?.includes?.('Failed to fetch dynamically imported module')) {
-    if (localStorage.getItem('vuetify:dynamic-reload')) {
-      console.error('Dynamic import error, reloading page did not fix it', err)
-    } else {
-      console.log('Reloading page to fix dynamic import error')
-      localStorage.setItem('vuetify:dynamic-reload', 'true')
-      location.assign(to.fullPath)
-    }
-  } else {
-    console.error(err)
-  }
-})
-
-router.isReady().then(() => {
-  localStorage.removeItem('vuetify:dynamic-reload')
+  history: createWebHistory(),
+  routes
 })
 
 export default router
