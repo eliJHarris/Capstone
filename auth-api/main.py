@@ -1,149 +1,179 @@
 import os
-from typing import Optional
+from datetime import datetime, timedelta
+from fastapi import FastAPI, HTTPException, Form
+from fastapi.middleware.cors import CORSMiddleware
+from ldap3 import Server, Connection, ALL, ALL_ATTRIBUTES, SUBTREE
+from jose import jwt
 
-from fastapi import FastAPI, HTTPException, Form, Depends
-from pydantic import BaseModel
-from ldap3 import Server, Connection, SUBTREE, ALL, Tls
+app = FastAPI(title="Adviseme Auth API")
 
-app = FastAPI(title="Auth API (LDAP)")
-
-# ---------- Config ----------
-def _read_secret(path: Optional[str], fallback_env: Optional[str]) -> Optional[str]:
-    """
-    Read a secret from a file if path is set; otherwise return env var.
-    Returns None if neither exists.
-    """
-    if path and os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    if fallback_env:
-        return os.getenv(fallback_env)
-    return None
-
-LDAP_HOST         = os.getenv("LDAP_HOST", "openldap")
-LDAP_PORT         = int(os.getenv("LDAP_PORT", "389"))
-LDAP_USE_SSL      = os.getenv("LDAP_USE_SSL", "false").lower() in {"1", "true", "yes"}
-LDAP_START_TLS    = os.getenv("LDAP_START_TLS", "false").lower() in {"1", "true", "yes"}
-
-LDAP_BIND_DN      = os.getenv("LDAP_BIND_DN", "cn=adviseme-app,ou=Service,dc=adviseme,dc=local")
-LDAP_BIND_PW      = _read_secret(os.getenv("LDAP_BIND_PASSWORD_FILE"), "LDAP_BIND_PASSWORD")
-
-LDAP_BASE_DN      = os.getenv("LDAP_BASE_DN", "dc=adviseme,dc=local")
-LDAP_PEOPLE_DN    = os.getenv("LDAP_PEOPLE_DN", "ou=People,dc=adviseme,dc=local")
-
-# Search filter used to look up the user from a username
-# We’ll search by uid OR mail OR cn
-LDAP_USER_FILTER_TEMPLATE = os.getenv(
-    "LDAP_USER_FILTER",
-    "(|(uid={username})(mail={username})(cn={username}))"
+# CORS so frontend (Vuetify or whatever) can call us locally
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],  # tighten later
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Optional: which attributes to return after we authenticate the user
-USER_ATTRS = [a.strip() for a in os.getenv(
-    "LDAP_USER_ATTRIBUTES",
-    "cn,uid,mail"
-).split(",") if a.strip()]
+# ------------ config from env -------------
+LDAP_HOST       = os.getenv("LDAP_HOST", "adviseme-openldap")
+LDAP_PORT       = int(os.getenv("LDAP_PORT", "389"))
 
-# ---------- LDAP helpers ----------
-def make_server() -> Server:
-    # You can customize TLS here if you enable LDAPS/StartTLS
-    tls = Tls(validate=0) if (LDAP_USE_SSL or LDAP_START_TLS) else None
-    return Server(LDAP_HOST, port=LDAP_PORT, use_ssl=LDAP_USE_SSL, get_info=ALL, tls=tls)
+# This is the ROOT of the directory (naming context)
+LDAP_BASE_DN    = os.getenv("LDAP_BASE_DN", "dc=adviseme,dc=local")
 
-def bind_service(conn: Connection) -> None:
-    if not LDAP_BIND_DN or not LDAP_BIND_PW:
-        raise HTTPException(status_code=500, detail="Service bind not configured")
-    if not conn.bind():
-        # If using StartTLS:
-        # if LDAP_START_TLS: conn.start_tls()
-        if not conn.rebind(user=LDAP_BIND_DN, password=LDAP_BIND_PW):
-            raise HTTPException(status_code=502, detail="LDAP service bind failed")
+# This is specifically where your users live
+LDAP_PEOPLE_DN  = os.getenv("LDAP_PEOPLE_DN", "ou=People,dc=adviseme,dc=local")
 
-def find_user_dn(username: str) -> str:
+# Service bind account (the "app account")
+LDAP_BIND_DN    = os.getenv("LDAP_BIND_DN", "cn=adviseme-app,ou=Service,dc=adviseme,dc=local")
+
+# IMPORTANT: normalize the password var name.
+# We'll look for LDAP_BIND_PASSWORD first (what docker-compose typically sets),
+# and fall back to LDAP_BIND_PW as a backup.
+LDAP_BIND_PASSWORD = (
+    os.getenv("LDAP_BIND_PASSWORD") or
+    os.getenv("LDAP_BIND_PW") or
+    "AppBindPass123!"
+)
+
+JWT_SECRET      = os.getenv("JWT_SECRET", "change-me")
+JWT_ALGO        = "HS256"
+JWT_EXPIRE_MIN  = int(os.getenv("JWT_EXPIRE_MINUTES", "60"))
+
+# ------------ helpers -------------
+def _server():
+    # get_info=ALL lets ldap3 cache schema, so you'll see those "cn=Subschema" queries in the logs
+    return Server(LDAP_HOST, port=LDAP_PORT, get_info=ALL)
+
+def _bind_service() -> Connection:
     """
-    Search LDAP under PEOPLE_DN using a broad filter and return the first entry_dn.
+    Bind as the service account to search LDAP.
+    Returns an active ldap3 Connection object that you MUST close.
     """
-    server = make_server()
-    with Connection(server, user=LDAP_BIND_DN, password=LDAP_BIND_PW, auto_bind=False) as conn:
-        bind_service(conn)
+    try:
+        conn = Connection(
+            _server(),
+            user=LDAP_BIND_DN,
+            password=LDAP_BIND_PASSWORD,
+            auto_bind=True
+        )
+        return conn
+    except Exception as e:
+        # If we can't bind as service, the auth API is basically unusable
+        raise HTTPException(status_code=500, detail=f"Service bind failed: {e}")
 
-        search_base = LDAP_PEOPLE_DN or LDAP_BASE_DN
-        flt = LDAP_USER_FILTER_TEMPLATE.format(username=username)
-        ok = conn.search(search_base, flt, search_scope=SUBTREE, attributes=["dn"])
-        if not ok or len(conn.entries) == 0:
+def _find_user(username: str):
+    """
+    Use the service bind to locate the user's DN and some attrs.
+    We search ONLY under LDAP_PEOPLE_DN instead of the domain root.
+    """
+    svc = _bind_service()
+    try:
+        # match uid=aadvisor OR cn=aadvisor
+        search_filter = f"(|(uid={username})(cn={username}))"
+
+        ok = svc.search(
+            search_base=LDAP_PEOPLE_DN,     # <-- key change here
+            search_filter=search_filter,
+            search_scope=SUBTREE,
+            attributes=ALL_ATTRIBUTES,
+        )
+
+        if not ok or len(svc.entries) == 0:
             raise HTTPException(status_code=401, detail="User not found")
-        # Always use the DN returned by LDAP, do not construct a DN yourself
-        return conn.entries[0].entry_dn
 
-def verify_user_password(user_dn: str, password: str) -> None:
-    """
-    Verify the user's password by binding as that DN.
-    """
-    server = make_server()
-    # Separate connection so we don't lose the admin bind/session
-    with Connection(server, user=user_dn, password=password, auto_bind=False) as user_conn:
-        if LDAP_START_TLS:
-            try:
-                user_conn.open()
-                user_conn.start_tls()
-            except Exception:
-                pass
-        if not user_conn.bind():
-            # Invalid credentials → 401
-            raise HTTPException(status_code=401, detail="Invalid credentials")
+        entry = svc.entries[0]
+        user_dn  = entry.entry_dn
+        user_cn  = str(getattr(entry, "cn", username))
+        user_uid = str(getattr(entry, "uid", username))
+        user_mail = str(getattr(entry, "mail", ""))
 
-def fetch_user_attrs(user_dn: str) -> dict:
-    """
-    Re-bind as service and read attributes you want to return with the token/response.
-    """
-    server = make_server()
-    with Connection(server, user=LDAP_BIND_DN, password=LDAP_BIND_PW, auto_bind=False) as conn:
-        bind_service(conn)
-        ok = conn.search(user_dn, "(objectClass=*)", search_scope=SUBTREE, attributes=USER_ATTRS)
-        if not ok or len(conn.entries) == 0:
-            return {}
-        entry = conn.entries[0]
-        out = {"dn": entry.entry_dn}
-        for attr in USER_ATTRS:
-            try:
-                out[attr] = entry[attr].value
-            except Exception:
-                pass
-        return out
+        return {
+            "dn": user_dn,
+            "cn": user_cn,
+            "uid": user_uid,
+            "mail": user_mail,
+        }
+    finally:
+        svc.unbind()
 
-# ---------- Schemas ----------
-class LoginJSON(BaseModel):
-    username: str
-    password: str
+def _verify_password(user_dn: str, password: str):
+    """
+    Try binding as the user with the supplied password.
+    If bind fails -> invalid credentials.
+    """
+    try:
+        with Connection(_server(), user=user_dn, password=password, auto_bind=True):
+            return True
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
-# ---------- Routes ----------
+def _issue_jwt(user_info: dict) -> str:
+    now = datetime.utcnow()
+    payload = {
+        "sub": user_info["uid"] or user_info["cn"],
+        "dn":  user_info["dn"],
+        "cn":  user_info["cn"],
+        "uid": user_info["uid"],
+        "mail": user_info["mail"],
+        "exp": now + timedelta(minutes=JWT_EXPIRE_MIN),
+        "iat": now,
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
+
+# ------------ routes -------------
+@app.post("/login")
+def login(username: str = Form(...), password: str = Form(...)):
+    # 1. find them in LDAP (by uid or cn)
+    user_info = _find_user(username)
+
+    # 2. bind-as-user to verify password
+    _verify_password(user_info["dn"], password)
+
+    # 3. issue JWT
+    token = _issue_jwt(user_info)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "dn": user_info["dn"],
+            "cn": user_info["cn"],
+            "uid": user_info["uid"],
+            "mail": user_info["mail"],
+        },
+    }
+
+@app.get("/")
+def root():
+    return {"service": "auth-api", "status": "ok"}
+
 @app.get("/health")
 def health():
-    """
-    Confirms we can bind as service/admin and read the base DN.
-    """
-    server = make_server()
-    with Connection(server, user=LDAP_BIND_DN, password=LDAP_BIND_PW, auto_bind=False) as conn:
-        bind_service(conn)
-        ok = conn.search(LDAP_BASE_DN, "(objectClass=*)", search_scope="BASE", attributes=["dn"])
-        if not ok:
-            raise HTTPException(status_code=502, detail="LDAP base search failed")
-    return {"status": "ok", "ldap_host": LDAP_HOST, "base_dn": LDAP_BASE_DN}
+    # Super lightweight health: just prove service bind works
+    _ = _bind_service()
+    _.unbind()
+    return {"status": "ok"}
 
-@app.post("/login")
-def login_form(username: str = Form(...), password: str = Form(...)):
-    """
-    Form-encoded login: use the user search, then bind exactly with entry_dn.
-    """
-    user_dn = find_user_dn(username)
-    verify_user_password(user_dn, password)
-    attrs = fetch_user_attrs(user_dn)
-    # TODO: issue JWT here if you have a token layer; for now return basic info
-    return {"message": "authenticated", "user": attrs or {"dn": user_dn}}
-
-@app.post("/login/json")
-def login_json(body: LoginJSON):
-    user_dn = find_user_dn(body.username)
-    verify_user_password(user_dn, body.password)
-    attrs = fetch_user_attrs(user_dn)
-    return {"message": "authenticated", "user": attrs or {"dn": user_dn}}
+@app.get("/debug/users")
+def debug_users():
+    # Show what the service account can SEE under ou=People
+    svc = _bind_service()
+    try:
+        svc.search(
+            search_base=LDAP_PEOPLE_DN,
+            search_filter="(objectClass=inetOrgPerson)",
+            search_scope=SUBTREE,
+            attributes=["cn", "uid", "mail"]
+        )
+        return {
+            "base": LDAP_PEOPLE_DN,
+            "count": len(svc.entries),
+            "dns":  [e.entry_dn for e in svc.entries],
+            "uids": [str(getattr(e, "uid", "")) for e in svc.entries],
+            "cns":  [str(getattr(e, "cn", "")) for e in svc.entries],
+            "mails": [str(getattr(e, "mail", "")) for e in svc.entries],
+        }
+    finally:
+        svc.unbind()

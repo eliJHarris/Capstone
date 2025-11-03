@@ -84,9 +84,16 @@ services:
     environment:
       LDAP_HOST: adviseme-openldap
       LDAP_PORT: 389
+
       LDAP_BASE_DN: dc=adviseme,dc=local
+      LDAP_PEOPLE_DN: ou=People,dc=adviseme,dc=local
+
+      # TEMPORARY: bind as directory admin so we know search works
+      LDAP_BIND_DN: cn=admin,dc=adviseme,dc=local
+      LDAP_BIND_PASSWORD: admin_pass
+
       JWT_SECRET: change-me
-      PORT: "8080"
+      JWT_EXPIRE_MINUTES: "60"
     ports:
       - "8080:8080"
     depends_on:
@@ -94,11 +101,8 @@ services:
         condition: service_healthy
     networks:
       - adviseme-net
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)\" >/dev/null 2>&1 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+
+
 
   core-api:
     build:

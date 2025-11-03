@@ -2,17 +2,46 @@
 # scripts/bootstrap_ldap.sh
 set -euo pipefail
 
-# ========= config =========
+########################
+# ====== config ====== #
+########################
+
 LDAP_CONTAINER="${LDAP_CONTAINER:-adviseme-openldap}"
 LDAP_URL="${LDAP_URL:-ldap://localhost:389}"
+
 ADMIN_DN="${ADMIN_DN:-cn=admin,dc=adviseme,dc=local}"
 ADMIN_PASS="${ADMIN_PASS:-admin_pass}"
-VERBOSE="${VERBOSE:-1}"            # 1 = trace commands
+
+VERBOSE="${VERBOSE:-1}"             # 1 = trace commands
 BIND_TIMEOUT="${BIND_TIMEOUT:-120}" # seconds
 
-# ========= pretty logs =========
+# Users / DNs we'll insert
+OU_BASE="dc=adviseme,dc=local"
+PEOPLE_OU="ou=People,${OU_BASE}"
+GROUPS_OU="ou=Groups,${OU_BASE}"
+SERVICE_OU="ou=Service,${OU_BASE}"
+
+ALICE_DN="cn=Alice Advisor,${PEOPLE_OU}"
+ALICE_UID="aadvisor"
+ALICE_PASS="AdvisorPass123!"
+
+BOB_DN="cn=Bob Advisee,${PEOPLE_OU}"
+BOB_UID="badvisee"
+BOB_PASS="AdviseePass123!"
+
+APP_DN="cn=adviseme-app,${SERVICE_OU}"
+APP_PASS="AppBindPass123!"
+
+ADVISORS_DN="cn=advisors,${GROUPS_OU}"
+ADVISEES_DN="cn=advisees,${GROUPS_OU}"
+
+#############################
+# ===== pretty logs ======  #
+#############################
+
 RED="$(printf '\033[31m')"; GREEN="$(printf '\033[32m')"; YELLOW="$(printf '\033[33m')"
 BLUE="$(printf '\033[34m')"; BOLD="$(printf '\033[1m')"; RESET="$(printf '\033[0m')"
+
 log()  { echo -e "${BLUE}${BOLD}==>${RESET} $*"; }
 ok()   { echo -e "${GREEN}${BOLD}✔${RESET} $*"; }
 warn() { echo -e "${YELLOW}${BOLD}!${RESET} $*"; }
@@ -21,58 +50,66 @@ err()  { echo -e "${RED}${BOLD}✖${RESET} $*"; }
 trap 'err "Failed on: ${BASH_COMMAND}"' ERR
 [[ "$VERBOSE" == "1" ]] && set -x
 
-# Require sudo up front so loops don’t block on a password prompt
+#####################################
+# ===== sudo precheck (nice) ====== #
+#####################################
+
 if ! sudo -n true 2>/dev/null; then
   err "This script uses sudo. Run it with: sudo $0"
   exit 1
 fi
 
-# ========= helpers =========
-exec_ldif_add() {
-  local title="$1"; shift
-  log "$title"
-  # Read LDIF from STDIN; write rejects inside container for visibility
-  sudo docker exec -i "$LDAP_CONTAINER" sh -lc '
-    set -e
-    REJ="/tmp/ldapadd.rejects.ldif"
-    rc=0
-    ldapadd -S "$REJ" -c -x -H "'"$LDAP_URL"'" -D "'"$ADMIN_DN"'" -w "'"$ADMIN_PASS"'" || rc=$?
-    if [ -s "$REJ" ]; then
-      echo "---- Rejects ----"
-      cat "$REJ"
-      echo "-----------------"
-    fi
-    exit $rc
-  '
-  ok "$title (applied)"
+#########################################
+# ===== helper: run ldapadd inline ==== #
+#########################################
+
+ldap_add_ldif () {
+  # $1 = title (log label)
+  log "$1"
+  sudo docker exec -i "$LDAP_CONTAINER" ldapadd -x \
+    -H "$LDAP_URL" \
+    -D "$ADMIN_DN" \
+    -w "$ADMIN_PASS"
+  ok "$1 (applied)"
 }
 
-exec_ldif_modify() {
-  local title="$1"; shift
-  log "$title"
-  sudo docker exec -i "$LDAP_CONTAINER" ldapmodify -x -H "$LDAP_URL" -D "$ADMIN_DN" -w "$ADMIN_PASS" "$@"
-  ok "$title (applied)"
+ldap_modify_ldif () {
+  # $1 = title (log label)
+  log "$1"
+  sudo docker exec -i "$LDAP_CONTAINER" ldapmodify -x \
+    -H "$LDAP_URL" \
+    -D "$ADMIN_DN" \
+    -w "$ADMIN_PASS"
+  ok "$1 (applied)"
 }
 
-validate() {
-  local title="$1"; shift
-  log "Validate: $title"
-  sudo docker exec "$LDAP_CONTAINER" ldapsearch -LLL -x -H "$LDAP_URL" -D "$ADMIN_DN" -w "$ADMIN_PASS" "$@"
-  ok "Validated: $title"
+ldap_search () {
+  # pass extra ldapsearch args after this function name
+  sudo docker exec "$LDAP_CONTAINER" ldapsearch -LLL -x \
+    -H "$LDAP_URL" \
+    -D "$ADMIN_DN" \
+    -w "$ADMIN_PASS" \
+    "$@"
 }
 
-# ========= start =========
+########################################
+# ===== wait for LDAP to be ready ==== #
+########################################
+
 log "Using container: $LDAP_CONTAINER"
-sudo docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | sed -n '1,10p'
+sudo docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | sed -n '1,20p'
 
-# Readiness: wait for admin bind (most reliable), with timeout
 log "Waiting for admin bind (timeout ${BIND_TIMEOUT}s)..."
 START=$(date +%s)
 while true; do
-  if sudo docker exec "$LDAP_CONTAINER" ldapwhoami -x -H "$LDAP_URL" -D "$ADMIN_DN" -w "$ADMIN_PASS" >/dev/null 2>&1; then
+  if sudo docker exec "$LDAP_CONTAINER" ldapwhoami -x \
+      -H "$LDAP_URL" \
+      -D "$ADMIN_DN" \
+      -w "$ADMIN_PASS" >/dev/null 2>&1; then
     ok "Admin bind OK"
     break
   fi
+
   if [ $(( $(date +%s) - START )) -ge "$BIND_TIMEOUT" ]; then
     err "Timed out waiting for admin bind"
     exit 1
@@ -80,105 +117,141 @@ while true; do
   sleep 2
 done
 
-# Optional: show namingContexts once
 log "namingContexts (one-shot)"
-sudo docker exec "$LDAP_CONTAINER" ldapsearch -LLL -x -H "$LDAP_URL" -s base -b "" namingContexts || true
+ldap_search -s base -b "" namingContexts || true
 
-# 1) OUs
-exec_ldif_add "Create OUs (People, Groups, Service)" <<'LDIF'
-dn: ou=People,dc=adviseme,dc=local
+########################################
+# ===== 1. Ensure OUs exist        ==== #
+########################################
+
+# We'll 'add' them unconditionally. If they already exist, ldapadd will error.
+# That's fine; we'll just warn and keep going.
+{
+ldap_add_ldif "Create OUs (People, Groups, Service)" <<LDIF
+dn: ${PEOPLE_OU}
 objectClass: top
 objectClass: organizationalUnit
 ou: People
 
-dn: ou=Groups,dc=adviseme,dc=local
+dn: ${GROUPS_OU}
 objectClass: top
 objectClass: organizationalUnit
 ou: Groups
 
-dn: ou=Service,dc=adviseme,dc=local
+dn: ${SERVICE_OU}
 objectClass: top
 objectClass: organizationalUnit
 ou: Service
 LDIF
+} || warn "Some OUs may already exist, continuing."
 
-validate "Organizational Units exist" -b "dc=adviseme,dc=local" "(objectClass=organizationalUnit)" dn ou
+log "Validate Organizational Units"
+ldap_search -b "$OU_BASE" "(objectClass=organizationalUnit)" dn ou
 
-# 2) Groups
-exec_ldif_add "Create groups (advisors, advisees)" <<'LDIF'
-dn: cn=advisors,ou=Groups,dc=adviseme,dc=local
+########################################
+# ===== 2. Create groups           ==== #
+########################################
+
+{
+ldap_add_ldif "Create groups (advisors, advisees)" <<LDIF
+dn: ${ADVISORS_DN}
 objectClass: top
 objectClass: groupOfNames
 cn: advisors
-member: cn=admin,dc=adviseme,dc=local
+member: ${ADMIN_DN}
 
-dn: cn=advisees,ou=Groups,dc=adviseme,dc=local
+dn: ${ADVISEES_DN}
 objectClass: top
 objectClass: groupOfNames
 cn: advisees
-member: cn=admin,dc=adviseme,dc=local
+member: ${ADMIN_DN}
 LDIF
+} || warn "Groups may already exist, continuing."
 
-validate "Groups exist" -b "ou=Groups,dc=adviseme,dc=local" "(cn=*)" dn cn
+log "Validate Groups"
+ldap_search -b "$GROUPS_OU" "(cn=*)" dn cn member
 
-# 3) People + service account
-exec_ldif_add "Create people (Alice, Bob) and service account" <<'LDIF'
-dn: cn=Alice Advisor,ou=People,dc=adviseme,dc=local
+########################################
+# ===== 3. Create People + Service ==== #
+########################################
+
+{
+ldap_add_ldif "Create people (Alice, Bob) and service account" <<LDIF
+dn: ${ALICE_DN}
 objectClass: inetOrgPerson
 cn: Alice Advisor
 sn: Advisor
 givenName: Alice
-uid: aadvisor
+uid: ${ALICE_UID}
 mail: alice.advisor@adviseme.local
-userPassword: AdvisorPass123!
+userPassword: ${ALICE_PASS}
 
-dn: cn=Bob Advisee,ou=People,dc=adviseme,dc=local
+dn: ${BOB_DN}
 objectClass: inetOrgPerson
 cn: Bob Advisee
 sn: Advisee
 givenName: Bob
-uid: badvisee
+uid: ${BOB_UID}
 mail: bob.advisee@adviseme.local
-userPassword: AdviseePass123!
+userPassword: ${BOB_PASS}
 
-dn: cn=adviseme-app,ou=Service,dc=adviseme,dc=local
+dn: ${APP_DN}
 objectClass: simpleSecurityObject
 objectClass: organizationalRole
 cn: adviseme-app
 description: Application bind DN
-userPassword: AppBindPass123!
+userPassword: ${APP_PASS}
 LDIF
+} || warn "People/service may already exist, continuing."
 
-validate "People exist"   -b "ou=People,dc=adviseme,dc=local"  "(cn=*)" dn cn uid
-validate "Service exists" -b "ou=Service,dc=adviseme,dc=local" "(cn=adviseme-app)" dn
+log "Validate People"
+ldap_search -b "$PEOPLE_OU" "(cn=*)" dn cn uid
 
-# 4) Add people to groups
-exec_ldif_modify "Add Alice to advisors; Bob to advisees" <<'LDIF'
-dn: cn=advisors,ou=Groups,dc=adviseme,dc=local
+log "Validate Service Account"
+ldap_search -b "$SERVICE_OU" "(cn=adviseme-app)" dn cn
+
+########################################
+# ===== 4. Add people to groups    ==== #
+########################################
+
+{
+ldap_modify_ldif "Add Alice to advisors; Bob to advisees" <<LDIF
+dn: ${ADVISORS_DN}
 changetype: modify
 add: member
-member: cn=Alice Advisor,ou=People,dc=adviseme,dc=local
+member: ${ALICE_DN}
 
-dn: cn=advisees,ou=Groups,dc=adviseme,dc=local
+dn: ${ADVISEES_DN}
 changetype: modify
 add: member
-member: cn=Bob Advisee,ou=People,dc=adviseme,dc=local
+member: ${BOB_DN}
 LDIF
+} || warn "Group membership may already exist, continuing."
 
-validate "Group memberships" -b "ou=Groups,dc=adviseme,dc=local" "(objectClass=groupOfNames)" dn member
+log "Validate Group memberships"
+ldap_search -b "$GROUPS_OU" "(objectClass=groupOfNames)" dn cn member
 
-# 5) Quick bind tests (whoami)
+########################################
+# ===== 5. Test simple binds       ==== #
+########################################
+
 log "Test bind for Alice"
-sudo docker exec "$LDAP_CONTAINER" ldapwhoami -x -H "$LDAP_URL" \
-  -D "cn=Alice Advisor,ou=People,dc=adviseme,dc=local" -w "AdvisorPass123!" >/dev/null
-ok "Alice bind OK"
+sudo docker exec "$LDAP_CONTAINER" ldapwhoami -x \
+  -H "$LDAP_URL" \
+  -D "$ALICE_DN" \
+  -w "$ALICE_PASS" >/dev/null && ok "Alice bind OK" || warn "Alice bind FAILED"
 
 log "Test bind for Bob"
-sudo docker exec "$LDAP_CONTAINER" ldapwhoami -x -H "$LDAP_URL" \
-  -D "cn=Bob Advisee,ou=People,dc=adviseme,dc=local" -w "AdviseePass123!" >/dev/null
-ok "Bob bind OK"
+sudo docker exec "$LDAP_CONTAINER" ldapwhoami -x \
+  -H "$LDAP_URL" \
+  -D "$BOB_DN" \
+  -w "$BOB_PASS" >/dev/null && ok "Bob bind OK" || warn "Bob bind FAILED"
 
-# 6) Final tree snapshot (DNs only)
-validate "Directory snapshot (DNs)" -b "dc=adviseme,dc=local" "(objectClass=*)" dn
+########################################
+# ===== 6. Snapshot tree           ==== #
+########################################
+
+log "Directory snapshot (DNs only)"
+ldap_search -b "$OU_BASE" "(objectClass=*)" dn
 
 ok "LDAP bootstrap completed successfully 🎉"

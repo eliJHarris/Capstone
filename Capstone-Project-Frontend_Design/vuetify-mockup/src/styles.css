@@ -1,0 +1,3 @@
+html, body, #app { height: 100%; margin: 0; }
+body { font-family: Roboto, 'Helvetica Neue', Arial, sans-serif; }
+.v-application { min-height: 100vh; }
