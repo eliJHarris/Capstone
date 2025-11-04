@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
 SECRETS_DIR="./secrets"
 ROOT_PASS_FILE="$SECRETS_DIR/db_root_pass.txt"

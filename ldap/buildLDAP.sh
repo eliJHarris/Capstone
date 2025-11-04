@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # scripts/bootstrap_ldap.sh
-set -euo pipefail
 
 ########################
 # ====== config ====== #
