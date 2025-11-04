@@ -22,8 +22,8 @@ GROUPS_OU="ou=Groups,${OU_BASE}"
 SERVICE_OU="ou=Service,${OU_BASE}"
 
 ALICE_DN="cn=Alice Advisor,${PEOPLE_OU}"
-ALICE_UID="aadvisor"
-ALICE_PASS="AdvisorPass123!"
+ALICE_UID="a"
+ALICE_PASS="123"
 
 BOB_DN="cn=Bob Advisee,${PEOPLE_OU}"
 BOB_UID="badvisee"
