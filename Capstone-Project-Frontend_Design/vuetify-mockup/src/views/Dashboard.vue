@@ -24,9 +24,3 @@ function handleLogout() {
   router.push({ name: "login" });
 }
 </script>
-
-<style scoped>
-.v-main {
-  padding-top: 64px;
-}
-</style>
