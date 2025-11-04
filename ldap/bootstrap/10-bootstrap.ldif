@@ -1,0 +1,54 @@
+dn: ou=People,dc=adviseme,dc=local
+objectClass: top
+objectClass: organizationalUnit
+ou: People
+
+dn: ou=Groups,dc=adviseme,dc=local
+objectClass: top
+objectClass: organizationalUnit
+ou: Groups
+
+dn: ou=Service,dc=adviseme,dc=local
+objectClass: top
+objectClass: organizationalUnit
+ou: Service
+
+dn: cn=Alice Advisor,ou=People,dc=adviseme,dc=local
+objectClass: inetOrgPerson
+cn: Alice Advisor
+sn: Advisor
+givenName: Alice
+uid: a
+mail: alice.advisor@adviseme.local
+userPassword: 123
+
+dn: cn=Bob Advisee,ou=People,dc=adviseme,dc=local
+objectClass: inetOrgPerson
+cn: Bob Advisee
+sn: Advisee
+givenName: Bob
+uid: badvisee
+mail: bob.advisee@adviseme.local
+userPassword: AdviseePass123!
+
+dn: cn=adviseme-app,ou=Service,dc=adviseme,dc=local
+objectClass: simpleSecurityObject
+objectClass: organizationalRole
+cn: adviseme-app
+description: Application bind DN
+userPassword: AppBindPass123!
+
+dn: cn=advisors,ou=Groups,dc=adviseme,dc=local
+objectClass: top
+objectClass: groupOfNames
+cn: advisors
+member: cn=admin,dc=adviseme,dc=local
+member: cn=Alice Advisor,ou=People,dc=adviseme,dc=local
+
+dn: cn=advisees,ou=Groups,dc=adviseme,dc=local
+objectClass: top
+objectClass: groupOfNames
+cn: advisees
+member: cn=admin,dc=adviseme,dc=local
+member: cn=Bob Advisee,ou=People,dc=adviseme,dc=local
+
