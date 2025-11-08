@@ -21,6 +21,9 @@ DEFAULT_HEADERS = {
     "User-Agent": "CapstonePDFScraper/1.0 (+https://github.com/)",
 }
 
+# A tuple makes this a lightweight, immutable pair (title, text) for each PDF.
+PDFTextChunk = Tuple[Optional[str], str]
+
 
 class RobotsHandler:
     """Cache and evaluate robots.txt directives per domain."""
@@ -110,12 +113,13 @@ def crawl_for_pdfs(
     domain = start_parsed.netloc
 
     start_url = normalize_url(start_url)
-    # Queue implements BFS so we fan out evenly without going deep on one branch.
+    # BFS queue plus helper sets keep us from visiting the same page twice.
     to_visit = deque([start_url])
     queued_pages: Set[str] = {start_url}
     seen_pages: Set[str] = set()
     pdf_urls: Set[str] = set()
 
+    # Stop when the queue is empty or we've hit the crawl limit.
     while to_visit and len(seen_pages) < max_pages:
         current_url = to_visit.popleft()
         queued_pages.discard(current_url)
@@ -143,6 +147,7 @@ def crawl_for_pdfs(
             continue
 
         soup = BeautifulSoup(response.text, "html.parser")
+        # Walk every anchor tag so we consider both HTML pages and PDFs.
         for link in soup.find_all("a", href=True):
             resolved = urljoin(current_url, link["href"])
             resolved = normalize_url(resolved)
@@ -151,6 +156,7 @@ def crawl_for_pdfs(
             allowed_by_robots = robots.can_fetch(resolved)
 
             if resolved_lower.endswith(".pdf"):
+                # Apply optional keyword filter before saving the PDF URL.
                 if keywords and not any(keyword in resolved_lower for keyword in keywords):
                     logging.debug(
                         "Skipping PDF %s (URL did not match keywords: %s)",
@@ -169,6 +175,7 @@ def crawl_for_pdfs(
                     logging.info("Found PDF: %s", resolved)
                 continue
 
+            # Only enqueue HTML pages that stay within the starting domain.
             if (
                 is_same_domain(resolved, domain)
                 and resolved not in seen_pages
@@ -195,6 +202,7 @@ def extract_pdf_content(pdf_url: str, session: requests.Session) -> Tuple[Option
 
     pdf_bytes = BytesIO(response.content)
     title = extract_pdf_title(pdf_bytes)
+    # Reuse the same BytesIO so pdfminer can rewind between reads.
     try:
         text = extract_text(pdf_bytes)
     except Exception as exc:  # noqa: BLE001
@@ -205,7 +213,7 @@ def extract_pdf_content(pdf_url: str, session: requests.Session) -> Tuple[Option
     return title, text
 
 
-def save_text_chunks(chunks: Iterable[Tuple[Optional[str], str]], output_path: Path) -> None:
+def save_text_chunks(chunks: Iterable[PDFTextChunk], output_path: Path) -> None:
     """Append each chunk of text to the output file with separators."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as handle:
@@ -216,7 +224,7 @@ def save_text_chunks(chunks: Iterable[Tuple[Optional[str], str]], output_path: P
             if title:
                 handle.write(f"Title: {title}\n")
             handle.write(chunk)
-            handle.write("\n----- PDF {idx} END -----\n\n".format(idx=idx))
+            handle.write(f"\n----- PDF {idx} END -----\n\n")
 
 
 def configure_logging(verbose: bool) -> None:
@@ -246,6 +254,7 @@ def extract_pdf_title(pdf_bytes: BytesIO) -> Optional[str]:
 
 
 def parse_args(argv: Iterable[str]) -> argparse.Namespace:
+    """Define and parse command-line arguments."""
     parser = argparse.ArgumentParser(
         description="Crawl a domain for PDFs, extract their text, and combine it.",
     )
@@ -294,12 +303,15 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
 
 
 def main(argv: Optional[Iterable[str]] = None) -> int:
+    """Entry point when run as a script."""
     args = parse_args(list(argv) if argv is not None else sys.argv[1:])
     configure_logging(args.verbose)
 
+    # Session keeps connections alive and shares headers.
     session = requests.Session()
     session.headers.update(DEFAULT_HEADERS)
     robots = RobotsHandler(session=session, user_agent=session.headers.get("User-Agent", "*"))
+    # Normalize keyword filters once.
     keywords = [keyword.lower() for keyword in args.require_keyword]
 
     logging.info("Starting crawl at %s", args.start_url)
@@ -317,7 +329,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         return 1
 
     logging.info("Found %d PDFs. Beginning extraction.", len(pdf_urls))
-    text_chunks: list[Tuple[Optional[str], str]] = []
+    text_chunks: list[PDFTextChunk] = []
 
     for pdf_url in sorted(pdf_urls):
         if not robots.can_fetch(pdf_url):
@@ -340,6 +352,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         logging.warning("No text could be extracted from the collected PDFs.")
         return 1
 
+    # Resolve to an absolute path for clearer logs.
     output_path = Path(args.output).expanduser().resolve()
     save_text_chunks(text_chunks, output_path)
     logging.info("Combined text written to %s", output_path)
