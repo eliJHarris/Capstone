@@ -250,13 +250,13 @@ const resetForm = () => {
 
 const prefillExample = () => {
   store.setForm({
-    startUrl: 'https://www.cs.princeton.edu/courses/catalog',
-    outputPath: 'outputs/princeton_cs.txt',
+    startUrl: 'uafs.edu',
+    outputPath: 'uafs.txt',
     maxPages: 10,
     delay: 0.5,
     timeout: 20,
     verbose: true,
-    requireKeywords: ['cs', 'schedule'],
+    requireKeywords: [],
   })
 }
 </script>
