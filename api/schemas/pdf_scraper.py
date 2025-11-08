@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-from enum import Enum
 from typing import List, Optional
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator
@@ -51,26 +49,3 @@ class PDFScrapeResponse(BaseModel):
     stdout: str = Field("", description="Captured standard output from the scraper process.")
     stderr: str = Field("", description="Captured standard error from the scraper process.")
     duration_seconds: float = Field(..., description="Total runtime of the scraper process in seconds.")
-
-
-class PDFScrapeJobStatus(str, Enum):
-    pending = "pending"
-    running = "running"
-    succeeded = "succeeded"
-    failed = "failed"
-
-
-class PDFScrapeJobSummary(BaseModel):
-    job_id: str
-    status: PDFScrapeJobStatus
-    created_at: datetime = Field(..., description="UTC timestamp when the job was created.")
-    updated_at: datetime = Field(..., description="UTC timestamp when the job status last changed.")
-
-
-class PDFScrapeJobDetail(PDFScrapeJobSummary):
-    request: PDFScrapeRequest
-    result: Optional[PDFScrapeResponse] = Field(
-        None,
-        description="PDF scraper output available after completion.",
-    )
-    error: Optional[str] = Field(None, description="Error message when the job fails.")
