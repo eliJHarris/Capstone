@@ -32,7 +32,7 @@ class NotificationService:
         if user_id:
             query = query.filter(Notification.userID == user_id)
 
-        schedules = query.offset(skip).limit(limit).all()
+        notifications = query.offset(skip).limit(limit).all()
 
         # Build response with class count
         result = []
@@ -47,7 +47,7 @@ class NotificationService:
         return result
 
     @staticmethod
-    def get_schedule_by_id(db: Session, notification_id: int) -> notificationResponse:
+    def get_notification_by_id(db: Session, notification_id: int) -> notificationResponse:
         """
         Get a specific schedule by ID with all classes
         """
@@ -74,10 +74,9 @@ class NotificationService:
 
         # Create new schedule
         new_notification = Notification(
-            notificationID=data.notificationID,
-            userID=data.userID,
-            description=data.description,
-            createdAt=data.createdAt
+            userID=notification_data.userID,
+            description=notification_data.description,
+            createdAt=datetime.now()
         )
 
         db.add(new_notification)

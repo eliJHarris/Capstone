@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import DateTime
+from datetime import datetime
 from typing import List, Optional
 
 from db.database import get_db
@@ -20,7 +20,6 @@ router = APIRouter(
 def get_notifications(
     notification_id: Optional[int] = Query(None, description="Filter by notification ID"),
     user_id: Optional[int] = Query(None, description="Filter by user ID"),
-    createdAt: Optional[DateTime] = Query(None, description="Filter by Creation Date"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Maximum number of records to return"),
     db: Session = Depends(get_db)
@@ -34,11 +33,10 @@ def get_notifications(
     - **skip**: Pagination - number of records to skip
     - **limit**: Pagination - maximum number of records to return
     """
-    return NotificationService.get_all_notification(
+    return NotificationService.get_all_notifications(
         db=db,
         notification_id=notification_id,
         user_id=user_id,
-        description=description,
         skip=skip,
         limit=limit
     )
