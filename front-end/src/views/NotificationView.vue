@@ -6,36 +6,52 @@
       <v-container fluid style="flex:1; padding-top: 24px;">
         <h2 class="text-h4 mb-4">You're in the {{ tabName }} tab</h2>
 
-        <v-row dense>
-          <v-col cols="12" sm="6" md="4" v-for="card in cards" :key="card.title">
-            <DashboardCard
-              :title="card.title"
-              :value="card.value"
-              :icon="card.icon"
-              :footer="card.footer"
-            />
-          </v-col>
-        </v-row>
+        <!-- Table rendering notifications -->
+        <v-table v-if="notifications.length > 0">
+          <thead>
+            <tr>
+              <th class="text-left">userID</th>
+              <th class="text-left">description</th>
+              <th class="text-left">createdAt</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="notification in notifications" :key="notification.notificationID">
+              <td>{{ notification.userID }}</td>
+              <td>{{ notification.description }}</td>
+              <td>{{ notification.createdAt }}</td>
+            </tr>
+          </tbody>
+        </v-table>
+
+        <!-- Optional loading state when there are no notifications -->
+        <v-alert v-else type="info">Loading notifications...</v-alert>
       </v-container>
     </v-main>
   </v-app>
 </template>
 
 <script setup>
+import { ref, onMounted } from 'vue'
+import axios from 'axios'
 import AppNavbar from '@/components/AppNavbar.vue'
 import AppSidebar from '@/components/AppSidebar.vue'
 import DashboardCard from '@/components/DashboardCard.vue'
 
-const role = 'advisor'
-
-const cards = [
-  { title: 'Metric 1', value: 13, icon: 'mdi-chart-line', footer: 'Updated today' },
-  { title: 'Metric 2', value: 456, icon: 'mdi-chart-bar', footer: 'Updated today' },
-  { title: 'Metric 3', value: 789, icon: 'mdi-chart-pie', footer: 'Updated today' },
-  { title: 'Metric 4', value: 789, icon: 'mdi-chart-pie', footer: 'Updated today' },
-]
-
+// Define reactive variables with Composition API
+const notifications = ref([]) // Store notifications array
+const role = 'advisor' // Static value for role
 defineProps({
   tabName: String
+})
+
+// Fetch data when component is mounted
+onMounted(async () => {
+  try {
+    const response = await axios.get("http://127.0.0.1:8000/api/notifications/?skip=0&limit=100")
+    notifications.value = response.data // Store response data in notifications
+  } catch (error) {
+    console.error("Error fetching data:", error)
+  }
 })
 </script>
