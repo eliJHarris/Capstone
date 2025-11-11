@@ -17,6 +17,10 @@ from pdfminer.high_level import extract_text
 from pdfminer.pdfdocument import PDFDocument
 from pdfminer.pdfparser import PDFParser
 
+#uses requests for http fetching
+#BeautifulSoup for html parsing and link extraction
+#pdfminer for pulling pdf text
+
 DEFAULT_HEADERS = {
     "User-Agent": "CapstonePDFScraper/1.0 (+https://github.com/)",
 }
