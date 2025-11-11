@@ -3,6 +3,7 @@ from typing import Optional, List
 from datetime import datetime
 from enum import Enum
 
+#Describes API Paylods (Request/Response)
 
 class ScheduleStatus(str, Enum):
     DRAFT = "DRAFT"
