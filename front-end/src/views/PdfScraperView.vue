@@ -2,6 +2,7 @@
   <div class="py-6">
     <div class="d-flex align-center mb-4">
       <div>
+        <h1 class="text-h4 mb-1">WIP SUBJECT TO CHANGE</h1>
         <h2 class="text-h4 mb-1">PDF Scraper</h2>
         <p class="text-body-2 text-medium-emphasis">
           Trigger the FastAPI PDF scraper and inspect its output without leaving the UI.
