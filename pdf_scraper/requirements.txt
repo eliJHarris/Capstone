@@ -1,3 +1,0 @@
-beautifulsoup4>=4.12
-pdfminer.six>=20231228
-requests>=2.31

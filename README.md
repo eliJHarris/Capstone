@@ -14,7 +14,7 @@ Quick start (may need to run following with ```sudo```)
    ```
    docker compose up --build
    ```
-2. Front-end should be available at http://localhost
+2. Front-end should be available at http://localhost:8080
 3. API should be available at http://localhost:8000
 
 Stop and remove containers

@@ -5,7 +5,6 @@ import enum
 
 Base = declarative_base()
 
-#Describes database entities. Represents how data is stored and loaded.
 
 class ScheduleStatusEnum(str, enum.Enum):
     DRAFT = "DRAFT"
