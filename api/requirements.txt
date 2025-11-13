@@ -2,3 +2,8 @@ fastapi
 uvicorn
 sqlalchemy==2.0.38
 pymysql==1.1.1
+requests
+beautifulsoup4
+pdfminer.six
+openai>=1.52.0
+pydantic-settings>=2.0.0
