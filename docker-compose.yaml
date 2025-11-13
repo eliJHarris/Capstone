@@ -28,9 +28,12 @@ services:
       - "8000:8000"
     volumes:
       - ./api:/code
+      - ./pdf_scraper:/pdf_scraper:ro
     environment:
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=mysql+pymysql://root:pass@adviseme-db/adviseme
+      - PDF_SCRAPER_PATH=/pdf_scraper/scrape_pdfs.py
+      - API_WORKDIR=/code
     depends_on:
       db:
         condition: service_healthy
@@ -42,10 +45,10 @@ services:
       dockerfile: Dockerfile
     container_name: capstone_frontend
     ports:
-      - "8080:8080"
+      - "5173:5173"
     volumes:
       - ./front-end:/code
     environment:
-      - VITE_API_URL=http://localhost:8000/api
+      - VITE_API_URL=http://api:8000/api
     depends_on:
       - api
