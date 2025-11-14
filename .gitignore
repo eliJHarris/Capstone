@@ -52,3 +52,9 @@ env/
 
 
 >>>>>>> origin/dev
+secrets/
+!secrets/.gitkeep
+ldap/certs/
+!ldap/certs/.gitkeep
+reverse-proxy/certs/
+!reverse-proxy/certs/.gitkeep

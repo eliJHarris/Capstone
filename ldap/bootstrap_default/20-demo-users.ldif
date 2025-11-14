@@ -1,0 +1,24 @@
+dn: cn=Alice Advisor,ou=People,dc=adviseme,dc=local
+objectClass: inetOrgPerson
+cn: Alice Advisor
+sn: Advisor
+givenName: Alice
+uid: a
+mail: alice.advisor@adviseme.local
+userPassword: {SSHA}G6HKU6qYfAuTNUbu6VydLpgW3ndBZHYx
+
+dn: cn=Bob Advisee,ou=People,dc=adviseme,dc=local
+objectClass: inetOrgPerson
+cn: Bob Advisee
+sn: Advisee
+givenName: Bob
+uid: b
+mail: bob.advisee@adviseme.local
+userPassword: {SSHA}Q35XOCTJwv31VmhPxXxt8fo+Z9hBZHYy
+
+dn: cn=adviseme-app,ou=Service,dc=adviseme,dc=local
+objectClass: simpleSecurityObject
+objectClass: organizationalRole
+cn: adviseme-app
+description: Application bind DN
+userPassword: {SSHA}awsXshoDCh2FTF8YALVV21AKXmFBcHAx

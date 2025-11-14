@@ -1,7 +1,9 @@
 FROM node:lts-alpine
 
-# install simple http server for serving static content
-RUN npm install -g http-server
+# install SPA-friendly static server
+RUN npm install -g serve
+
+ENV VITE_AUTH_API_BASE_URL=https://localhost/auth
 
 # make the 'app' folder the current working directory
 WORKDIR /app
@@ -19,7 +21,7 @@ COPY . .
 RUN npm run build
 
 EXPOSE 8080
-CMD [ "http-server", "dist" ]
+CMD [ "serve", "-s", "dist", "-l", "8080" ]
 
 # You will have to run command using sudo or su
 # docker build -t vuejs-cookbook/dockerize-vuejs-app .

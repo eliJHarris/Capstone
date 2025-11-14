@@ -1,24 +1,49 @@
 import os
+import ssl
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
-from ldap3 import Server, Connection, ALL, ALL_ATTRIBUTES, SUBTREE
+from ldap3 import Server, Connection, ALL, ALL_ATTRIBUTES, SUBTREE, Tls
 from jose import jwt
 
 app = FastAPI(title="Adviseme Auth API")
 
 # CORS so frontend (Vuetify or whatever) can call us locally
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "ALLOWED_ORIGINS",
+        "https://localhost,https://localhost:5173,https://localhost:3000",
+    ).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],  # tighten later
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+def _read_secret(env_name: str, default: str = "") -> str:
+    """Allow *_FILE overrides for sensitive settings."""
+    file_path = os.getenv(f"{env_name}_FILE", "")
+    if file_path and os.path.exists(file_path):
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        except OSError:
+            # fall back to env/default if file can't be read
+            pass
+    return os.getenv(env_name, default)
+
 # ------------ config from env -------------
 LDAP_HOST       = os.getenv("LDAP_HOST", "adviseme-openldap")
 LDAP_PORT       = int(os.getenv("LDAP_PORT", "389"))
+LDAP_USE_SSL    = os.getenv("LDAP_USE_SSL", "false").lower() == "true"
+LDAP_TLS_VALIDATE = os.getenv("LDAP_TLS_VALIDATE", "false").lower() == "true"
+LDAP_CA_CERT_FILE = os.getenv("LDAP_CA_CERT_FILE", "")
 
 # This is the ROOT of the directory (naming context)
 LDAP_BASE_DN    = os.getenv("LDAP_BASE_DN", "dc=adviseme,dc=local")
@@ -33,19 +58,33 @@ LDAP_BIND_DN    = os.getenv("LDAP_BIND_DN", "cn=adviseme-app,ou=Service,dc=advis
 # We'll look for LDAP_BIND_PASSWORD first (what docker-compose typically sets),
 # and fall back to LDAP_BIND_PW as a backup.
 LDAP_BIND_PASSWORD = (
-    os.getenv("LDAP_BIND_PASSWORD") or
+    _read_secret("LDAP_BIND_PASSWORD") or
     os.getenv("LDAP_BIND_PW") or
     "AppBindPass123!"
 )
 
-JWT_SECRET      = os.getenv("JWT_SECRET", "change-me")
+JWT_SECRET      = _read_secret("JWT_SECRET", "change-me")
 JWT_ALGO        = "HS256"
 JWT_EXPIRE_MIN  = int(os.getenv("JWT_EXPIRE_MINUTES", "60"))
 
 # ------------ helpers -------------
 def _server():
     # get_info=ALL lets ldap3 cache schema, so you'll see those "cn=Subschema" queries in the logs
-    return Server(LDAP_HOST, port=LDAP_PORT, get_info=ALL)
+    tls_config = None
+    if LDAP_USE_SSL:
+        if LDAP_TLS_VALIDATE and not LDAP_CA_CERT_FILE:
+            raise RuntimeError("LDAP_TLS_VALIDATE is true but LDAP_CA_CERT_FILE is missing")
+        tls_config = Tls(
+            validate=ssl.CERT_REQUIRED if LDAP_TLS_VALIDATE else ssl.CERT_NONE,
+            ca_certs_file=LDAP_CA_CERT_FILE or None,
+        )
+    return Server(
+        LDAP_HOST,
+        port=LDAP_PORT,
+        use_ssl=LDAP_USE_SSL,
+        tls=tls_config,
+        get_info=ALL,
+    )
 
 def _bind_service() -> Connection:
     """

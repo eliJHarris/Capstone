@@ -8,9 +8,18 @@ import os
 app = FastAPI(title="Adviseme Core API")
 
 # --- CORS (you can tighten origins in prod) ---
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "ALLOWED_ORIGINS",
+        "https://localhost,https://localhost:5173,https://localhost:3000",
+    ).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=False,  # set True only if you actually use cookies
     allow_methods=["*"],
     allow_headers=["*"],
@@ -26,13 +35,21 @@ def _read_secret(path: str, fallback: str = "") -> str:
         pass
     return fallback
 
+def _env_or_secret(var_name: str, default: str = "") -> str:
+    file_path = os.getenv(f"{var_name}_FILE", "")
+    if file_path:
+        val = _read_secret(file_path, None)
+        if val is not None:
+            return val
+    return os.getenv(var_name, default)
+
 DB_HOST = os.getenv("DB_HOST", "adviseme-db")
 DB_USER = os.getenv("DB_USER", "adviseme_app")
 DB_NAME = os.getenv("DB_NAME", "adviseme")
 
 DB_PASS = _read_secret(os.getenv("DB_PASS_FILE", ""), os.getenv("DB_PASS", "app_pass"))
 
-JWT_SECRET = os.getenv("JWT_SECRET", "change-me")
+JWT_SECRET = _env_or_secret("JWT_SECRET", "change-me")
 JWT_ALGO = "HS256"
 
 # URL-encode in case the password has special characters
