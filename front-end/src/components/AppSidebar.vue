@@ -49,6 +49,7 @@ export default {
         { title: 'Student List', to: '/student-list' },
         { title: 'Security', to: '/security' },
         { title: 'Schedules / Appointments', to: '/schedules' },
+        { title: 'PDF Scraper', to: '/pdf-scraper' },
       ]
     } else {
       this.items = [
@@ -57,6 +58,7 @@ export default {
         { title: 'Class History', to: '/class-history' },
         { title: 'Security', to: '/security' },
         { title: 'Schedules / Appointments', to: '/schedules' },
+        { title: 'PDF Scraper', to: '/pdf-scraper' },
       ]
     }
   }
