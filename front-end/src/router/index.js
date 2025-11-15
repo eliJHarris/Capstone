@@ -40,8 +40,6 @@ const dashboardChildren = [
 ]
 
 const routes = [
-  { path: '/login', component: LoginView },
-
   { path: '/notifications', component: NotificationView, props: { tabName: 'Notifications' } },
   { path: '/:catchAll(.*)', redirect: '/' },
   { path: '/', name: 'landing', component: LandingPage },
