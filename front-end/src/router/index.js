@@ -41,15 +41,8 @@ const dashboardChildren = [
 
 const routes = [
   { path: '/login', component: LoginView },
-  { path: '/', component: LandingPage },
-  { path: '/dashboard', component: TabView, props: { tabName: 'Dashboard' } },
-  { path: '/', component: LandingPage },
-  { path: '/dashboard', component: TabView, props: { tabName: 'Dashboard' } },
+
   { path: '/notifications', component: NotificationView, props: { tabName: 'Notifications' } },
-  { path: '/student-list', component: TabView, props: { tabName: 'Student List' } },
-  { path: '/class-history', component: TabView, props: { tabName: 'Class History' } },
-  { path: '/security', component: TabView, props: { tabName: 'Security' } },
-  { path: '/schedules', component: TabView, props: { tabName: 'Schedules / Appointments' } },
   { path: '/:catchAll(.*)', redirect: '/' },
   { path: '/', name: 'landing', component: LandingPage },
   { path: '/login', name: 'login', component: LoginView },

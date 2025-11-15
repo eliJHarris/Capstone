@@ -10,9 +10,9 @@
         <v-table v-if="notifications.length > 0">
           <thead>
             <tr>
-              <th class="text-left">userID</th>
-              <th class="text-left">description</th>
-              <th class="text-left">createdAt</th>
+              <th class="text-left">From</th>
+              <th class="text-left">Description</th>
+              <th class="text-left">Time</th>
             </tr>
           </thead>
           <tbody>

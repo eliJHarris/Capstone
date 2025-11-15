@@ -48,6 +48,7 @@ services:
       - "5173:5173"
     volumes:
       - ./front-end:/code
+      - ./front-end/node-modules:/code/node-modules
     environment:
       - VITE_API_URL=http://api:8000/api
     depends_on:
