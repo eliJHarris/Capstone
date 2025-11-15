@@ -50,7 +50,7 @@ const routes = [
   { path: '/class-history', component: TabView, props: { tabName: 'Class History' } },
   { path: '/security', component: TabView, props: { tabName: 'Security' } },
   { path: '/schedules', component: TabView, props: { tabName: 'Schedules / Appointments' } },
-  { path: '/:catchAll(.*)', redirect: '/' } 
+  { path: '/:catchAll(.*)', redirect: '/' },
   { path: '/', name: 'landing', component: LandingPage },
   { path: '/login', name: 'login', component: LoginView },
   {

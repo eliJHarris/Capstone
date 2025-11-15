@@ -24,4 +24,4 @@ ENV HOST=0.0.0.0 \
 # docker run -it -p 8080:8080 --rm --name dockerize-vuejs-app-1 vuejs-cookbook/dockerize-vuejs-app
 # access running site at localhost:8080
 # Install (or update) dependencies inside the mounted workspace, then start the dev server
-CMD [ "sh", "-c", "npm install && npm run dev -- --host ${HOST} --port ${PORT}" ]
+CMD [ "sh", "-c", "npm run dev -- --host ${HOST} --port ${PORT}" ]
