@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from db.database import engine, get_db
 from routes.schedules import router as schedules_router
+from routes.notifications import router as notifications_router
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -24,6 +25,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(schedules_router, prefix="/api")
+app.include_router(notifications_router, prefix="/api")
 
 
 # Health check endpoints

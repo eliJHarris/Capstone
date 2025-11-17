@@ -1,29 +1,20 @@
 FROM node:lts-alpine
 
-# install SPA-friendly static server
-RUN npm install -g serve
+# keep dependencies needed by chokidar/Vite's file watcher
+RUN apk add --no-cache libc6-compat
 
-ENV VITE_AUTH_API_BASE_URL=https://localhost/auth
+WORKDIR /code
 
-# make the 'app' folder the current working directory
-WORKDIR /app
-
-# copy both 'package.json' and 'package-lock.json' (if available)
+# install dependencies first for better layer caching
 COPY package*.json ./
-
-# install project dependencies
 RUN npm install
 
-# copy project files and folders to the current working directory (i.e. 'app' folder)
+# include the rest of the source so the container can also run without bind mounts
 COPY . .
 
-# build app for production with minification
-RUN npm run build
+EXPOSE 5173
+ENV HOST=0.0.0.0 \
+    PORT=5173
 
-EXPOSE 8080
-CMD [ "serve", "-s", "dist", "-l", "8080" ]
-
-# You will have to run command using sudo or su
-# docker build -t vuejs-cookbook/dockerize-vuejs-app .
-# docker run -it -p 8080:8080 --rm --name dockerize-vuejs-app-1 vuejs-cookbook/dockerize-vuejs-app
-# access running site at localhost:8080
+# Install (or update) dependencies inside the mounted workspace, then start the dev server
+CMD [ "sh", "-c", "npm install && npm run dev -- --host ${HOST} --port ${PORT}" ]
