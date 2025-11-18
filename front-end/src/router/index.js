@@ -6,6 +6,7 @@ import DashboardHome from '@/views/DashboardHome.vue'
 import PlaceholderView from '@/views/PlaceholderView.vue'
 import SchedulesView from '@/views/SchedulesView.vue'
 import PdfScraperView from '@/views/PdfScraperView.vue'
+import StudentListView from '@/views/StudentListView.vue'
 
 const dashboardChildren = [
   { path: 'dashboard', name: 'dashboard', component: DashboardHome },
@@ -18,7 +19,7 @@ const dashboardChildren = [
   {
     path: 'student-list',
     name: 'student-list',
-    component: PlaceholderView,
+    component: StudentListView,
     props: { title: 'Student List', description: 'Manage advisees and their assigned advisors.' },
   },
   {
