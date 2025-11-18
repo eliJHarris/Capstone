@@ -1,14 +1,18 @@
-FROM node:lts-alpine
+FROM node:lts-alpine AS build
 
-RUN apk add --no-cache libc6-compat
-
-WORKDIR /code
+WORKDIR /app
 
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
 COPY . .
+RUN npm run build
 
-EXPOSE 5173
+FROM nginx:1.25-alpine AS runtime
 
-CMD ["npm", "run", "dev"]
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

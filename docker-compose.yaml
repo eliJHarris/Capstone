@@ -149,9 +149,7 @@ services:
     container_name: adviseme-frontend
     restart: unless-stopped
     expose:
-      - "8080"
-    volumes:
-      - ./reverse-proxy/certs:/certs:ro
+      - "80"
     depends_on:
       - core-api
       - auth-api
@@ -168,10 +166,19 @@ services:
       - core-api
     volumes:
       - ./reverse-proxy/conf.d:/etc/nginx/conf.d:ro
-      - ./reverse-proxy/certs:/etc/nginx/certs:ro
+      - ./reverse-proxy/certs:/etc/nginx/certs
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      TLS_DOMAINS: ${TLS_DOMAINS:-localhost,127.0.0.1,adviseme.local}
+      TLS_DAYS: ${TLS_DAYS:-365}
+    command:
+      [
+        "/bin/sh",
+        "-c",
+        "apk add --no-cache openssl >/dev/null && /etc/nginx/certs/generate-selfsigned.sh && nginx -g 'daemon off;'"
+      ]
     networks:
       - adviseme-net
 
