@@ -3,9 +3,25 @@ const normalizeBaseUrl = (value) => {
   return value.endsWith('/') ? value.slice(0, -1) : value
 }
 
+const resolveDefaultApiBase = () => {
+  if (typeof window !== 'undefined' && window?.location?.origin) {
+    return `${window.location.origin.replace(/\/$/, '')}/api`
+  }
+  return 'https://localhost/api'
+}
+
+const DEFAULT_API_BASE = resolveDefaultApiBase()
+
 export const API_BASE_URL = normalizeBaseUrl(
-  import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
+  import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE
 )
+
+const getStoredToken = () => {
+  if (typeof window === 'undefined' || !window?.localStorage) {
+    return null
+  }
+  return window.localStorage.getItem('auth_token')
+}
 
 const buildUrl = (path) => {
   if (!path.startsWith('/')) {
@@ -16,13 +32,15 @@ const buildUrl = (path) => {
 
 export async function apiFetch(path, options = {}) {
   const url = buildUrl(path)
+  const token = getStoredToken()
   const headers = {
     'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {}),
   }
 
   const config = {
-    credentials: 'include',
+    credentials: 'omit',
     ...options,
     headers,
   }

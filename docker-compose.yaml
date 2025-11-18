@@ -101,7 +101,10 @@ services:
       dockerfile: Dockerfile
     container_name: adviseme-core
     restart: unless-stopped
-      - ./pdf_scraper:/pdf_scraper:ro
+
+    volumes:
+      - ./pdf_scraper:/pdf_scraper:ro   # <-- FIXED. Now it's in the right place.
+
     environment:
       DB_HOST: adviseme-db
       DB_USER: adviseme_app
@@ -110,15 +113,21 @@ services:
       JWT_SECRET_FILE: /run/secrets/jwt_secret
       ALLOWED_ORIGINS: "https://localhost,https://localhost:5173,https://localhost:3000"
       PORT: "8081"
+
+      # moved from expose
+      PDF_SCRAPER_PATH: /pdf_scraper/scrape_pdfs.py
+      API_WORKDIR: /code
+
     expose:
       - "8081"
-      - PDF_SCRAPER_PATH=/pdf_scraper/scrape_pdfs.py
-      - API_WORKDIR=/code
+
     depends_on:
       - db
       - openldap
+
     networks:
       - adviseme-net
+
     healthcheck:
       test:
         [
@@ -128,9 +137,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
     secrets:
       - dbapppass
       - jwt_secret
+
 
   frontend:
     build:
@@ -139,6 +150,8 @@ services:
     restart: unless-stopped
     expose:
       - "8080"
+    volumes:
+      - ./reverse-proxy/certs:/certs:ro
     depends_on:
       - core-api
       - auth-api
