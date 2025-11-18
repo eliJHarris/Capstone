@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import LandingPage from '@/views/LandingPage.vue'
+import TabView from '@/views/TabView.vue'
+import NotificationView from '@/views/NotificationView.vue'
 import LoginView from '@/views/LoginView.vue'
 import DashboardLayout from '@/views/Dashboard.vue'
 import DashboardHome from '@/views/DashboardHome.vue'
@@ -38,6 +40,8 @@ const dashboardChildren = [
 ]
 
 const routes = [
+  { path: '/notifications', component: NotificationView, props: { tabName: 'Notifications' } },
+  { path: '/:catchAll(.*)', redirect: '/' },
   { path: '/', name: 'landing', component: LandingPage },
   { path: '/login', name: 'login', component: LoginView },
   {
