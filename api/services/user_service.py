@@ -5,7 +5,7 @@ from fastapi import HTTPException, status
 
 from models.user import User
 from schemas.user import (
-    UsereCreate,
+    UserCreate,
     UserUpdate,
     UserResponse,
     UserRole
@@ -21,23 +21,25 @@ class UserService:
         user_id: Optional[int] = None,
         username: Optional[str] = None,
         email: Optional[str] = None,
-        role: Optional[UserRole],
-        isActive: Optional[int],
+        role: Optional[UserRole] = None,
+        isActive: Optional[int] = None,
         skip: int = 0,
         limit: int = 100
     ) -> List[UserResponse]:
         """
         Get all schedules with optional filtering
         """
-        query = db.query(Users)
+        query = db.query(User)
 
         # Apply filters
-        if userID:
-            query = query.filter(User.userID == userID)
+        if user_id:
+            query = query.filter(User.userID == user_id)
         if username:
             query = query.filter(User.username == username)
         if role:
             query = query.filter(User.role == role.value)
+        if isActive:
+            query = query.filter(User.isActive == isActive)
 
         users = query.offset(skip).limit(limit).all()
 
@@ -56,16 +58,16 @@ class UserService:
         return result
 
     @staticmethod
-    def get_user_by_id(db: Session, userID: int) -> UserResponse:
+    def get_user_by_id(db: Session, user_id: int) -> UserResponse:
         """
         Get a specific schedule by ID with all classes
         """
-        user = db.query(User).filter(User.userID == userID).first()
+        user = db.query(User).filter(User.userID == user_id).first()
 
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"User with ID {userID} not found"
+                detail=f"User with ID {user_id} not found"
             )
 
 
@@ -80,14 +82,13 @@ class UserService:
         )
 
     @staticmethod
-    def create_user(db: Session, userData: UserCreate) -> UserResponse:
+    def create_user(db: Session, user_data: UserCreate) -> UserResponse:
         """
         Create a new schedule
         """
 
         # Create new schedule
         new_user = User(
-            userID=user_data.userID,
             username=user_data.username,
             email=user_data.email,
             role=user_data.role,

@@ -39,7 +39,7 @@ def get_users(
     """
     return UserService.get_all_users(
         db=db,
-        userID=user_id,
+        user_id=user_id,
         username=username,
         email=email,
         role=role,
@@ -59,7 +59,7 @@ def get_user(
 
     - **schedule_id**: The ID of the schedule to retrieve
     """
-    return UserService.get_user_by_id(db=db, userID=user_id)
+    return UserService.get_user_by_id(db=db, user_id=user_id)
 
 
 @router.post("/", response_model=UserResponse, status_code=201)

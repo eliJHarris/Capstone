@@ -5,7 +5,7 @@ from enum import Enum
 
 #Describes API Paylods (Request/Response)
 
-class UserRole(str, enum.Enum):
+class UserRole(str, Enum):
     STUDENT = "STUDENT"
     ADVISOR = "ADVISOR"
     ADMIN = "ADMIN"
