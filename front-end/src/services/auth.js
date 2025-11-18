@@ -1,6 +1,8 @@
 const resolveDefaultAuthBase = () => {
   if (typeof window !== "undefined" && window?.location?.origin) {
-    return `${window.location.origin.replace(/\/$/, "")}/auth`;
+    const current = new URL(window.location.href);
+    current.protocol = "https:";
+    return `${current.origin}/auth`;
   }
   return "https://localhost/auth";
 };

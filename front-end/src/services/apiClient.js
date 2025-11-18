@@ -5,7 +5,9 @@ const normalizeBaseUrl = (value) => {
 
 const resolveDefaultApiBase = () => {
   if (typeof window !== 'undefined' && window?.location?.origin) {
-    return `${window.location.origin.replace(/\/$/, '')}/api`
+    const current = new URL(window.location.href)
+    current.protocol = 'https:'
+    return `${current.origin}/api`
   }
   return 'https://localhost/api'
 }

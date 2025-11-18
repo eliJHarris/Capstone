@@ -78,7 +78,7 @@ services:
 
       JWT_SECRET_FILE: /run/secrets/jwt_secret
       JWT_EXPIRE_MINUTES: "60"
-      ALLOWED_ORIGINS: "https://localhost,https://localhost:5173,https://localhost:3000"
+      ALLOWED_ORIGINS: "https://localhost,https://localhost:5173,https://localhost:3000,https://adviseme.local"
 
       # 🔓 Use plain LDAP on 389 (no SSL)
       LDAP_PORT: 389
@@ -111,7 +111,7 @@ services:
       DB_NAME: adviseme
       DB_PASS_FILE: /run/secrets/dbapppass
       JWT_SECRET_FILE: /run/secrets/jwt_secret
-      ALLOWED_ORIGINS: "https://localhost,https://localhost:5173,https://localhost:3000"
+      ALLOWED_ORIGINS: "https://localhost,https://localhost:5173,https://localhost:3000,https://adviseme.local"
       PORT: "8081"
 
       # moved from expose
