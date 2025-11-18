@@ -18,7 +18,7 @@ class UserService:
     @staticmethod
     def get_all_users(
         db: Session,
-        userID: Optional[int] = None,
+        user_id: Optional[int] = None,
         username: Optional[str] = None,
         email: Optional[str] = None,
         role: Optional[UserRole],

@@ -3,27 +3,27 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from db.database import get_db
-from schemas.schedule import (
-    ScheduleCreate,
-    ScheduleUpdate,
-    ScheduleResponse,
-    ScheduleListResponse,
-    AddClassToSchedule,
-    ScheduleStatus
+from schemas.user import (
+    UserCreate,
+    UserUpdate,
+    UserResponse,
+    UserRole
 )
-from services.schedule_service import ScheduleService
+from services.user_service import UserService
 
 router = APIRouter(
-    prefix="/schedules",
-    tags=["schedules"]
+    prefix="/users",
+    tags=["users"]
 )
 
 
-@router.get("/", response_model=List[ScheduleListResponse])
-def get_schedules(
-    advisee_id: Optional[int] = Query(None, description="Filter by advisee ID"),
-    term_id: Optional[int] = Query(None, description="Filter by term ID"),
-    status: Optional[ScheduleStatus] = Query(None, description="Filter by status"),
+@router.get("/", response_model=List[UserResponse])
+def get_users(
+    user_id: Optional[int] = Query(None, description="Filter by user ID"),
+    username: Optional[str] = Query(None, description="Filter by username"),
+    email: Optional[str] = Query(None, description="Filter by email"),
+    role: Optional[UserRole] = Query(None, description="Filter by role"),
+    isActive: Optional[int] = Query(None, description="Filter by user activity: 0- inactive 1- active"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Maximum number of records to return"),
     db: Session = Depends(get_db)
@@ -37,19 +37,21 @@ def get_schedules(
     - **skip**: Pagination - number of records to skip
     - **limit**: Pagination - maximum number of records to return
     """
-    return ScheduleService.get_all_schedules(
+    return UserService.get_all_users(
         db=db,
-        advisee_id=advisee_id,
-        term_id=term_id,
-        schedule_status=status,
+        userID=user_id,
+        username=username,
+        email=email,
+        role=role,
+        isActive=isActive,
         skip=skip,
         limit=limit
     )
 
 
-@router.get("/{schedule_id}", response_model=ScheduleResponse)
-def get_schedule(
-    schedule_id: int,
+@router.get("/{user_id}", response_model=UserResponse)
+def get_user(
+    user_id: int,
     db: Session = Depends(get_db)
 ):
     """
@@ -57,12 +59,12 @@ def get_schedule(
 
     - **schedule_id**: The ID of the schedule to retrieve
     """
-    return ScheduleService.get_schedule_by_id(db=db, schedule_id=schedule_id)
+    return UserService.get_user_by_id(db=db, userID=user_id)
 
 
-@router.post("/", response_model=ScheduleResponse, status_code=201)
-def create_schedule(
-    schedule: ScheduleCreate,
+@router.post("/", response_model=UserResponse, status_code=201)
+def create_user(
+    user: UserCreate,
     db: Session = Depends(get_db)
 ):
     """
@@ -73,13 +75,13 @@ def create_schedule(
     - **source**: Source of the schedule (USER, ADVISOR, SYSTEM) - defaults to USER
     - **status**: Status of the schedule (DRAFT, APPROVED, REJECTED) - defaults to DRAFT
     """
-    return ScheduleService.create_schedule(db=db, schedule_data=schedule)
+    return UserService.create_user(db=db, user_data=user)
 
 
-@router.put("/{schedule_id}", response_model=ScheduleResponse)
-def update_schedule(
-    schedule_id: int,
-    schedule: ScheduleUpdate,
+@router.put("/{user_id}", response_model=UserResponse)
+def update_user(
+    user_id: int,
+    user: UserUpdate,
     db: Session = Depends(get_db)
 ):
     """
@@ -91,12 +93,12 @@ def update_schedule(
 
     Note: Updating status to APPROVED/REJECTED will automatically set the corresponding timestamp.
     """
-    return ScheduleService.update_schedule(db=db, schedule_id=schedule_id, schedule_data=schedule)
+    return UserService.update_user(db=db, user_id=user_id, user_data=user)
 
 
-@router.delete("/{schedule_id}")
-def delete_schedule(
-    schedule_id: int,
+@router.delete("/{user_id}")
+def delete_user(
+    user_id: int,
     db: Session = Depends(get_db)
 ):
     """
@@ -106,44 +108,5 @@ def delete_schedule(
 
     Note: This will cascade delete all classes associated with the schedule.
     """
-    return ScheduleService.delete_schedule(db=db, schedule_id=schedule_id)
+    return UserService.delete_user(db=db, user_id=user_id)
 
-
-@router.post("/{schedule_id}/classes", response_model=ScheduleResponse)
-def add_class_to_schedule(
-    schedule_id: int,
-    class_data: AddClassToSchedule,
-    db: Session = Depends(get_db)
-):
-    """
-    Add a class (section) to a schedule.
-
-    - **schedule_id**: The ID of the schedule
-    - **sectionID**: The ID of the section to add
-
-    Note: The section must belong to the same term as the schedule.
-    """
-    return ScheduleService.add_class_to_schedule(
-        db=db,
-        schedule_id=schedule_id,
-        section_id=class_data.sectionID
-    )
-
-
-@router.delete("/{schedule_id}/classes/{class_id}", response_model=ScheduleResponse)
-def remove_class_from_schedule(
-    schedule_id: int,
-    class_id: int,
-    db: Session = Depends(get_db)
-):
-    """
-    Remove a class from a schedule.
-
-    - **schedule_id**: The ID of the schedule
-    - **class_id**: The ID of the class to remove
-    """
-    return ScheduleService.remove_class_from_schedule(
-        db=db,
-        schedule_id=schedule_id,
-        class_id=class_id
-    )
