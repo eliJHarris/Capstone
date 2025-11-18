@@ -10,11 +10,15 @@ Prerequisites
   
 
 Quick start (may need to run following with ```sudo```)
-1. Generate local secrets and certificates (self-signed, dev-only):
+1. Generate local secrets and certificates (self-signed, dev-only).
+   Every developer or deployment must create the password files under `secrets/`
+   (`db_root_pass.txt`, `dbapppass.txt`, `ldap_admin_pass.txt`, `ldap_bind_pass.txt`, `jwt_secret.txt`)
+   because they are git-ignored. You can either create them manually (one secret per file)
+   or run the helper script:
    ```
    ./ops/bootstrap-security.sh
    ```
-   This script provisions DB/app passwords under `secrets/`, an HTTPS cert for the reverse proxy, and a private CA plus server cert for LDAP TLS.
+   This script provisions the password files, an HTTPS cert for the reverse proxy, and a private CA plus server cert for LDAP TLS.
 2. From the repository root (/home/user/Capstone) run:
    ```
    docker compose up --build
