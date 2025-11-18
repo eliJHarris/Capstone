@@ -41,9 +41,11 @@
       <v-list>
         <v-list-item>Profile</v-list-item>
         <v-list-item>Settings</v-list-item>
-        <v-list-item @click="handleLogout" class="text-red">
-          <v-icon start color="red">mdi-logout</v-icon>
-          <span>Sign out</span>
+        <v-list-item class="logout-item" @click="handleLogout">
+          <template #prepend>
+            <v-icon color="red">mdi-logout</v-icon>
+          </template>
+          <v-list-item-title class="text-red">Sign out</v-list-item-title>
         </v-list-item>
       </v-list>
     </v-menu>
@@ -65,5 +67,8 @@ function handleLogout() {
 <style scoped>
 .text-red {
   color: #b71c1c !important;
+}
+.logout-item {
+  justify-content: flex-start;
 }
 </style>

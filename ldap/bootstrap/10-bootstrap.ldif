@@ -27,9 +27,9 @@ objectClass: inetOrgPerson
 cn: Bob Advisee
 sn: Advisee
 givenName: Bob
-uid: badvisee
+uid: b
 mail: bob.advisee@adviseme.local
-userPassword: AdviseePass123!
+userPassword: 123
 
 dn: cn=adviseme-app,ou=Service,dc=adviseme,dc=local
 objectClass: simpleSecurityObject

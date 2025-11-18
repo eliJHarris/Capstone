@@ -18,7 +18,7 @@
 
     <v-list nav>
       <v-list-item
-        v-for="item in items"
+        v-for="item in navItems"
         :key="item.title"
         :to="item.to"
         router
@@ -36,23 +36,21 @@ export default {
     role: { type: String, default: 'advisor' }
   },
   computed: {
-    roleLabel() { return this.role === 'advisor' ? 'Advisor' : 'Student' }
-  },
-  data() {
-    return { items: [] }
-  },
-  mounted() {
-    if (this.role === 'advisor') {
-      this.items = [
+    roleLabel() {
+      return this.role === 'advisor' ? 'Advisor' : 'Student'
+    },
+    navItems() {
+      if (this.role === 'advisor') {
+        return [
         { title: 'Dashboard', to: '/dashboard' },
         { title: 'Notifications', to: '/notifications' },
         { title: 'Student List', to: '/student-list' },
         { title: 'Security', to: '/security' },
         { title: 'Schedules / Appointments', to: '/schedules' },
         { title: 'PDF Scraper', to: '/pdf-scraper' },
-      ]
-    } else {
-      this.items = [
+        ]
+      }
+      return [
         { title: 'Dashboard', to: '/dashboard' },
         { title: 'Notifications', to: '/notifications' },
         { title: 'Class History', to: '/class-history' },
@@ -60,7 +58,7 @@ export default {
         { title: 'Schedules / Appointments', to: '/schedules' },
         { title: 'PDF Scraper', to: '/pdf-scraper' },
       ]
-    }
+    },
   }
 }
 </script>

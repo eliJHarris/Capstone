@@ -1,3 +1,5 @@
+import { AUTH_ROLE_EVENT } from '@/composables/useUserRole'
+
 const resolveDefaultAuthBase = () => {
   if (typeof window !== "undefined" && window?.location?.origin) {
     const current = new URL(window.location.href);
@@ -34,6 +36,9 @@ export async function loginRequest(username, password) {
 
   localStorage.setItem("auth_token", data.access_token);
   localStorage.setItem("auth_user", JSON.stringify(data.user));
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(AUTH_ROLE_EVENT));
+  }
 
   return data;
 }
@@ -41,4 +46,7 @@ export async function loginRequest(username, password) {
 export function logout() {
   localStorage.removeItem("auth_token");
   localStorage.removeItem("auth_user");
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(AUTH_ROLE_EVENT));
+  }
 }

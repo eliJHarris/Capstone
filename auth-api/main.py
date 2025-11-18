@@ -3,7 +3,7 @@ import ssl
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
-from ldap3 import Server, Connection, ALL, ALL_ATTRIBUTES, SUBTREE, Tls
+from ldap3 import Server, Connection, ALL, ALL_ATTRIBUTES, SUBTREE, Tls, BASE
 from jose import jwt
 
 app = FastAPI(title="Adviseme Auth API")
@@ -50,6 +50,10 @@ LDAP_BASE_DN    = os.getenv("LDAP_BASE_DN", "dc=adviseme,dc=local")
 
 # This is specifically where your users live
 LDAP_PEOPLE_DN  = os.getenv("LDAP_PEOPLE_DN", "ou=People,dc=adviseme,dc=local")
+
+ADVISOR_GROUP_DN = os.getenv("ADVISOR_GROUP_DN", f"cn=advisors,ou=Groups,{LDAP_BASE_DN}")
+ADVISEE_GROUP_DN = os.getenv("ADVISEE_GROUP_DN", f"cn=advisees,ou=Groups,{LDAP_BASE_DN}")
+DEFAULT_USER_ROLE = os.getenv("DEFAULT_USER_ROLE", "advisor")
 
 # Service bind account (the "app account")
 LDAP_BIND_DN    = os.getenv("LDAP_BIND_DN", "cn=adviseme-app,ou=Service,dc=adviseme,dc=local")
@@ -128,15 +132,38 @@ def _find_user(username: str):
         user_cn  = str(getattr(entry, "cn", username))
         user_uid = str(getattr(entry, "uid", username))
         user_mail = str(getattr(entry, "mail", ""))
+        role = _resolve_role(svc, user_dn)
 
         return {
             "dn": user_dn,
             "cn": user_cn,
             "uid": user_uid,
             "mail": user_mail,
+            "role": role,
         }
     finally:
         svc.unbind()
+
+def _is_member(conn: Connection, group_dn: str, user_dn: str) -> bool:
+    if not group_dn:
+        return False
+    try:
+        ok = conn.search(
+            search_base=group_dn,
+            search_filter=f"(member={user_dn})",
+            search_scope=BASE,
+            attributes=["member"],
+        )
+        return bool(ok and conn.entries)
+    except Exception:
+        return False
+
+def _resolve_role(conn: Connection, user_dn: str) -> str:
+    if _is_member(conn, ADVISOR_GROUP_DN, user_dn):
+        return "advisor"
+    if _is_member(conn, ADVISEE_GROUP_DN, user_dn):
+        return "advisee"
+    return DEFAULT_USER_ROLE
 
 def _verify_password(user_dn: str, password: str):
     """
@@ -157,6 +184,7 @@ def _issue_jwt(user_info: dict) -> str:
         "cn":  user_info["cn"],
         "uid": user_info["uid"],
         "mail": user_info["mail"],
+        "role": user_info.get("role", DEFAULT_USER_ROLE),
         "exp": now + timedelta(minutes=JWT_EXPIRE_MIN),
         "iat": now,
     }
@@ -181,6 +209,7 @@ def login(username: str = Form(...), password: str = Form(...)):
             "cn": user_info["cn"],
             "uid": user_info["uid"],
             "mail": user_info["mail"],
+            "role": user_info.get("role", DEFAULT_USER_ROLE),
         },
     }
 
