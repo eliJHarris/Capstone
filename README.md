@@ -34,6 +34,4 @@ Logs
 
 ## OpenAI configuration
 
-- Set an `OPENAI_API_KEY` environment variable (or add it to a `.env` file in `api/`) before running the API container so the shared OpenAI service can authenticate.
-- Optional environment variables: `OPENAI_DEFAULT_MODEL` (defaults to `gpt-4o-mini`) and `OPENAI_EMBEDDING_MODEL` (defaults to `text-embedding-3-large`).
-- To use the client inside routes or services, import `get_openai_service` from `api.services.openai_service` and inject it via FastAPI `Depends`, then call `chat_completion(...)` or `create_embedding(...)` on the returned instance.
+- Set an enviorment file for OpenAI API provided by team
