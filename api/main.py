@@ -7,6 +7,7 @@ from db.database import engine, get_db
 from routes.schedules import router as schedules_router
 from routes.pdf_scraper import router as pdf_scraper_router
 from routes.notifications import router as notifications_router
+from routes.users import router as users_router
 from routes.openai import router as openai_router
 
 # Initialize FastAPI app
@@ -29,6 +30,7 @@ app.add_middleware(
 app.include_router(schedules_router, prefix="/api")
 app.include_router(pdf_scraper_router, prefix="/api")
 app.include_router(notifications_router, prefix="/api")
+app.include_router(users_router, prefix="/api")
 app.include_router(openai_router, prefix="/api")
 
 
