@@ -158,7 +158,7 @@ const fabIcon = computed(() => {
   if (chatOpen.value && input.value.trim() && !isSending.value) {
     return 'mdi-send'
   }
-  return 'mdi-chat'
+  return 'mdi-chat-outline'
 })
 
 const fabTooltip = computed(() => {
