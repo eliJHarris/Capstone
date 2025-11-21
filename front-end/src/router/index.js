@@ -6,6 +6,7 @@ import DashboardHome from '@/views/DashboardHome.vue'
 import PlaceholderView from '@/views/PlaceholderView.vue'
 import SchedulesView from '@/views/SchedulesView.vue'
 import PdfScraperView from '@/views/PdfScraperView.vue'
+import DegreePlanValidationView from '@/views/DegreePlanValidationView.vue'
 
 const dashboardChildren = [
   { path: 'dashboard', name: 'dashboard', component: DashboardHome },
@@ -35,6 +36,11 @@ const dashboardChildren = [
   },
   { path: 'schedules', name: 'schedules', component: SchedulesView },
   { path: 'pdf-scraper', name: 'pdf-scraper', component: PdfScraperView },
+  {
+    path: 'degree-validation',
+    name: 'degree-validation',
+    component: DegreePlanValidationView,
+  },
 ]
 
 const routes = [
