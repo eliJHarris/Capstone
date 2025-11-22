@@ -40,3 +40,7 @@ Logs
   ```
   docker compose logs -f frontend
   ```
+
+## OpenAI configuration
+
+- Set an enviorment file for OpenAI API provided by team
