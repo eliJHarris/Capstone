@@ -351,3 +351,48 @@ INSERT INTO notifications (notificationID, userID, description, createdAt) VALUE
 (8, 23, 'Your schedule for Spring 2025 has been approved.', '2025-01-12 10:05:00'),
 (9, 24, 'Your schedule for Spring 2025 has been approved.', '2025-01-13 10:05:00'),
 (10,25, 'Your schedule for Spring 2025 has been approved.', '2025-01-14 10:05:00');
+
+CREATE TABLE IF NOT EXISTS degree_requirement_sets (
+  requirementSetID INT AUTO_INCREMENT PRIMARY KEY,
+  programCode      VARCHAR(64) NOT NULL,
+  catalogYear      VARCHAR(32) NOT NULL,
+  programName      VARCHAR(255) NOT NULL,
+  totalCredits     INT NOT NULL DEFAULT 120,
+  requirementData  JSON NOT NULL,
+  sourceDocument   VARCHAR(255),
+  createdAt        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_program_catalog (programCode, catalogYear)
+);
+
+CREATE TABLE IF NOT EXISTS advisee_degree_context (
+  contextID        INT AUTO_INCREMENT PRIMARY KEY,
+  adviseeID        INT NOT NULL UNIQUE,
+  requirementSetID INT NOT NULL,
+  completedCourses JSON NOT NULL,
+  overrides        JSON NULL,
+  notes            TEXT NULL,
+  createdAt        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_context_requirement FOREIGN KEY (requirementSetID) REFERENCES degree_requirement_sets(requirementSetID)
+);
+
+CREATE TABLE IF NOT EXISTS degree_plan_validations (
+  validationID      INT AUTO_INCREMENT PRIMARY KEY,
+  adviseeID         INT NOT NULL,
+  contextID         INT NULL,
+  requirementSetID  INT NULL,
+  status            ENUM('PENDING','RUNNING','PASSED','FAILED','ERROR') NOT NULL DEFAULT 'PENDING',
+  runType           ENUM('MANUAL','AUTOMATIC') NOT NULL DEFAULT 'MANUAL',
+  completionPercent DECIMAL(5,2) NOT NULL DEFAULT 0,
+  issues            JSON NULL,
+  message           VARCHAR(255),
+  triggeredBy       INT NULL,
+  startedAt         DATETIME NULL,
+  finishedAt        DATETIME NULL,
+  createdAt         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_validation_context FOREIGN KEY (contextID) REFERENCES advisee_degree_context(contextID),
+  CONSTRAINT fk_validation_requirement FOREIGN KEY (requirementSetID) REFERENCES degree_requirement_sets(requirementSetID),
+  INDEX idx_validation_advisee (adviseeID)
+);

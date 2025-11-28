@@ -46,6 +46,7 @@ export default {
         { title: 'Notifications', to: '/notifications' },
         { title: 'Student List', to: '/student-list' },
         { title: 'Security', to: '/security' },
+        { title: 'Degree Plan', to: '/degree-plan' },
         { title: 'Schedules / Appointments', to: '/schedules' },
         { title: 'PDF Scraper', to: '/pdf-scraper' },
         ]
@@ -55,6 +56,7 @@ export default {
         { title: 'Notifications', to: '/notifications' },
         { title: 'Class History', to: '/class-history' },
         { title: 'Security', to: '/security' },
+        { title: 'Degree Plan', to: '/degree-plan' },
         { title: 'Schedules / Appointments', to: '/schedules' },
         { title: 'PDF Scraper', to: '/pdf-scraper' },
       ]

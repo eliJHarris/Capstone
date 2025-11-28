@@ -9,6 +9,9 @@ export const useStudentProfileStore = defineStore('studentProfile', {
     profile: {
       student_name: 'Jordan Casey',
       major: 'B.S. Computer Science',
+      advisee_id: 1001,
+      catalog_year: 'CAT2024',
+      program_code: 'BS-CS',
       advisor_name: 'Dr. Samantha Lee',
       holds_list: ['Advising Hold - Meet with advisor before registration'],
       degree_plan_summary:

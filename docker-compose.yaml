@@ -103,7 +103,7 @@ services:
     restart: unless-stopped
 
     volumes:
-      - ./pdf_scraper:/pdf_scraper:ro   # <-- FIXED. Now it's in the right place.
+      - ./pdf_scraper:/code/pdf_scraper:ro
 
     environment:
       DB_HOST: adviseme-db
@@ -113,8 +113,6 @@ services:
       JWT_SECRET_FILE: /run/secrets/jwt_secret
       ALLOWED_ORIGINS: "https://localhost,https://localhost:5173,https://localhost:3000,https://adviseme.local"
       PORT: "8081"
-
-      # moved from expose
       PDF_SCRAPER_PATH: /pdf_scraper/scrape_pdfs.py
       API_WORKDIR: /code
 
@@ -122,8 +120,10 @@ services:
       - "8081"
 
     depends_on:
-      - db
-      - openldap
+      db:
+        condition: service_healthy
+      openldap:
+        condition: service_started
 
     networks:
       - adviseme-net
