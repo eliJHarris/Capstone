@@ -48,7 +48,8 @@ defineProps({
 // Fetch data when component is mounted
 onMounted(async () => {
   try {
-    const data = await apiFetch('/notifications?skip=0&limit=100')
+    // Add trailing slash to avoid FastAPI redirect from /notifications -> /notifications/
+    const data = await apiFetch('/notifications/?skip=0&limit=100')
     notifications.value = data
   } catch (error) {
     console.error("Error fetching data:", error)
