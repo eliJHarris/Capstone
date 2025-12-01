@@ -25,8 +25,9 @@
 import AppNavbar from '@/components/AppNavbar.vue'
 import AppSidebar from '@/components/AppSidebar.vue'
 import DashboardCard from '@/components/DashboardCard.vue'
+import { useUserRole } from '@/composables/useUserRole'
 
-const role = 'advisor'
+const { role } = useUserRole()
 
 const cards = [
   { title: 'Metric 1', value: 123, icon: 'mdi-chart-line', footer: 'Updated today' },

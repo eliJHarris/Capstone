@@ -13,9 +13,9 @@
 <script setup>
 import AppNavbar from '@/components/AppNavbar.vue'
 import AppSidebar from '@/components/AppSidebar.vue'
+import { useUserRole } from '@/composables/useUserRole'
 
-// Change between 'advisor' or 'student'
-const role = 'advisor'
+const { role } = useUserRole()
 </script>
 
 <style scoped>

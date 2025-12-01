@@ -1,0 +1,14 @@
+dn: ou=People,dc=adviseme,dc=local
+objectClass: top
+objectClass: organizationalUnit
+ou: People
+
+dn: ou=Groups,dc=adviseme,dc=local
+objectClass: top
+objectClass: organizationalUnit
+ou: Groups
+
+dn: ou=Service,dc=adviseme,dc=local
+objectClass: top
+objectClass: organizationalUnit
+ou: Service

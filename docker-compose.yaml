@@ -1,54 +1,227 @@
 version: "3.9"
+
 services:
   db:
-    image: mariadb:10
+    image: mariadb:11
     container_name: adviseme-db
-    volumes:
-      - ./DB/AdviseMeDB.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:
-      - "3306:3306"
+    restart: unless-stopped
     environment:
-      MARIADB_ROOT_PASSWORD: pass
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db_root_pass
       MARIADB_DATABASE: adviseme
       MARIADB_USER: adviseme_app
-      MARIADB_PASSWORD: app_pass
+      MARIADB_PASSWORD_FILE: /run/secrets/dbapppass
+    volumes:
+      - dbdata:/var/lib/mysql
+      - ./DB/AdviseMeDB.sql:/docker-entrypoint-initdb.d/AdviseMeDB.sql:ro
+    secrets:
+      - db_root_pass
+      - dbapppass
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "--password=pass"]
-      interval: 5s
+      test:
+        [
+          "CMD-SHELL",
+          "mariadb -h 127.0.0.1 -uroot -p\"$(cat /run/secrets/db_root_pass)\" -e 'SELECT 1' >/dev/null 2>&1"
+        ]
+      interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 60s
+    networks:
+      - adviseme-net
+
+  openldap:
+    image: osixia/openldap:1.5.0
+    container_name: adviseme-openldap
+    restart: unless-stopped
+    environment:
+      LDAP_ORGANISATION: "UAFS"
+      LDAP_DOMAIN: "adviseme.local"
+      LDAP_BASE_DN: "dc=adviseme,dc=local"
+      LDAP_READONLY_USER: "false"
+      LDAP_ADMIN_PASSWORD_FILE: /run/secrets/ldap_admin_pass
+      LDAP_CONFIG_PASSWORD_FILE: /run/secrets/ldap_admin_pass
+
+      # 🔓 Turn OFF TLS for now (plain LDAP on 389 inside Docker network)
+      LDAP_TLS: "false"
+
+      LDAP_REMOVE_CONFIG_AFTER_SETUP: "false"
+      LDAP_LOG_LEVEL: "256"
+    volumes:
+      - ldap-data:/var/lib/ldap
+      - ldap-config:/etc/ldap/slapd.d
+      - ./ldap/bootstrap:/container/service/slapd/assets/config/bootstrap/ldif/custom
+      # certs still mounted but not required anymore; safe to keep
+      - ./ldap/certs:/container/service/slapd/assets/certs
+    ports:
+      - "389:389"
+      # 636 not needed without TLS, but ok if you want to keep it closed:
+      # - "636:636"
+    networks:
+      - adviseme-net
+    secrets:
+      - ldap_admin_pass
+
+  auth-api:
+    build:
+      context: ./auth-api
+      dockerfile: Dockerfile
+    container_name: adviseme-auth
+    restart: unless-stopped
+    environment:
+      LDAP_HOST: adviseme-openldap
+      LDAP_BASE_DN: dc=adviseme,dc=local
+      LDAP_PEOPLE_DN: ou=People,dc=adviseme,dc=local
+
+      # 🔑 Bind directly as admin (using existing secret)
+      LDAP_BIND_DN: cn=admin,dc=adviseme,dc=local
+      LDAP_BIND_PASSWORD_FILE: /run/secrets/ldap_admin_pass
+
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      JWT_EXPIRE_MINUTES: "60"
+      ALLOWED_ORIGINS: "https://localhost,https://localhost:5173,https://localhost:3000,https://adviseme.local"
+
+      # 🔓 Use plain LDAP on 389 (no SSL)
+      LDAP_PORT: 389
+      LDAP_USE_SSL: "false"
+      LDAP_TLS_VALIDATE: "false"
+      # LDAP_CA_CERT_FILE no longer needed
+    expose:
+      - "8080"
+    depends_on:
+      - openldap
+    networks:
+      - adviseme-net
+    secrets:
+      - ldap_admin_pass
+      - jwt_secret
+
+  core-api:
+    build:
+      context: ./core-api
+      dockerfile: Dockerfile
+    container_name: adviseme-core
     restart: unless-stopped
 
-  api:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
-    container_name: capstone_api
-    ports:
-      - "8000:8000"
     volumes:
-      - ./api:/code
-      - ./pdf_scraper:/pdf_scraper:ro
+      - ./pdf_scraper:/code/pdf_scraper:ro
+
     environment:
-      - PYTHONUNBUFFERED=1
-      - DATABASE_URL=mysql+pymysql://root:pass@adviseme-db/adviseme
-      - PDF_SCRAPER_PATH=/pdf_scraper/scrape_pdfs.py
-      - API_WORKDIR=/code
+      DB_HOST: adviseme-db
+      DB_USER: adviseme_app
+      DB_NAME: adviseme
+      DB_PASS_FILE: /run/secrets/dbapppass
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      ALLOWED_ORIGINS: "https://localhost,https://localhost:5173,https://localhost:3000,https://adviseme.local"
+      PORT: "8081"
+      PDF_SCRAPER_PATH: /pdf_scraper/scrape_pdfs.py
+      API_WORKDIR: /code
+
+    expose:
+      - "8081"
+
     depends_on:
       db:
         condition: service_healthy
-    restart: always
+      openldap:
+        condition: service_started
+
+    networks:
+      - adviseme-net
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/', timeout=2)\" >/dev/null 2>&1 || exit 1"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    secrets:
+      - dbapppass
+      - jwt_secret
+
+  api-service:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: adviseme-api
+    restart: unless-stopped
+    volumes:
+      - ./pdf_scraper:/code/pdf_scraper:ro
+    environment:
+      DB_HOST: adviseme-db
+      DB_USER: adviseme_app
+      DB_NAME: adviseme
+      DB_PASSWORD_FILE: /run/secrets/dbapppass
+    expose:
+      - "8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - adviseme-net
+    secrets:
+      - dbapppass
+
 
   frontend:
     build:
       context: ./front-end
-      dockerfile: Dockerfile
-    container_name: capstone_frontend
-    ports:
-      - "5173:5173"
-    volumes:
-      - ./front-end:/code
-    environment:
-      - VITE_API_URL=http://api:8000/api
+    container_name: adviseme-frontend
+    restart: unless-stopped
+    expose:
+      - "80"
     depends_on:
-      - api
+      - core-api
+      - auth-api
+    networks:
+      - adviseme-net
+
+  reverse-proxy:
+    image: nginx:1.25-alpine
+    container_name: adviseme-proxy
+    restart: unless-stopped
+    depends_on:
+      - frontend
+      - auth-api
+      - core-api
+      - api-service
+    volumes:
+      - ./reverse-proxy/conf.d:/etc/nginx/conf.d:ro
+      - ./reverse-proxy/certs:/etc/nginx/certs
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      TLS_DOMAINS: ${TLS_DOMAINS:-localhost,127.0.0.1,adviseme.local}
+      TLS_DAYS: ${TLS_DAYS:-365}
+    command:
+      [
+        "/bin/sh",
+        "-c",
+        "apk add --no-cache openssl >/dev/null && /etc/nginx/certs/generate-selfsigned.sh && nginx -g 'daemon off;'"
+      ]
+    networks:
+      - adviseme-net
+
+volumes:
+  dbdata:
+  ldap-data:
+  ldap-config:
+
+secrets:
+  db_root_pass:
+    file: ./secrets/db_root_pass.txt
+  dbapppass:
+    file: ./secrets/dbapppass.txt
+  ldap_admin_pass:
+    file: ./secrets/ldap_admin_pass.txt
+  ldap_bind_pass:
+    file: ./secrets/ldap_bind_pass.txt
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt
+
+networks:
+  adviseme-net:
