@@ -85,8 +85,8 @@ def get_advisee_summary(
 )
 def request_validation(
     advisee_id: int,
-    payload: ValidationRequest = ValidationRequest(),
     background_tasks: BackgroundTasks,
+    payload: ValidationRequest = ValidationRequest(),
     run_type: ValidationRunTypeEnum = ValidationRunTypeEnum.MANUAL,
     db: Session = Depends(get_db),
 ):

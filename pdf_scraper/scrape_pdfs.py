@@ -1,11 +1,3 @@
-"""
-Reusable PDF scraper module (API-safe version).
-This version is intended to be imported and executed inside a FastAPI service.
-
-Original CLI logic was removed so it no longer runs sys.exit(), parses arguments,
-or performs standalone execution.
-"""
-
 import logging
 import time
 from collections import deque
@@ -26,9 +18,6 @@ DEFAULT_HEADERS = {"User-Agent": "AdvisemePDFScraper/1.0"}
 PDFTextChunk = Tuple[Optional[str], str]   # (title, text)
 
 
-# --------------------------------------------------------
-# Robots.txt Handler
-# --------------------------------------------------------
 class RobotsHandler:
     """Cache and evaluate robots.txt directives per domain."""
 

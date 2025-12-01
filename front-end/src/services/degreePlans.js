@@ -1,37 +1,67 @@
 import { apiFetch } from '@/services/apiClient'
 
-export function saveRequirementSet(body) {
-  return apiFetch('/degree-plans/requirements', {
+const DEGREE_PLANS_PREFIX = '/degree-plans'
+
+const requireAdviseeId = (adviseeId) => {
+  if (!adviseeId && adviseeId !== 0) {
+    throw new Error('Missing advisee ID')
+  }
+  return adviseeId
+}
+
+const buildQuery = (params = {}) => {
+  const search = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null) return
+    search.append(key, String(value))
+  })
+  const query = search.toString()
+  return query ? `?${query}` : ''
+}
+
+const adviseePath = (adviseeId, suffix) => `${DEGREE_PLANS_PREFIX}/advisees/${adviseeId}${suffix}`
+
+export async function fetchAdviseeSummary(adviseeId) {
+  requireAdviseeId(adviseeId)
+  return apiFetch(adviseePath(adviseeId, '/summary'))
+}
+
+export async function upsertAdviseeContext(adviseeId, payload = {}, options = {}) {
+  requireAdviseeId(adviseeId)
+  const { autoValidate, query: extraQuery = {} } = options
+  const query = buildQuery({ ...extraQuery, auto_validate: autoValidate })
+  return apiFetch(`${adviseePath(adviseeId, '/context')}${query}`, {
     method: 'POST',
-    body,
+    body: payload,
   })
 }
 
-export function listRequirementSets(params = {}) {
-  const query = new URLSearchParams(params).toString()
-  const suffix = query ? `?${query}` : ''
-  return apiFetch(`/degree-plans/requirements${suffix}`)
-}
-
-export function upsertAdviseeContext(adviseeId, body, { autoValidate = true } = {}) {
-  const query = autoValidate ? '?auto_validate=1' : '?auto_validate=0'
-  return apiFetch(`/degree-plans/advisees/${adviseeId}/context${query}`, {
+export async function requestPlanValidation(adviseeId, payload = {}, options = {}) {
+  requireAdviseeId(adviseeId)
+  const query = buildQuery(options.query)
+  return apiFetch(`${adviseePath(adviseeId, '/validate')}${query}`, {
     method: 'POST',
-    body,
+    body: payload,
   })
 }
 
-export function fetchAdviseeSummary(adviseeId) {
-  return apiFetch(`/degree-plans/advisees/${adviseeId}/summary`)
-}
-
-export function listAdviseeValidations(adviseeId) {
-  return apiFetch(`/degree-plans/advisees/${adviseeId}/validations`)
-}
-
-export function requestPlanValidation(adviseeId, body = {}) {
-  return apiFetch(`/degree-plans/advisees/${adviseeId}/validate`, {
+export async function saveRequirementSet(payload) {
+  if (!payload) {
+    throw new Error('Missing requirement set payload')
+  }
+  return apiFetch(`${DEGREE_PLANS_PREFIX}/requirements`, {
     method: 'POST',
-    body,
+    body: payload,
+  })
+}
+
+export async function importDegreePlanPdf(adviseeId, pdfUrl) {
+  requireAdviseeId(adviseeId)
+  if (!pdfUrl) {
+    throw new Error('Missing PDF URL')
+  }
+  return apiFetch(`/import/pdf/${adviseeId}`, {
+    method: 'POST',
+    body: { pdfUrl },
   })
 }

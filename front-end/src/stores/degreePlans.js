@@ -3,6 +3,8 @@ import {
   fetchAdviseeSummary,
   requestPlanValidation,
   upsertAdviseeContext,
+  saveRequirementSet,
+  importDegreePlanPdf,
 } from '@/services/degreePlans'
 
 export const useDegreePlanStore = defineStore('degreePlan', {
@@ -10,8 +12,10 @@ export const useDegreePlanStore = defineStore('degreePlan', {
     summary: null,
     loading: false,
     validationLoading: false,
+    importing: false,     // <-- NEW
     error: null,
   }),
+
   getters: {
     latestValidation(state) {
       return state.summary?.latestValidation || null
@@ -29,7 +33,9 @@ export const useDegreePlanStore = defineStore('degreePlan', {
       return this.summary?.context || null
     },
   },
+
   actions: {
+    // LOAD SUMMARY
     async loadSummary(adviseeId) {
       if (!adviseeId) {
         this.error = 'Missing advisee ID'
@@ -46,6 +52,8 @@ export const useDegreePlanStore = defineStore('degreePlan', {
         this.loading = false
       }
     },
+
+    // CONTEXT SYNC
     async syncContext(adviseeId, payload, options = {}) {
       this.error = null
       try {
@@ -56,18 +64,17 @@ export const useDegreePlanStore = defineStore('degreePlan', {
         throw error
       }
     },
+
+    // MANUAL VALIDATION
     async triggerValidation(adviseeId, triggeredBy) {
       if (!adviseeId) return
       this.validationLoading = true
       this.error = null
       try {
-        await requestPlanValidation(adviseeId, {
-          triggeredBy,
-        })
-        // allow background task to run before reloading
-        setTimeout(() => {
-          this.loadSummary(adviseeId)
-        }, 1500)
+        await requestPlanValidation(adviseeId, { triggeredBy })
+
+        // allow background validator a moment to run
+        setTimeout(() => this.loadSummary(adviseeId), 1500)
       } catch (error) {
         this.error = error.message || 'Failed to trigger validation'
         throw error
@@ -75,5 +82,27 @@ export const useDegreePlanStore = defineStore('degreePlan', {
         this.validationLoading = false
       }
     },
-  },
+
+    // -------------------------
+    // NEW: Degree Audit PDF Import
+    // -------------------------
+    async importDegreePlan(adviseeId, pdfUrl) {
+      if (!adviseeId) return
+      this.importing = true
+      this.error = null
+
+      try {
+        await importDegreePlanPdf(adviseeId, pdfUrl)
+
+        // Refresh summary after ingestion + auto-validation
+        await this.loadSummary(adviseeId)
+
+      } catch (error) {
+        this.error = error.message || 'PDF import failed'
+        throw error
+      } finally {
+        this.importing = false
+      }
+    },
+  }
 })

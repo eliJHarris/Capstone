@@ -142,6 +142,29 @@ services:
       - dbapppass
       - jwt_secret
 
+  api-service:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: adviseme-api
+    restart: unless-stopped
+    volumes:
+      - ./pdf_scraper:/code/pdf_scraper:ro
+    environment:
+      DB_HOST: adviseme-db
+      DB_USER: adviseme_app
+      DB_NAME: adviseme
+      DB_PASSWORD_FILE: /run/secrets/dbapppass
+    expose:
+      - "8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - adviseme-net
+    secrets:
+      - dbapppass
+
 
   frontend:
     build:
@@ -164,6 +187,7 @@ services:
       - frontend
       - auth-api
       - core-api
+      - api-service
     volumes:
       - ./reverse-proxy/conf.d:/etc/nginx/conf.d:ro
       - ./reverse-proxy/certs:/etc/nginx/certs

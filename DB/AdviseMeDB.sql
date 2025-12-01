@@ -396,3 +396,71 @@ CREATE TABLE IF NOT EXISTS degree_plan_validations (
   CONSTRAINT fk_validation_requirement FOREIGN KEY (requirementSetID) REFERENCES degree_requirement_sets(requirementSetID),
   INDEX idx_validation_advisee (adviseeID)
 );
+
+CREATE TABLE IF NOT EXISTS advisee_requirements (
+  adviseeID INT PRIMARY KEY,
+  requirementSetID INT NOT NULL,
+  FOREIGN KEY (adviseeID) REFERENCES adviseeProfile(adviseeID) ON DELETE CASCADE,
+  FOREIGN KEY (requirementSetID) REFERENCES degree_requirement_sets(requirementSetID) ON DELETE CASCADE
+);
+
+-- ------------------------------------------------------
+-- Sample Degree Plan Requirement Sets + Contexts
+-- ------------------------------------------------------
+
+INSERT INTO degree_requirement_sets
+  (requirementSetID, programCode, catalogYear, programName, totalCredits, requirementData, sourceDocument, createdAt, updatedAt)
+VALUES
+  (101, 'BS-CS', 'CAT2024', 'B.S. Computer Science', 120,
+    '[{"id":"core","title":"Core Curriculum","requiredCredits":36,"courses":[{"code":"ENG 1013","title":"Composition I","credits":3},{"code":"MATH 2804","title":"Calculus I","credits":4},{"code":"CS 1013","title":"Intro to Programming","credits":3},{"code":"CS 2023","title":"Data Structures","credits":3}]},{"id":"advanced","title":"Advanced Major Requirements","requiredCredits":24,"courses":[{"code":"CS 3013","title":"Algorithms","credits":3},{"code":"CS 3223","title":"Operating Systems","credits":3},{"code":"CS 3413","title":"Database Systems","credits":3},{"code":"CS 4XX3","title":"Upper-Level Elective","credits":3}]}]'
+  , 'https://adviseme.example.edu/bs-cs', '2025-03-20 09:00:00', '2025-03-20 09:00:00'),
+  (102, 'BS-MATH', 'CAT2023', 'B.S. Mathematics', 120,
+    '[{"id":"foundation","title":"Foundational Math","requiredCredits":30,"courses":[{"code":"MATH 1603","title":"Trig","credits":3},{"code":"MATH 2004","title":"Calculus II","credits":4},{"code":"STAT 2503","title":"Statistics","credits":3}]},{"id":"major","title":"Upper-Level Math","requiredCredits":24,"courses":[{"code":"MATH 3103","title":"Linear Algebra","credits":3},{"code":"MATH 3303","title":"Abstract Algebra","credits":3},{"code":"MATH 3403","title":"Real Analysis","credits":3}]}]'
+  , 'https://adviseme.example.edu/bs-math', '2025-03-20 09:10:00', '2025-03-20 09:10:00'),
+  (103, 'BS-IS', 'CAT2022', 'B.S. Information Systems', 120,
+    '[{"id":"core","title":"Business Core","requiredCredits":30,"courses":[{"code":"ACCT 2003","title":"Accounting","credits":3},{"code":"ECON 2103","title":"Economics","credits":3}]},{"id":"technology","title":"Technology Core","requiredCredits":30,"courses":[{"code":"IS 2003","title":"Systems Analysis","credits":3},{"code":"IS 3203","title":"Enterprise Architecture","credits":3}]}]'
+  , 'https://adviseme.example.edu/bs-is', '2025-03-20 09:20:00', '2025-03-20 09:20:00');
+
+INSERT INTO advisee_degree_context
+  (contextID, adviseeID, requirementSetID, completedCourses, overrides, notes, createdAt, updatedAt)
+VALUES
+  (201, 1, 101,
+    '[{"code":"ENG 1013","title":"Composition I","credits":3,"term":"Fall 2023","status":"COMPLETED"},{"code":"MATH 2804","title":"Calculus I","credits":4,"term":"Fall 2023","status":"COMPLETED"},{"code":"CS 1013","title":"Intro to Programming","credits":3,"term":"Fall 2023","status":"COMPLETED"}]',
+    NULL,
+    'Seeded from degree audit import.',
+    '2025-03-21 08:30:00', '2025-03-21 08:30:00'),
+  (202, 2, 102,
+    '[{"code":"MATH 1603","title":"Trigonometry","credits":3,"term":"Fall 2023","status":"COMPLETED"},{"code":"MATH 2004","title":"Calculus II","credits":4,"term":"Spring 2024","status":"IN_PROGRESS"}]',
+    NULL,
+    'Advisor-entered coursework snapshot.',
+    '2025-03-21 08:45:00', '2025-03-21 08:45:00'),
+  (203, 3, 103,
+    '[{"code":"ACCT 2003","title":"Accounting","credits":3,"term":"Fall 2023","status":"COMPLETED"},{"code":"ECON 2103","title":"Economics","credits":3,"term":"Fall 2023","status":"COMPLETED"},{"code":"IS 2003","title":"Systems Analysis","credits":3,"term":"Spring 2024","status":"COMPLETED"}]',
+    NULL,
+    'Imported from PDF scrape demo.',
+    '2025-03-21 09:00:00', '2025-03-21 09:00:00');
+
+INSERT INTO degree_plan_validations
+  (validationID, adviseeID, contextID, requirementSetID, status, runType, completionPercent, issues, message, triggeredBy, startedAt, finishedAt, createdAt, updatedAt)
+VALUES
+  (301, 1, 201, 101, 'PASSED', 'AUTOMATIC', 62.5,
+    '[]',
+    'Auto validation succeeded after PDF import.',
+    6,
+    '2025-03-21 08:31:00', '2025-03-21 08:31:30', '2025-03-21 08:31:00', '2025-03-21 08:31:30'),
+  (302, 2, 202, 102, 'FAILED', 'AUTOMATIC', 35.0,
+    '[{"requirementId":"foundation","message":"Missing foundational courses","missingCourses":["STAT 2503"]}]',
+    'Needs additional foundational math work.',
+    7,
+    '2025-03-21 08:46:00', '2025-03-21 08:47:10', '2025-03-21 08:46:00', '2025-03-21 08:47:10'),
+  (303, 3, 203, 103, 'RUNNING', 'MANUAL', 50.0,
+    '[]',
+    'Manual validation currently running.',
+    8,
+    '2025-03-21 09:01:00', NULL, '2025-03-21 09:01:00', '2025-03-21 09:01:00');
+
+INSERT INTO advisee_requirements (adviseeID, requirementSetID) VALUES
+  (1, 101),
+  (2, 102),
+  (3, 103)
+ON DUPLICATE KEY UPDATE requirementSetID = VALUES(requirementSetID);

@@ -25,7 +25,12 @@ const getStoredToken = () => {
   return window.localStorage.getItem('auth_token')
 }
 
+const ABSOLUTE_URL_REGEX = /^https?:\/\//i
+
 const buildUrl = (path) => {
+  if (ABSOLUTE_URL_REGEX.test(path)) {
+    return path
+  }
   if (!path.startsWith('/')) {
     throw new Error(`API path must start with '/'. Received: ${path}`)
   }
@@ -68,3 +73,23 @@ export async function apiFetch(path, options = {}) {
 
   return payload
 }
+
+export async function apiUpload(path, file) {
+  const url = buildUrl(path);
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(url, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const msg = await response.text();
+    throw new Error(msg || "Upload failed");
+  }
+
+  return response.json();
+}
+

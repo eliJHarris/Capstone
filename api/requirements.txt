@@ -7,3 +7,4 @@ beautifulsoup4
 pdfminer.six
 openai>=1.52.0
 pydantic-settings>=2.0.0
+python-multipart

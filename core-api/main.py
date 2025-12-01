@@ -6,7 +6,9 @@ import os
 import sys
 import time
 import json
+import re
 
+from pdf_scraper.scrape_pdfs import run_pdf_scraper
 from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from jose import jwt, JWTError
@@ -506,3 +508,115 @@ def remove_class_from_schedule(schedule_id: int, class_id: int, user=Depends(ver
         )
 
     return _schedule_with_classes(schedule_id)
+
+
+COURSE_LINE_REGEX = re.compile(
+    r"""
+    (?P<code>[A-Z]{2,4}\s?\d{3,4})       # Course code: CS 2023
+    [^\S\r\n]+                           # whitespace
+    (?P<title>[A-Za-z][A-Za-z0-9\s,&\-/]+?)   # Title
+    [^\S\r\n]+
+    (?P<credits>\d+)                     # Credits
+    (?:\s*(?:credit|credits|cr))?        # optional word
+    """,
+    re.VERBOSE
+)
+
+TERM_REGEX = re.compile(
+    r"(Fall|Spring|Summer|Winter)\s+(\d{4})",
+    re.IGNORECASE
+)
+
+
+def parse_courses_from_text(text: str):
+    """Extract completed courses + detect term blocks"""
+    results = []
+    current_term = None
+
+    lines = text.splitlines()
+
+    for line in lines:
+        term_match = TERM_REGEX.search(line)
+        if term_match:
+            current_term = f"{term_match.group(1)} {term_match.group(2)}"
+
+        match = COURSE_LINE_REGEX.search(line)
+        if match:
+            data = match.groupdict()
+            results.append({
+                "code": data["code"].upper(),
+                "title": data["title"].strip(),
+                "credits": int(data["credits"]),
+                "term": current_term
+            })
+
+    return results
+
+
+# ============================================================
+# Import PDF → Context → Validate
+# ============================================================
+
+async def save_context_for_advisee(advisee_id: int, context: dict):
+    """Persist degree plan context to DB."""
+    query = text("""
+        INSERT INTO degreeplan_context (adviseeID, contextJSON, updatedWhen)
+        VALUES (:adviseeID, :context, UTC_TIMESTAMP())
+        ON DUPLICATE KEY UPDATE
+            contextJSON = VALUES(contextJSON),
+            updatedWhen = UTC_TIMESTAMP()
+    """)
+
+    with engine.begin() as conn:
+        conn.execute(query, {
+            "adviseeID": advisee_id,
+            "context": json.dumps(context)
+        })
+
+
+async def run_validation_for_advisee(advisee_id: int):
+    """Execute existing validation pipeline."""
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("SELECT requirementSetID FROM advisee_requirements WHERE adviseeID = :id"),
+            {"id": advisee_id}
+        ).mappings().first()
+
+        if not result:
+            raise HTTPException(status_code=400, detail="Advisee does not have a linked requirement set.")
+
+        req_set_id = result["requirementSetID"]
+
+    # Call existing validator
+    from degree_validation.engine import run_validation
+    return run_validation(advisee_id, req_set_id)
+
+
+@app.post("/advisees/{advisee_id}/import-degreework-pdf")
+async def import_degreework_pdf(advisee_id: int, payload: dict, user=Depends(verify_token)):
+    """
+    1. Scrape PDF
+    2. Parse completed courses
+    3. Save degreeplan_context
+    4. Trigger validation
+    """
+    url = payload.get("url")
+    if not url:
+        raise HTTPException(status_code=400, detail="Missing 'url' field.")
+
+    scraped = run_pdf_scraper(url)
+    all_text = " ".join(pdf["text"] for pdf in scraped.values())
+
+    completed_courses = parse_courses_from_text(all_text)
+
+    await save_context_for_advisee(advisee_id, {
+        "completedCourses": completed_courses
+    })
+
+    validation_result = await run_validation_for_advisee(advisee_id)
+
+    return {
+        "importedCourses": completed_courses,
+        "validation": validation_result
+    }
+

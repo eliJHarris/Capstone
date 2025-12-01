@@ -33,7 +33,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import { apiFetch } from '@/services/apiClient'
 import AppNavbar from '@/components/AppNavbar.vue'
 import AppSidebar from '@/components/AppSidebar.vue'
 import DashboardCard from '@/components/DashboardCard.vue'
@@ -48,8 +48,8 @@ defineProps({
 // Fetch data when component is mounted
 onMounted(async () => {
   try {
-    const response = await axios.get("http://127.0.0.1:8000/api/notifications/?skip=0&limit=100")
-    notifications.value = response.data // Store response data in notifications
+    const data = await apiFetch('/notifications?skip=0&limit=100')
+    notifications.value = data
   } catch (error) {
     console.error("Error fetching data:", error)
   }

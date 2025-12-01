@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 from fastapi import BackgroundTasks, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from db.database import SessionLocal
@@ -33,6 +34,12 @@ def _serialize_completed_courses(courses: List[dict]) -> List[dict]:
     return serialized
 
 
+def _normalize_validation(validation: Optional[DegreePlanValidation]):
+    if validation and validation.issues is None:
+        validation.issues = []
+    return validation
+
+
 class DegreePlanService:
     @staticmethod
     def create_requirement_set(
@@ -48,7 +55,22 @@ class DegreePlanService:
             sourceDocument=payload.sourceDocument,
         )
         db.add(record)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            existing = (
+                db.query(DegreeRequirementSet)
+                .filter(
+                    DegreeRequirementSet.programCode == payload.programCode,
+                    DegreeRequirementSet.catalogYear == payload.catalogYear,
+                )
+                .first()
+            )
+            if existing:
+                return existing
+            raise
+
         db.refresh(record)
         return record
 
@@ -118,7 +140,7 @@ class DegreePlanService:
         return {
             "context": context,
             "requirementSet": requirement,
-            "latestValidation": latest_validation,
+            "latestValidation": _normalize_validation(latest_validation),
         }
 
     @staticmethod
@@ -150,16 +172,17 @@ class DegreePlanService:
         db.refresh(validation)
 
         background_tasks.add_task(process_validation_job, validation.validationID)
-        return validation
+        return _normalize_validation(validation)
 
     @staticmethod
     def list_validations(db: Session, advisee_id: int) -> List[DegreePlanValidation]:
-        return (
+        results = (
             db.query(DegreePlanValidation)
             .filter(DegreePlanValidation.adviseeID == advisee_id)
             .order_by(DegreePlanValidation.createdAt.desc())
             .all()
         )
+        return [_normalize_validation(item) for item in results]
 
     @staticmethod
     def _process_validation(db: Session, validation_id: int):
@@ -183,6 +206,8 @@ class DegreePlanService:
             validation.status = ValidationStatus.ERROR
             validation.message = "Missing requirement data"
             validation.finishedAt = datetime.utcnow()
+            if validation.issues is None:
+                validation.issues = []
             db.commit()
             return
 
