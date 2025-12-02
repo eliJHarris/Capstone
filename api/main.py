@@ -3,15 +3,15 @@ import os
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
-from sqlalchemy.orm import Session
 
-from db.database import engine, get_db
+from db.database import engine
 from dependencies.auth import require_user
 from routes.schedules import router as schedules_router
 from routes.pdf_scraper import router as pdf_scraper_router
 from routes.notifications import router as notifications_router
 from routes.users import router as users_router
 from routes.openai import router as openai_router
+from routes.advisors import router as advisor_router
 from routes.degree_plans import router as degree_plans_router
 from routes.degree_import import router as degree_import_router
 from routes.advisees import router as advisees_router
@@ -61,6 +61,7 @@ _ROUTERS = [
     notifications_router,
     users_router,
     openai_router,
+    advisor_router,
     degree_plans_router,
     degree_import_router,
     advisees_router,
