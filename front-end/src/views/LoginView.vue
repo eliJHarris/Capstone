@@ -1,9 +1,6 @@
 <template>
   <v-app>
-    <v-main
-      class="d-flex align-center justify-center"
-      style="min-height: 100vh; background-color: #e6e5e1;"
-    >
+    <v-main class="d-flex align-center justify-center" style="min-height: 100vh; background-color: #e6e5e1;">
       <v-container max-width="420">
         <v-card elevation="8" class="pa-6" rounded="xl">
           <v-img
@@ -14,34 +11,50 @@
             class="mx-auto mb-6"
           />
 
-          <v-text-field
-            v-model="email"
-            label="Email"
-            variant="outlined"
-            prepend-inner-icon="mdi-email"
+          <v-alert
+            v-if="errorMsg"
+            type="error"
+            variant="tonal"
             class="mb-4"
-          />
-
-          <v-text-field
-            v-model="password"
-            label="Password"
-            type="password"
-            variant="outlined"
-            prepend-inner-icon="mdi-lock"
-            class="mb-4"
-          />
-
-          <v-btn
-            block
-            color="primary"
-            size="large"
-            class="mb-3"
-            @click="goToDashboard"
+            density="compact"
           >
-            LOGIN
-          </v-btn>
+            {{ errorMsg }}
+          </v-alert>
 
-          
+          <v-form @submit.prevent="handleLogin">
+            <v-text-field
+              v-model="username"
+              label="Username"
+              variant="outlined"
+              prepend-inner-icon="mdi-account"
+              class="mb-4"
+              autocomplete="username"
+            />
+
+            <v-text-field
+              v-model="password"
+              :type="showPassword ? 'text' : 'password'"
+              label="Password"
+              variant="outlined"
+              prepend-inner-icon="mdi-lock"
+              :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
+              @click:append-inner="showPassword = !showPassword"
+              class="mb-4"
+              autocomplete="current-password"
+            />
+
+            <v-btn
+              type="submit"
+              block
+              color="primary"
+              size="large"
+              class="mb-3"
+              :loading="loading"
+            >
+              LOGIN
+            </v-btn>
+          </v-form>
+
           <div class="text-center mb-4">
             <v-btn
               variant="text"
@@ -65,18 +78,33 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref } from "vue";
+import { useRouter } from "vue-router";
+import { loginRequest } from "@/services/auth.js";
 
-const router = useRouter()
-const email = ref('')
-const password = ref('')
+const router = useRouter();
 
-function goToDashboard() {
-  router.push('/dashboard')
-}
+const username = ref("");
+const password = ref("");
+const showPassword = ref(false);
+const loading = ref(false);
+const errorMsg = ref("");
 
 function forgotPassword() {
-  alert('Password reset functionality not yet implemented.')
+  console.log("Forgot password clicked");
+}
+
+async function handleLogin() {
+  errorMsg.value = "";
+  loading.value = true;
+  try {
+    await loginRequest(username.value, password.value);
+    router.push("/dashboard");
+  } catch (err) {
+    console.error(err);
+    errorMsg.value = err?.message || "Login failed";
+  } finally {
+    loading.value = false;
+  }
 }
 </script>

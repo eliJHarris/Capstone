@@ -45,6 +45,23 @@ env/
 *.sqlite3
 
 # Logs
+<<<<<<< HEAD
+*.log
+=======
 *.log
 
 
+>>>>>>> origin/dev
+secrets/
+!secrets/.gitkeep
+# LDAP cert scaffolding
+ldap/certs/*
+!ldap/certs/.gitkeep
+!ldap/certs/*.sh
+!ldap/certs/*.cnf
+
+# Reverse proxy self-signed cert scaffolding
+reverse-proxy/certs/*
+!reverse-proxy/certs/.gitkeep
+!reverse-proxy/certs/*.sh
+!reverse-proxy/certs/*.cnf

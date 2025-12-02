@@ -1,0 +1,13 @@
+dn: cn=advisors,ou=Groups,dc=adviseme,dc=local
+objectClass: top
+objectClass: groupOfNames
+cn: advisors
+member: cn=admin,dc=adviseme,dc=local
+member: cn=Alice Advisor,ou=People,dc=adviseme,dc=local
+
+dn: cn=advisees,ou=Groups,dc=adviseme,dc=local
+objectClass: top
+objectClass: groupOfNames
+cn: advisees
+member: cn=admin,dc=adviseme,dc=local
+member: cn=Bob Advisee,ou=People,dc=adviseme,dc=local

@@ -1,20 +1,18 @@
-FROM node:lts-alpine
+FROM node:lts-alpine AS build
 
-# keep dependencies needed by chokidar/Vite's file watcher
-RUN apk add --no-cache libc6-compat
+WORKDIR /app
 
-WORKDIR /code
-
-# Install dependencies
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
-#include the rest of the source so the container can also run without bind mounts
 COPY . .
+RUN npm run build
 
-EXPOSE 5173
-ENV HOST=0.0.0.0 \
-    PORT=5173
+FROM nginx:1.25-alpine AS runtime
 
-# Install (or update) dependencies inside the mounted workspace, then start the dev server
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
