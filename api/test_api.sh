@@ -101,7 +101,7 @@ if echo "$response" | grep -q "scheduleID"; then
     echo -e "${YELLOW}Test 9: Update Schedule Status to APPROVED${NC}"
     response=$(curl $CURL_OPTS -L -X PUT "$API_URL/api/schedules/$schedule_id" \
       -H "Content-Type: application/json" \
-      -d '{"status": "APPROVED"}')
+      -d '{"status": "APPROVED", "advisorFeedback": "Approved during automated test."}')
     echo "Response: $response"
     if echo "$response" | grep -q "APPROVED"; then
         echo -e "${GREEN}✓ Schedule approved${NC}"

@@ -23,12 +23,22 @@ class ScheduleCreate(BaseModel):
     termID: int = Field(..., description="ID of the term")
     source: ScheduleSource = Field(default=ScheduleSource.USER, description="Source of the schedule")
     status: ScheduleStatus = Field(default=ScheduleStatus.DRAFT, description="Status of the schedule")
+    advisorFeedback: Optional[str] = Field(
+        default=None,
+        max_length=500,
+        description="Optional feedback shared with the advisee about this schedule",
+    )
 
 
 # Schema for updating a schedule
 class ScheduleUpdate(BaseModel):
     status: Optional[ScheduleStatus] = Field(None, description="Status of the schedule")
     source: Optional[ScheduleSource] = Field(None, description="Source of the schedule")
+    advisorFeedback: Optional[str] = Field(
+        default=None,
+        max_length=500,
+        description="Feedback shared when approving or rejecting",
+    )
 
 
 # Schema for adding a class to a schedule
@@ -62,6 +72,7 @@ class ScheduleResponse(BaseModel):
     createdWhen: datetime
     approvedWhen: Optional[datetime]
     rejectedWhen: Optional[datetime]
+    advisorFeedback: Optional[str]
     classes: List[ClassInSchedule] = []
 
     class Config:
@@ -79,6 +90,7 @@ class ScheduleListResponse(BaseModel):
     createdWhen: datetime
     approvedWhen: Optional[datetime]
     rejectedWhen: Optional[datetime]
+    advisorFeedback: Optional[str]
     classCount: int = 0
 
     class Config:

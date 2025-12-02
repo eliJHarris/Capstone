@@ -263,11 +263,14 @@ const handleCreate = async () => {
   }
 }
 
-const handleStatusUpdate = async (newStatus) => {
+const handleStatusUpdate = async ({ status, advisorFeedback }) => {
   if (!selectedSchedule.value) return
   try {
-    await scheduleStore.updateSchedule(selectedSchedule.value.scheduleID, { status: newStatus })
-    showFeedback('Schedule status updated')
+    await scheduleStore.updateSchedule(selectedSchedule.value.scheduleID, {
+      status,
+      advisorFeedback,
+    })
+    showFeedback(`Schedule ${status.toLowerCase()} successfully`)
   } catch (err) {
     showFeedback(err.message || 'Failed to update status', 'error')
   }

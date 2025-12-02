@@ -87,10 +87,12 @@ class ScheduleCreate(BaseModel):
     termID: int
     source: ScheduleSource = ScheduleSource.USER
     status: ScheduleStatus = ScheduleStatus.DRAFT
+    advisorFeedback: Optional[str] = Field(default=None, max_length=500)
 
 class ScheduleUpdate(BaseModel):
     status: Optional[ScheduleStatus] = None
     source: Optional[ScheduleSource] = None
+    advisorFeedback: Optional[str] = Field(default=None, max_length=500)
 
 class AddClassRequest(BaseModel):
     sectionID: int
@@ -118,6 +120,7 @@ class ScheduleResponse(BaseModel):
     createdWhen: datetime
     approvedWhen: Optional[datetime]
     rejectedWhen: Optional[datetime]
+    advisorFeedback: Optional[str]
     classes: List[ClassInSchedule] = []
 
     class Config:
@@ -133,6 +136,7 @@ class ScheduleListResponse(BaseModel):
     createdWhen: datetime
     approvedWhen: Optional[datetime]
     rejectedWhen: Optional[datetime]
+    advisorFeedback: Optional[str]
     classCount: int
 
     class Config:
@@ -241,7 +245,8 @@ SELECT s.scheduleID,
        s.status,
        s.createdWhen,
        s.approvedWhen,
-       s.rejectedWhen
+       s.rejectedWhen,
+       s.advisorFeedback
 FROM schedules s
 JOIN terms t ON t.termID = s.termID
 WHERE s.scheduleID = :schedule_id
@@ -287,6 +292,13 @@ def _ensure_term_exists(conn, term_id: int):
     if not term:
         raise HTTPException(status_code=404, detail=f"Term {term_id} not found")
 
+
+def _clean_feedback(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
 # ------------- CRUD & Routes for schedules remain unchanged -------------
 
 @app.get("/schedules", response_model=List[ScheduleListResponse])
@@ -325,6 +337,7 @@ def list_schedules(
            s.createdWhen,
            s.approvedWhen,
            s.rejectedWhen,
+           s.advisorFeedback,
            (SELECT COUNT(*) FROM classes c WHERE c.scheduleID = s.scheduleID) AS classCount
     FROM schedules s
     JOIN terms t ON t.termID = s.termID
@@ -344,14 +357,20 @@ def get_schedule(schedule_id: int, user=Depends(verify_token)):
 @app.post("/schedules", response_model=ScheduleResponse, status_code=201)
 def create_schedule(payload: ScheduleCreate, user=Depends(verify_token)):
     now = datetime.utcnow()
+    feedback = _clean_feedback(payload.advisorFeedback)
+    if payload.status in {ScheduleStatus.APPROVED, ScheduleStatus.REJECTED} and not feedback:
+        raise HTTPException(
+            status_code=422,
+            detail="Advisor feedback is required when approving or rejecting a schedule.",
+        )
     with engine.begin() as conn:
         _ensure_term_exists(conn, payload.termID)
         result = conn.execute(
             text(
                 """
                 INSERT INTO schedules
-                (adviseeID, termID, source, status, createdWhen, approvedWhen, rejectedWhen)
-                VALUES (:adviseeID, :termID, :source, :status, :createdWhen, NULL, NULL)
+                (adviseeID, termID, source, status, createdWhen, approvedWhen, rejectedWhen, advisorFeedback)
+                VALUES (:adviseeID, :termID, :source, :status, :createdWhen, NULL, NULL, :advisorFeedback)
                 """
             ),
             {
@@ -360,6 +379,7 @@ def create_schedule(payload: ScheduleCreate, user=Depends(verify_token)):
                 "source": payload.source.value,
                 "status": payload.status.value,
                 "createdWhen": now,
+                "advisorFeedback": feedback,
             },
         )
         schedule_id = result.lastrowid
@@ -369,6 +389,9 @@ def create_schedule(payload: ScheduleCreate, user=Depends(verify_token)):
 def update_schedule(schedule_id: int, payload: ScheduleUpdate, user=Depends(verify_token)):
     updates = []
     params = {"schedule_id": schedule_id}
+    feedback_provided = payload.advisorFeedback is not None
+    cleaned_feedback = _clean_feedback(payload.advisorFeedback) if feedback_provided else None
+    advisor_feedback_set = False
 
     if payload.status is not None:
         updates.append("status = :status")
@@ -378,9 +401,25 @@ def update_schedule(schedule_id: int, payload: ScheduleUpdate, user=Depends(veri
         if payload.status == ScheduleStatus.APPROVED:
             params["approvedWhen"] = now
             params["rejectedWhen"] = None
+            if not cleaned_feedback:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Advisor feedback is required when approving or rejecting a schedule.",
+                )
+            params["advisorFeedback"] = cleaned_feedback
+            updates.append("advisorFeedback = :advisorFeedback")
+            advisor_feedback_set = True
         elif payload.status == ScheduleStatus.REJECTED:
             params["approvedWhen"] = None
             params["rejectedWhen"] = now
+            if not cleaned_feedback:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Advisor feedback is required when approving or rejecting a schedule.",
+                )
+            params["advisorFeedback"] = cleaned_feedback
+            updates.append("advisorFeedback = :advisorFeedback")
+            advisor_feedback_set = True
         else:
             params["approvedWhen"] = None
             params["rejectedWhen"] = None
@@ -391,6 +430,10 @@ def update_schedule(schedule_id: int, payload: ScheduleUpdate, user=Depends(veri
     if payload.source is not None:
         updates.append("source = :source")
         params["source"] = payload.source.value
+
+    if feedback_provided and not advisor_feedback_set:
+        updates.append("advisorFeedback = :advisorFeedback")
+        params["advisorFeedback"] = cleaned_feedback
 
     if not updates:
         return _schedule_with_classes(schedule_id)
@@ -619,4 +662,3 @@ async def import_degreework_pdf(advisee_id: int, payload: dict, user=Depends(ver
         "importedCourses": completed_courses,
         "validation": validation_result
     }
-

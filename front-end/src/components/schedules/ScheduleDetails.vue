@@ -34,12 +34,32 @@
             <v-btn
               color="primary"
               block
-              :disabled="!statusChanged || mutationLoading"
+              :disabled="!canSubmitStatus || mutationLoading"
               :loading="mutationLoading && pendingAction === 'status'"
               @click="handleStatusUpdate"
             >
               Update Status
             </v-btn>
+          </v-col>
+        </v-row>
+
+        <v-row dense class="mb-4">
+          <v-col cols="12">
+            <v-textarea
+              v-model="feedbackModel"
+              label="Advisor feedback"
+              auto-grow
+              rows="2"
+              variant="outlined"
+              density="compact"
+              :maxlength="500"
+              :counter="500"
+              :hint="feedbackHint"
+              persistent-hint
+              :color="requiresFeedback ? 'primary' : undefined"
+              :error="requiresFeedback && !feedbackValid"
+              :error-messages="requiresFeedback && !feedbackValid ? ['Feedback is required for approvals and rejections.'] : []"
+            />
           </v-col>
         </v-row>
 
@@ -196,6 +216,7 @@ const emit = defineEmits(['update-status', 'delete', 'add-class', 'remove-class'
 const classes = computed(() => props.schedule?.classes ?? [])
 const statusModel = ref('')
 const sectionId = ref('')
+const feedbackModel = ref('')
 const dialogOpen = ref(false)
 const pendingAction = ref(null)
 
@@ -221,7 +242,22 @@ watch(
   }
 )
 
+watch(
+  () => props.schedule?.advisorFeedback,
+  (value) => {
+    feedbackModel.value = value || ''
+  },
+  { immediate: true }
+)
+
 const statusChanged = computed(() => props.schedule && statusModel.value && statusModel.value !== props.schedule.status)
+const trimmedFeedback = computed(() => feedbackModel.value.trim())
+const requiresFeedback = computed(() => ['APPROVED', 'REJECTED'].includes(statusModel.value || ''))
+const feedbackValid = computed(() => !requiresFeedback.value || Boolean(trimmedFeedback.value))
+const canSubmitStatus = computed(() => statusChanged.value && feedbackValid.value)
+const feedbackHint = computed(() =>
+  requiresFeedback.value ? 'Provide guidance for the advisee when approving or rejecting.' : 'Optional note shared with the advisee.'
+)
 
 function handleAddClass() {
   if (!sectionId.value) return
@@ -231,9 +267,12 @@ function handleAddClass() {
 }
 
 function handleStatusUpdate() {
-  if (!statusChanged.value) return
+  if (!canSubmitStatus.value) return
   pendingAction.value = 'status'
-  emit('update-status', statusModel.value)
+  emit('update-status', {
+    status: statusModel.value,
+    advisorFeedback: trimmedFeedback.value || null,
+  })
 }
 
 function requestRemoveClass(classId) {

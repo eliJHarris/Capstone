@@ -14,6 +14,13 @@ from schemas.schedule import (
 )
 
 
+def _clean_feedback(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
 class ScheduleService:
     """Service layer for Schedule CRUD operations"""
 
@@ -57,6 +64,7 @@ class ScheduleService:
                 createdWhen=schedule.createdWhen,
                 approvedWhen=schedule.approvedWhen,
                 rejectedWhen=schedule.rejectedWhen,
+                advisorFeedback=schedule.advisorFeedback,
                 classCount=class_count
             ))
 
@@ -108,6 +116,7 @@ class ScheduleService:
             createdWhen=schedule.createdWhen,
             approvedWhen=schedule.approvedWhen,
             rejectedWhen=schedule.rejectedWhen,
+            advisorFeedback=schedule.advisorFeedback,
             classes=class_list
         )
 
@@ -124,6 +133,13 @@ class ScheduleService:
                 detail=f"Term with ID {schedule_data.termID} not found"
             )
 
+        feedback = _clean_feedback(schedule_data.advisorFeedback)
+        if schedule_data.status in {ScheduleStatus.APPROVED, ScheduleStatus.REJECTED} and not feedback:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Advisor feedback is required when approving or rejecting a schedule."
+            )
+
         # Create new schedule
         new_schedule = Schedule(
             adviseeID=schedule_data.adviseeID,
@@ -132,7 +148,8 @@ class ScheduleService:
             status=schedule_data.status,
             createdWhen=datetime.now(),
             approvedWhen=None,
-            rejectedWhen=None
+            rejectedWhen=None,
+            advisorFeedback=feedback
         )
 
         db.add(new_schedule)
@@ -154,6 +171,9 @@ class ScheduleService:
                 detail=f"Schedule with ID {schedule_id} not found"
             )
 
+        feedback_provided = schedule_data.advisorFeedback is not None
+        cleaned_feedback = _clean_feedback(schedule_data.advisorFeedback) if feedback_provided else None
+
         # Update fields if provided
         if schedule_data.status is not None:
             schedule.status = schedule_data.status
@@ -162,15 +182,30 @@ class ScheduleService:
             if schedule_data.status == ScheduleStatus.APPROVED:
                 schedule.approvedWhen = datetime.now()
                 schedule.rejectedWhen = None
+                if not cleaned_feedback:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail="Advisor feedback is required when approving or rejecting a schedule."
+                    )
+                schedule.advisorFeedback = cleaned_feedback
             elif schedule_data.status == ScheduleStatus.REJECTED:
                 schedule.rejectedWhen = datetime.now()
                 schedule.approvedWhen = None
+                if not cleaned_feedback:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail="Advisor feedback is required when approving or rejecting a schedule."
+                    )
+                schedule.advisorFeedback = cleaned_feedback
             elif schedule_data.status == ScheduleStatus.DRAFT:
                 schedule.approvedWhen = None
                 schedule.rejectedWhen = None
 
         if schedule_data.source is not None:
             schedule.source = schedule_data.source
+
+        if feedback_provided and schedule_data.status not in {ScheduleStatus.APPROVED, ScheduleStatus.REJECTED}:
+            schedule.advisorFeedback = cleaned_feedback
 
         db.commit()
         db.refresh(schedule)
