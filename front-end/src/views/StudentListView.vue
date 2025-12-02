@@ -121,66 +121,11 @@
       </v-col>
 
       <v-col cols="12" md="8">
-        <v-card rounded="xl" class="mb-4">
-          <v-card-title class="d-flex align-center">
-            Students
-            <v-chip size="small" class="ml-2" color="primary" variant="tonal">
-              {{ advisees.length }}
-            </v-chip>
-            <v-spacer />
-            <span class="text-caption text-medium-emphasis">
-              Click a row to view details
-            </span>
-          </v-card-title>
-
-          <v-data-table
-            :headers="headers"
-            :items="advisees"
-            item-key="adviseeID"
-            :loading="loading"
-            :items-per-page="8"
-            class="student-table"
-            hover
-            @click:row="handleRowClick"
-          >
-            <template #item.name="{ item }">
-              <div class="d-flex flex-column">
-                <span class="font-weight-medium">{{ item.raw?.name || item.name }}</span>
-                <span class="text-caption text-medium-emphasis">
-                  {{ item.raw?.email || item.email || '—' }}
-                </span>
-              </div>
-            </template>
-
-            <template #item.status="{ item }">
-              <v-chip
-                size="small"
-                :color="statusColor(item.raw || item)"
-                variant="tonal"
-              >
-                {{ (item.raw?.status || item.status) || 'Unknown' }}
-              </v-chip>
-            </template>
-
-            <template #item.gpa="{ item }">
-              <div class="text-right">
-                {{ formatGpa(item.raw?.gpa ?? item.gpa) }}
-              </div>
-            </template>
-
-            <template #item.advisorName="{ item }">
-              <span>{{ advisorDisplayName(item.raw || item) }}</span>
-            </template>
-
-            <template #no-data>
-              <v-alert type="info" border="start" variant="tonal" class="ma-4">
-                No students matched these filters.
-              </v-alert>
-            </template>
-          </v-data-table>
-        </v-card>
-
-        <v-card v-if="selectedAdvisee" rounded="xl">
+        <v-card
+          v-if="selectedAdvisee"
+          rounded="xl"
+          class="mb-4"
+        >
           <v-card-title class="d-flex align-center">
             {{ selectedAdvisee.name }}
             <v-chip class="ml-2" size="small" :color="statusColor(selectedAdvisee)" variant="tonal">
@@ -244,6 +189,75 @@
               </v-btn>
             </div>
           </v-card-text>
+        </v-card>
+
+        <v-card rounded="xl">
+          <v-card-title class="d-flex align-center">
+            Students
+            <v-chip size="small" class="ml-2" color="primary" variant="tonal">
+              {{ advisees.length }}
+            </v-chip>
+            <v-spacer />
+            <span class="text-caption text-medium-emphasis">
+              Click a row to view details
+            </span>
+          </v-card-title>
+
+          <v-data-table
+            :headers="headers"
+            :items="advisees"
+            item-key="adviseeID"
+            :loading="loading"
+            :items-per-page="8"
+            class="student-table"
+            :item-class="rowClass"
+            hover
+            @click:row="handleRowClick"
+          >
+            <template #item.name="{ item }">
+              <div class="d-flex flex-column">
+                <div class="d-flex align-center">
+                  <v-icon
+                    v-if="isSelected(item.raw?.adviseeID || item.adviseeID)"
+                    icon="mdi-check-circle"
+                    color="primary"
+                    size="16"
+                    class="mr-2"
+                  />
+                  <span class="font-weight-medium">{{ item.raw?.name || item.name }}</span>
+                </div>
+                <span class="text-caption text-medium-emphasis">
+                  {{ item.raw?.email || item.email || '—' }}
+                </span>
+              </div>
+            </template>
+
+            <template #item.status="{ item }">
+              <v-chip
+                size="small"
+                :color="statusColor(item.raw || item)"
+                variant="tonal"
+              >
+                {{ (item.raw?.status || item.status) || 'Unknown' }}
+              </v-chip>
+            </template>
+
+            <template #item.gpa="{ item }">
+              <div class="text-right">
+                {{ formatGpa(item.raw?.gpa ?? item.gpa) }}
+              </div>
+            </template>
+
+            <template #item.advisorName="{ item }">
+              <span>{{ advisorDisplayName(item.raw || item) }}</span>
+            </template>
+
+            <template #no-data>
+              <v-alert type="info" border="start" variant="tonal" class="ma-4">
+                No students matched these filters.
+              </v-alert>
+            </template>
+          </v-data-table>
         </v-card>
       </v-col>
     </v-row>
@@ -475,6 +489,13 @@ const selectAdvisee = (id) => {
   advisorSelection.value = current?.advisorID ?? null
 }
 
+const isSelected = (id) => Number(id) === selectedAdviseeId.value
+
+const rowClass = (item) => {
+  const raw = item?.raw ?? item
+  return Number(raw?.adviseeID) === selectedAdviseeId.value ? 'selected-row' : ''
+}
+
 const handleAdvisorUpdate = async () => {
   if (!selectedAdvisee.value) return
   updatingAdvisor.value = true
@@ -529,5 +550,10 @@ onMounted(() => {
   text-transform: uppercase;
   font-size: 0.75rem;
   letter-spacing: 0.5px;
+}
+
+.student-table :deep(.selected-row) {
+  background-color: rgba(0, 0, 0, 0.04) !important;
+  transition: background-color 0.2s ease;
 }
 </style>

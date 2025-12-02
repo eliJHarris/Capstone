@@ -187,16 +187,23 @@
       </v-col>
 
       <v-col cols="12" md="8">
-        <ScheduleList
-          :items="schedules"
-          :selected-id="selectedScheduleId"
-          :loading="loadingList"
-          :last-synced-at="lastSyncedAt"
-          @select="scheduleStore.selectSchedule"
-          @refresh="refreshList"
-        />
+        <div
+          v-if="selectedScheduleId"
+          class="d-flex align-center mb-2"
+        >
+          <v-btn
+            variant="text"
+            color="primary"
+            prepend-icon="mdi-arrow-left"
+            @click="handleBackToList"
+          >
+            Back to schedules
+          </v-btn>
+          <v-spacer />
+        </div>
 
         <ScheduleDetails
+          class="mb-4"
           :schedule="selectedSchedule"
           :status-options="statusOptions"
           :loading="loadingDetail"
@@ -217,6 +224,16 @@
           @apply-suggestion="handleApplySuggestion"
           @cancel-suggestion="handleCancelSuggestion"
           @update:suggestion-note="updateSuggestionNote"
+        />
+
+        <ScheduleList
+          v-if="!selectedScheduleId"
+          :items="schedules"
+          :selected-id="selectedScheduleId"
+          :loading="loadingList"
+          :last-synced-at="lastSyncedAt"
+          @select="scheduleStore.selectSchedule"
+          @refresh="refreshList"
         />
       </v-col>
     </v-row>
@@ -535,6 +552,10 @@ const handleClearSuggestions = () => {
 const handleCancelSuggestion = (optionNumber) => {
   if (!optionNumber) return
   scheduleStore.removeSuggestionOption(optionNumber)
+}
+
+const handleBackToList = () => {
+  scheduleStore.clearSelection()
 }
 
 watch(

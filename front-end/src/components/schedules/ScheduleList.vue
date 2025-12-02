@@ -8,6 +8,9 @@
         </div>
       </div>
       <v-spacer />
+      <span class="text-caption text-medium-emphasis mr-4" v-if="items.length">
+        Click a row to view details
+      </span>
       <v-btn
         icon
         variant="text"
@@ -19,63 +22,86 @@
       </v-btn>
     </v-card-title>
 
-    <v-divider />
+    <v-data-table
+      :headers="headers"
+      :items="tableItems"
+      item-key="scheduleID"
+      :loading="loading"
+      :items-per-page="8"
+      hover
+      density="comfortable"
+      @click:row="handleRowClick"
+    >
+      <template #item.scheduleID="{ item }">
+        <div class="d-flex align-center" style="gap: 8px;">
+          <v-icon
+            v-if="isSelected(item)"
+            size="small"
+            color="primary"
+          >
+            mdi-check-circle
+          </v-icon>
+          <span class="font-weight-medium">#{{ item.raw?.scheduleID || item.scheduleID }}</span>
+        </div>
+      </template>
 
-    <v-list v-if="items.length" lines="two">
-      <v-list-item
-        v-for="schedule in items"
-        :key="schedule.scheduleID"
-        :value="schedule.scheduleID"
-        :class="{
-          'selected-item': schedule.scheduleID === selectedId,
-        }"
-        @click="$emit('select', schedule.scheduleID)"
-      >
-        <template #prepend>
-          <v-avatar color="primary">
-            <span class="text-body-2 font-weight-medium">
-              {{ schedule.termName || schedule.termCode || schedule.termID }}
-            </span>
-          </v-avatar>
-        </template>
-        <v-list-item-title class="font-weight-medium">
-          Schedule #{{ schedule.scheduleID }}
-        </v-list-item-title>
-        <v-list-item-subtitle>
-          {{ schedule.adviseeName || `Advisee ${schedule.adviseeID}` }} • Created
-          {{ formatTimestamp(schedule.createdWhen) }}
-        </v-list-item-subtitle>
-        <template #append>
-          <div class="d-flex flex-column align-end ga-2">
-            <v-chip
-              size="small"
-              :color="statusColor(schedule.status)"
-              variant="tonal"
-            >
-              {{ schedule.status }}
-            </v-chip>
-            <span class="text-caption text-medium-emphasis">
-              {{ schedule.classCount }} classes
-            </span>
-          </div>
-        </template>
-      </v-list-item>
-    </v-list>
+      <template #item.advisee="{ item }">
+        <div class="d-flex flex-column">
+          <span class="font-weight-medium">
+            {{ item.raw?.adviseeName || item.advisee || `Advisee ${item.raw?.adviseeID}` }}
+          </span>
+          <span class="text-caption text-medium-emphasis">
+            {{ item.raw?.adviseeEmail || item.raw?.email || '—' }}
+          </span>
+        </div>
+      </template>
 
-    <div v-else-if="!loading" class="pa-6 text-body-2 text-medium-emphasis">
-      No schedules found. Adjust filters or create a new schedule to get started.
-    </div>
+      <template #item.term="{ item }">
+        <div class="d-flex align-center" style="gap: 8px;">
+          <v-chip size="small" color="primary" variant="tonal">
+            {{ item.raw?.termName || item.raw?.termCode || item.term }}
+          </v-chip>
+          <span class="text-caption text-medium-emphasis">
+            {{ item.raw?.termID ? `#${item.raw.termID}` : '' }}
+          </span>
+        </div>
+      </template>
 
-    <v-progress-linear
-      v-if="loading"
-      indeterminate
-      color="primary"
-    />
+      <template #item.status="{ item }">
+        <v-chip
+          size="small"
+          :color="statusColor(item.raw?.status || item.status)"
+          variant="tonal"
+        >
+          {{ item.raw?.status || item.status }}
+        </v-chip>
+      </template>
+
+      <template #item.classCount="{ item }">
+        <div class="text-right font-weight-medium">
+          {{ item.raw?.classCount ?? item.classCount ?? 0 }}
+        </div>
+      </template>
+
+      <template #item.createdWhen="{ item }">
+        <div class="text-caption text-medium-emphasis">
+          {{ formatTimestamp(item.raw?.createdWhen || item.createdWhen) }}
+        </div>
+      </template>
+
+      <template #no-data>
+        <v-alert type="info" border="start" variant="tonal" class="ma-4">
+          No schedules found. Adjust filters or create a new schedule to get started.
+        </v-alert>
+      </template>
+    </v-data-table>
   </v-card>
 </template>
 
 <script setup>
-defineProps({
+import { computed } from 'vue'
+
+const props = defineProps({
   items: {
     type: Array,
     default: () => [],
@@ -94,7 +120,38 @@ defineProps({
   },
 })
 
-defineEmits(['select', 'refresh'])
+const emit = defineEmits(['select', 'refresh'])
+
+const headers = [
+  { title: 'ID', key: 'scheduleID', sortable: false },
+  { title: 'Advisee', key: 'advisee', sortable: false },
+  { title: 'Term', key: 'term', sortable: false },
+  { title: 'Status', key: 'status' },
+  { title: 'Classes', key: 'classCount', align: 'end' },
+  { title: 'Created', key: 'createdWhen' },
+]
+
+const tableItems = computed(() =>
+  props.items.map((item) => ({
+    ...item,
+    advisee: item.adviseeName || `Advisee ${item.adviseeID}`,
+    term: item.termName || item.termCode || item.termID || '—',
+    createdWhen: item.createdWhen,
+    raw: item,
+  }))
+)
+
+const isSelected = (item) => {
+  const id = item?.raw?.scheduleID ?? item?.scheduleID
+  return props.selectedId != null && Number(id) === Number(props.selectedId)
+}
+
+const handleRowClick = (_, row) => {
+  const schedule = row?.item?.raw || row?.item
+  if (schedule?.scheduleID) {
+    emit('select', Number(schedule.scheduleID))
+  }
+}
 
 const statusColor = (status) => {
   const map = {

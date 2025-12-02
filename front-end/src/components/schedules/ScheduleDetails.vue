@@ -1,6 +1,9 @@
 <template>
-  <v-card rounded="xl" variant="flat">
-    <template v-if="schedule">
+  <v-card
+    v-if="schedule"
+    rounded="xl"
+    variant="flat"
+  >
       <v-card-title class="d-flex align-center">
         <div>
           <div class="text-h6">Schedule #{{ schedule.scheduleID }}</div>
@@ -333,20 +336,13 @@
           </tbody>
         </v-table>
       </v-card-text>
-    </template>
-
-    <template v-else>
-      <v-card-text class="text-medium-emphasis">
-        Select a schedule from the list to see its details.
-      </v-card-text>
-    </template>
-
-    <v-progress-linear
-      v-if="loading"
-      indeterminate
-      color="primary"
-    />
   </v-card>
+
+  <v-progress-linear
+    v-if="loading"
+    indeterminate
+    color="primary"
+  />
 
   <v-dialog v-model="dialogOpen" max-width="420">
     <v-card>
