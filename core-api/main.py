@@ -9,7 +9,7 @@ import json
 import re
 
 from pdf_scraper.scrape_pdfs import run_pdf_scraper
-from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi import FastAPI, Depends, HTTPException, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from jose import jwt, JWTError
 from pydantic import BaseModel, Field
@@ -82,6 +82,11 @@ class ScheduleSource(str, Enum):
     ADVISOR = "ADVISOR"
     SYSTEM = "SYSTEM"
 
+class SectionStatus(str, Enum):
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"
+    CANCELLED = "CANCELLED"
+
 class ScheduleCreate(BaseModel):
     adviseeID: int
     termID: int
@@ -98,6 +103,10 @@ class AddClassRequest(BaseModel):
 class ClassInSchedule(BaseModel):
     classID: int
     sectionID: int
+    sectionStatus: SectionStatus
+    capacity: int
+    enrolled: int
+    seatsRemaining: int
     courseName: str
     courseDescription: Optional[str]
     credits: int
@@ -107,6 +116,19 @@ class ClassInSchedule(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class SectionSearchItem(BaseModel):
+    sectionID: int
+    crn: str
+    courseName: str
+    courseDescription: Optional[str]
+    professorName: Optional[str]
+    credits: int
+    capacity: int
+    enrolled: int
+    seatsRemaining: int
+    status: SectionStatus
 
 class ScheduleResponse(BaseModel):
     scheduleID: int
@@ -251,6 +273,10 @@ CLASS_LIST_SQL = """
 SELECT c.classID,
        c.sectionID,
        c.createdDate,
+       sec.capacity,
+       sec.enrolled,
+       sec.status AS sectionStatus,
+       GREATEST(sec.capacity - sec.enrolled, 0) AS seatsRemaining,
        sec.crn,
        sec.professorName,
        co.courseName,
@@ -286,6 +312,47 @@ def _ensure_term_exists(conn, term_id: int):
     ).first()
     if not term:
         raise HTTPException(status_code=404, detail=f"Term {term_id} not found")
+
+
+def _lookup_schedule(conn, schedule_id: int):
+    schedule = conn.execute(
+        text("SELECT scheduleID, termID, status FROM schedules WHERE scheduleID = :sid"),
+        {"sid": schedule_id},
+    ).mappings().first()
+    if not schedule:
+        raise HTTPException(status_code=404, detail=f"Schedule {schedule_id} not found")
+    return schedule
+
+
+def _search_sections_for_schedule(conn, schedule, search: Optional[str], limit: int):
+    filters = ["sec.termID = :term_id", "sec.status = :status"]
+    params = {"term_id": schedule["termID"], "status": SectionStatus.OPEN.value, "limit": limit}
+
+    if search:
+        filters.append(
+            "(co.courseName LIKE :q OR co.description LIKE :q OR sec.crn LIKE :q)"
+        )
+        params["q"] = f"%{search}%"
+
+    query = f"""
+        SELECT sec.sectionID,
+               sec.crn,
+               sec.capacity,
+               sec.enrolled,
+               sec.status,
+               co.courseName,
+               co.description AS courseDescription,
+               co.credits,
+               sec.professorName,
+               GREATEST(sec.capacity - sec.enrolled, 0) AS seatsRemaining
+        FROM sections sec
+        JOIN courses co ON co.courseID = sec.courseID
+        WHERE {' AND '.join(filters)}
+        ORDER BY co.courseName ASC, sec.crn ASC
+        LIMIT :limit
+    """
+    rows = conn.execute(text(query), params).mappings().all()
+    return [dict(row) for row in rows]
 
 # ------------- CRUD & Routes for schedules remain unchanged -------------
 
@@ -341,6 +408,24 @@ def list_schedules(
 def get_schedule(schedule_id: int, user=Depends(verify_token)):
     return _schedule_with_classes(schedule_id)
 
+
+@app.get(
+    "/schedules/{schedule_id}/sections",
+    response_model=List[SectionSearchItem],
+    summary="List available sections for a schedule's term",
+)
+def list_sections_for_schedule(
+    schedule_id: int,
+    search: Optional[str] = None,
+    limit: int = Query(20, ge=1, le=100),
+    user=Depends(verify_token),
+):
+    with engine.connect() as conn:
+        schedule = _lookup_schedule(conn, schedule_id)
+        sections = _search_sections_for_schedule(conn, schedule, search, limit)
+        return sections
+
+
 @app.post("/schedules", response_model=ScheduleResponse, status_code=201)
 def create_schedule(payload: ScheduleCreate, user=Depends(verify_token)):
     now = datetime.utcnow()
@@ -369,6 +454,7 @@ def create_schedule(payload: ScheduleCreate, user=Depends(verify_token)):
 def update_schedule(schedule_id: int, payload: ScheduleUpdate, user=Depends(verify_token)):
     updates = []
     params = {"schedule_id": schedule_id}
+    requires_class_check = payload.status == ScheduleStatus.APPROVED
 
     if payload.status is not None:
         updates.append("status = :status")
@@ -405,6 +491,16 @@ def update_schedule(schedule_id: int, payload: ScheduleUpdate, user=Depends(veri
         if not exists:
             raise HTTPException(status_code=404, detail=f"Schedule {schedule_id} not found")
 
+        if requires_class_check:
+            class_count = conn.execute(
+                text("SELECT COUNT(*) FROM classes WHERE scheduleID = :schedule_id"),
+                {"schedule_id": schedule_id},
+            ).scalar_one()
+            if class_count == 0:
+                raise HTTPException(
+                    status_code=400, detail="Cannot approve a schedule with no classes"
+                )
+
         conn.execute(
             text(f"UPDATE schedules SET {set_clause} WHERE scheduleID = :schedule_id"),
             params,
@@ -436,26 +532,40 @@ def delete_schedule(schedule_id: int, user=Depends(verify_token)):
 @app.post("/schedules/{schedule_id}/classes", response_model=ScheduleResponse)
 def add_class_to_schedule(schedule_id: int, payload: AddClassRequest, user=Depends(verify_token)):
     with engine.begin() as conn:
-        schedule = conn.execute(
-            text("SELECT scheduleID, termID FROM schedules WHERE scheduleID = :sid"),
-            {"sid": schedule_id},
-        ).mappings().first()
+        schedule = _lookup_schedule(conn, schedule_id)
 
-        if not schedule:
-            raise HTTPException(status_code=404, detail=f"Schedule {schedule_id} not found")
+        if schedule["status"] != ScheduleStatus.DRAFT.value:
+            raise HTTPException(
+                status_code=400, detail="Only DRAFT schedules can be modified"
+            )
 
         section = conn.execute(
-            text("SELECT sectionID, termID FROM sections WHERE sectionID = :sec"),
+            text(
+                "SELECT sectionID, termID, capacity, enrolled, status "
+                "FROM sections WHERE sectionID = :sec"
+            ),
             {"sec": payload.sectionID},
         ).mappings().first()
 
         if not section:
             raise HTTPException(status_code=404, detail=f"Section {payload.sectionID} not found")
 
+        if section["status"] != SectionStatus.OPEN.value:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Section {payload.sectionID} is not open for scheduling",
+            )
+
         if section["termID"] != schedule["termID"]:
             raise HTTPException(
                 status_code=400,
                 detail=f"Section term {section['termID']} does not match schedule term {schedule['termID']}",
+            )
+
+        if section["enrolled"] >= section["capacity"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Section {payload.sectionID} is already full",
             )
 
         existing = conn.execute(
@@ -481,24 +591,49 @@ def add_class_to_schedule(schedule_id: int, payload: AddClassRequest, user=Depen
             },
         )
 
+        conn.execute(
+            text(
+                "UPDATE sections SET enrolled = enrolled + 1 "
+                "WHERE sectionID = :sec AND enrolled < capacity"
+            ),
+            {"sec": payload.sectionID},
+        )
+
     return _schedule_with_classes(schedule_id)
 
 @app.delete("/schedules/{schedule_id}/classes/{class_id}", response_model=ScheduleResponse)
 def remove_class_from_schedule(schedule_id: int, class_id: int, user=Depends(verify_token)):
     with engine.begin() as conn:
-        exists = conn.execute(
+        cls = conn.execute(
             text(
-                """SELECT 1 FROM classes 
-                   WHERE classID = :cid AND scheduleID = :sid"""
+                """
+                SELECT c.sectionID, s.status AS scheduleStatus
+                FROM classes c
+                JOIN schedules s ON s.scheduleID = c.scheduleID
+                WHERE c.classID = :cid AND c.scheduleID = :sid
+                """
             ),
             {"cid": class_id, "sid": schedule_id},
-        ).first()
+        ).mappings().first()
 
-        if not exists:
+        if not cls:
             raise HTTPException(
                 status_code=404,
                 detail=f"Class {class_id} not found in schedule {schedule_id}",
             )
+
+        if cls["scheduleStatus"] != ScheduleStatus.DRAFT.value:
+            raise HTTPException(
+                status_code=400, detail="Only DRAFT schedules can be modified"
+            )
+
+        conn.execute(
+            text(
+                "UPDATE sections SET enrolled = CASE WHEN enrolled > 0 THEN enrolled - 1 ELSE 0 END "
+                "WHERE sectionID = :sec"
+            ),
+            {"sec": cls["sectionID"]},
+        )
 
         conn.execute(
             text(
@@ -619,4 +754,3 @@ async def import_degreework_pdf(advisee_id: int, payload: dict, user=Depends(ver
         "importedCourses": completed_courses,
         "validation": validation_result
     }
-

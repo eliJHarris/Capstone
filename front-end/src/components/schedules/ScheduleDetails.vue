@@ -20,6 +20,17 @@
       </v-card-title>
 
       <v-card-text>
+        <v-alert
+          v-if="!isDraft"
+          type="info"
+          variant="tonal"
+          class="mb-4"
+          density="comfortable"
+        >
+          Classes can only be modified while the schedule is in DRAFT. Update the status
+          to DRAFT to make changes.
+        </v-alert>
+
         <v-row dense class="mb-4">
           <v-col cols="12" md="6">
             <v-select
@@ -44,24 +55,54 @@
         </v-row>
 
         <v-row dense class="mb-4">
-          <v-col cols="12" md="6">
-            <v-text-field
-              label="Section ID"
+          <v-col cols="12" md="8">
+            <v-autocomplete
               v-model="sectionId"
-              type="number"
+              v-model:search="sectionSearch"
+              :items="sectionOptions"
+              :loading="sectionLoading"
+              label="Add class by course"
               density="compact"
               variant="outlined"
-            />
+              item-title="title"
+              item-value="value"
+              :return-object="false"
+              clearable
+              @update:search="emitSearch"
+            >
+              <template #item="{ props, item }">
+                <v-list-item v-bind="props">
+                  <v-list-item-title>
+                    {{ item?.raw?.title }}
+                  </v-list-item-title>
+                  <v-list-item-subtitle>
+                    {{ item?.raw?.subtitle }}
+                  </v-list-item-subtitle>
+                  <template #append>
+                    <div class="text-right">
+                      <div class="text-caption text-medium-emphasis">
+                        {{ seatSummary(item?.raw?.meta) }}
+                      </div>
+                    </div>
+                  </template>
+                </v-list-item>
+              </template>
+              <template #no-data>
+                <div class="px-4 py-2 text-medium-emphasis text-caption">
+                  {{ sectionSearch ? 'No classes match your search' : 'Start typing a course name or CRN' }}
+                </div>
+              </template>
+            </v-autocomplete>
           </v-col>
-          <v-col cols="12" md="6" class="d-flex align-end">
+          <v-col cols="12" md="4" class="d-flex align-end">
             <v-btn
               color="secondary"
               block
-              :disabled="!sectionId || mutationLoading"
+              :disabled="addDisabled"
               :loading="mutationLoading && pendingAction === 'add-class'"
               @click="handleAddClass"
             >
-              Add Section To Schedule
+              Add Class
             </v-btn>
           </v-col>
         </v-row>
@@ -95,6 +136,8 @@
               <th class="text-left">Course</th>
               <th class="text-left">CRN</th>
               <th class="text-left">Professor</th>
+              <th class="text-left">Status</th>
+              <th class="text-left">Seats</th>
               <th class="text-left">Credits</th>
               <th class="text-left">Created</th>
               <th></th>
@@ -116,6 +159,23 @@
               </td>
               <td>{{ cls.crn }}</td>
               <td>{{ cls.professorName || 'TBD' }}</td>
+              <td>
+                <v-chip
+                  size="small"
+                  :color="sectionStatusColor(cls.sectionStatus)"
+                  variant="tonal"
+                >
+                  {{ cls.sectionStatus || 'UNKNOWN' }}
+                </v-chip>
+              </td>
+              <td>
+                <div class="font-weight-medium">
+                  {{ cls.enrolled ?? 0 }} / {{ cls.capacity ?? 0 }}
+                </div>
+                <div class="text-caption text-medium-emphasis">
+                  {{ cls.seatsRemaining ?? Math.max((cls.capacity || 0) - (cls.enrolled || 0), 0) }} open seats
+                </div>
+              </td>
               <td>{{ cls.credits }}</td>
               <td>{{ formatDate(cls.createdDate) }}</td>
               <td class="text-right">
@@ -124,7 +184,7 @@
                   size="small"
                   variant="text"
                   color="error"
-                  :disabled="mutationLoading"
+                  :disabled="mutationLoading || !isDraft"
                   :loading="mutationLoading && pendingAction === `remove-${cls.classID}`"
                   @click="requestRemoveClass(cls.classID)"
                 />
@@ -189,13 +249,23 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  sectionOptions: {
+    type: Array,
+    default: () => [],
+  },
+  sectionLoading: {
+    type: Boolean,
+    default: false,
+  },
 })
 
-const emit = defineEmits(['update-status', 'delete', 'add-class', 'remove-class'])
+const emit = defineEmits(['update-status', 'delete', 'add-class', 'remove-class', 'search-sections'])
 
 const classes = computed(() => props.schedule?.classes ?? [])
+const isDraft = computed(() => props.schedule?.status === 'DRAFT')
 const statusModel = ref('')
 const sectionId = ref('')
+const sectionSearch = ref('')
 const dialogOpen = ref(false)
 const pendingAction = ref(null)
 
@@ -211,6 +281,8 @@ watch(
   () => props.schedule?.scheduleID,
   () => {
     sectionId.value = ''
+    sectionSearch.value = ''
+    emitSearch('')
   }
 )
 
@@ -221,10 +293,11 @@ watch(
   }
 )
 
+const addDisabled = computed(() => !sectionId.value || props.mutationLoading || !isDraft.value)
 const statusChanged = computed(() => props.schedule && statusModel.value && statusModel.value !== props.schedule.status)
 
 function handleAddClass() {
-  if (!sectionId.value) return
+  if (!sectionId.value || !isDraft.value) return
   pendingAction.value = 'add-class'
   emit('add-class', Number(sectionId.value))
   sectionId.value = ''
@@ -237,6 +310,7 @@ function handleStatusUpdate() {
 }
 
 function requestRemoveClass(classId) {
+  if (!isDraft.value) return
   pendingAction.value = `remove-${classId}`
   emit('remove-class', classId)
 }
@@ -249,6 +323,15 @@ function confirmDelete() {
   }
 }
 
+function emitSearch(value) {
+  emit('search-sections', value)
+}
+
+const seatSummary = (meta = {}) => {
+  const { enrolled = 0, capacity = 0, seatsRemaining = Math.max((capacity || 0) - (enrolled || 0), 0) } = meta
+  return `${enrolled}/${capacity} • ${seatsRemaining} open`
+}
+
 const formatDate = (value) => {
   if (!value) return '—'
   return new Intl.DateTimeFormat(undefined, {
@@ -257,5 +340,14 @@ const formatDate = (value) => {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
+}
+
+const sectionStatusColor = (status) => {
+  const map = {
+    OPEN: 'green',
+    CLOSED: 'grey',
+    CANCELLED: 'error',
+  }
+  return map[status] || 'primary'
 }
 </script>

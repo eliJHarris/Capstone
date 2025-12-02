@@ -40,6 +40,10 @@ class AddClassToSchedule(BaseModel):
 class ClassInSchedule(BaseModel):
     classID: int
     sectionID: int
+    sectionStatus: str
+    capacity: int
+    enrolled: int
+    seatsRemaining: int
     courseName: str
     courseDescription: Optional[str]
     credits: int
@@ -49,6 +53,19 @@ class ClassInSchedule(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class SectionSearchItem(BaseModel):
+    sectionID: int
+    crn: str
+    courseName: str
+    courseDescription: Optional[str]
+    professorName: Optional[str]
+    credits: int
+    capacity: int
+    enrolled: int
+    seatsRemaining: int
+    status: str
 
 
 # Schema for schedule response

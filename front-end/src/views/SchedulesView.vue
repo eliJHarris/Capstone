@@ -147,10 +147,13 @@
           :status-options="statusOptions"
           :loading="loadingDetail"
           :mutation-loading="mutationLoading"
+          :section-options="sectionOptions"
+          :section-loading="sectionSearchLoading"
           @update-status="handleStatusUpdate"
           @delete="handleDelete"
           @add-class="handleAddClass"
           @remove-class="handleRemoveClass"
+          @search-sections="handleSectionSearch"
         />
       </v-col>
     </v-row>
@@ -182,6 +185,8 @@ const {
   loadingDetail,
   mutationLoading,
   lastSyncedAt,
+  sectionOptions,
+  sectionSearchLoading,
   error,
 } = storeToRefs(scheduleStore)
 
@@ -288,6 +293,7 @@ const handleAddClass = async (sectionId) => {
   try {
     await scheduleStore.addClassToSchedule(selectedSchedule.value.scheduleID, sectionId)
     showFeedback(`Section ${sectionId} added`)
+    await scheduleStore.searchSections(selectedSchedule.value.scheduleID, '')
   } catch (err) {
     showFeedback(err.message || 'Failed to add section', 'error')
   }
@@ -298,10 +304,29 @@ const handleRemoveClass = async (classId) => {
   try {
     await scheduleStore.removeClassFromSchedule(selectedSchedule.value.scheduleID, classId)
     showFeedback('Class removed')
+    await scheduleStore.searchSections(selectedSchedule.value.scheduleID, '')
   } catch (err) {
     showFeedback(err.message || 'Failed to remove class', 'error')
   }
 }
+
+const handleSectionSearch = async (query) => {
+  if (!selectedScheduleId.value) return
+  try {
+    await scheduleStore.searchSections(selectedScheduleId.value, query)
+  } catch (err) {
+    showFeedback(err.message || 'Failed to search sections', 'error')
+  }
+}
+
+watch(
+  () => selectedScheduleId.value,
+  async (id) => {
+    if (id) {
+      await scheduleStore.searchSections(id, '')
+    }
+  }
+)
 
 onMounted(() => {
   if (!schedules.value.length) {

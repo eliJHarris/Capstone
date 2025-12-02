@@ -16,6 +16,8 @@ export const useScheduleStore = defineStore('schedules', {
     loadingList: false,
     loadingDetail: false,
     mutationLoading: false,
+    sectionSearchLoading: false,
+    sectionOptions: [],
     error: null,
     lastSyncedAt: null,
     filters: createDefaultFilters(),
@@ -86,10 +88,15 @@ export const useScheduleStore = defineStore('schedules', {
         return
       }
       await this.fetchScheduleById(scheduleId)
+      await this.searchSections(scheduleId)
     },
     clearSelection() {
       this.selectedSchedule = null
       this.selectedScheduleId = null
+      this.sectionOptions = []
+    },
+    clearSectionOptions() {
+      this.sectionOptions = []
     },
     async createSchedule(payload) {
       this.mutationLoading = true
@@ -102,12 +109,41 @@ export const useScheduleStore = defineStore('schedules', {
         this.selectedSchedule = created
         this.selectedScheduleId = created.scheduleID
         await this.fetchSchedules()
+        await this.searchSections(created.scheduleID, '')
         return created
       } catch (error) {
         this.error = error.message || 'Failed to create schedule'
         throw error
       } finally {
         this.mutationLoading = false
+      }
+    },
+    async searchSections(scheduleId, search = '') {
+      if (!scheduleId) {
+        this.clearSectionOptions()
+        return
+      }
+      this.sectionSearchLoading = true
+      this.error = null
+      try {
+        const qs = search ? `?search=${encodeURIComponent(search)}` : ''
+        const data = await apiFetch(`/schedules/${scheduleId}/sections${qs}`)
+        this.sectionOptions = data.map((item) => ({
+          value: item.sectionID,
+          title: `${item.courseName} (${item.crn})`,
+          subtitle: `${item.professorName || 'TBD'} • ${item.credits} credits`,
+          meta: {
+            seatsRemaining: item.seatsRemaining,
+            enrolled: item.enrolled,
+            capacity: item.capacity,
+            status: item.status,
+          },
+        }))
+      } catch (error) {
+        this.error = error.message || 'Failed to search sections'
+        throw error
+      } finally {
+        this.sectionSearchLoading = false
       }
     },
     async updateSchedule(scheduleId, payload) {
@@ -156,6 +192,7 @@ export const useScheduleStore = defineStore('schedules', {
           body: { sectionID: Number(sectionId) },
         })
         this.selectedSchedule = updated
+        await this.fetchSchedules()
         return updated
       } catch (error) {
         this.error = error.message || 'Failed to add class'
@@ -173,6 +210,7 @@ export const useScheduleStore = defineStore('schedules', {
           method: 'DELETE',
         })
         this.selectedSchedule = updated
+        await this.fetchSchedules()
         return updated
       } catch (error) {
         this.error = error.message || 'Failed to remove class'
