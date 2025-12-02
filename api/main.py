@@ -11,7 +11,7 @@ from routes.pdf_scraper import router as pdf_scraper_router
 from routes.notifications import router as notifications_router
 from routes.users import router as users_router
 from routes.openai import router as openai_router
-from routes.advisors import router as advisor_router
+from routes.advisors import router as advisors_router
 from routes.degree_plans import router as degree_plans_router
 from routes.degree_import import router as degree_import_router
 from routes.advisees import router as advisees_router
@@ -61,7 +61,7 @@ _ROUTERS = [
     notifications_router,
     users_router,
     openai_router,
-    advisor_router,
+    advisors_router,
     degree_plans_router,
     degree_import_router,
     advisees_router,
