@@ -22,7 +22,9 @@ from routes.terms import router as terms_router
 app = FastAPI(
     title="AdviseMe API",
     description="Academic advising and scheduling platform API",
-    version="1.0.0"
+    version="1.0.0",
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json",
 )
 
 # Configure CORS
