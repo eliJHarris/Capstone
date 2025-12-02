@@ -21,6 +21,10 @@ export const useScheduleStore = defineStore('schedules', {
     error: null,
     lastSyncedAt: null,
     filters: createDefaultFilters(),
+    suggestionLoading: false,
+    suggestions: [],
+    suggestionRecommendations: '',
+    suggestionError: null,
   }),
   getters: {
     hasSelection: (state) => Boolean(state.selectedSchedule),
@@ -100,6 +104,17 @@ export const useScheduleStore = defineStore('schedules', {
     clearSectionOptions() {
       this.sectionOptions = []
     },
+    clearSuggestions() {
+      this.suggestions = []
+      this.suggestionRecommendations = ''
+      this.suggestionError = null
+    },
+    removeSuggestionOption(optionNumber) {
+      if (!optionNumber) return
+      this.suggestions = this.suggestions.filter(
+        (item) => item.option_number !== optionNumber && item.optionNumber !== optionNumber
+      )
+    },
     async createSchedule(payload) {
       this.mutationLoading = true
       this.error = null
@@ -118,6 +133,25 @@ export const useScheduleStore = defineStore('schedules', {
         throw error
       } finally {
         this.mutationLoading = false
+      }
+    },
+    async generateSuggestions(scheduleId, note = '') {
+      if (!scheduleId) return
+      this.suggestionLoading = true
+      this.suggestionError = null
+      try {
+        const data = await apiFetch(`/schedules/${scheduleId}/suggestions`, {
+          method: 'POST',
+          body: { note },
+        })
+        this.suggestions = data.schedules || []
+        this.suggestionRecommendations = data.general_recommendations || ''
+        return data
+      } catch (error) {
+        this.suggestionError = error.message || 'Failed to generate schedule suggestions'
+        throw error
+      } finally {
+        this.suggestionLoading = false
       }
     },
     async searchSections(scheduleId, search = '') {
@@ -162,6 +196,51 @@ export const useScheduleStore = defineStore('schedules', {
         return updated
       } catch (error) {
         this.error = error.message || 'Failed to update schedule'
+        throw error
+      } finally {
+        this.mutationLoading = false
+      }
+    },
+    async applySuggestedOption(scheduleId, option, strategy = 'merge') {
+      if (!scheduleId || !option || !Array.isArray(option.courses)) return
+      this.mutationLoading = true
+      this.error = null
+      try {
+        const currentClasses = this.selectedSchedule?.classes || []
+        const currentClassIds = currentClasses.map((cls) => cls.classID)
+        const existingSectionIds = new Set(
+          currentClasses.map((cls) => Number(cls.sectionID)).filter((id) => !Number.isNaN(id))
+        )
+
+        // If replacing, remove all current classes first
+        if (strategy === 'replace' && currentClassIds.length) {
+          for (const classId of currentClassIds) {
+            try {
+              await apiFetch(`/schedules/${scheduleId}/classes/${classId}`, { method: 'DELETE' })
+            } catch (error) {
+              this.error = error.message || 'Failed to clear existing classes'
+              throw error
+            }
+          }
+          existingSectionIds.clear()
+        }
+
+        for (const course of option.courses) {
+          const sectionId = Number(course.section)
+          if (!sectionId || Number.isNaN(sectionId) || existingSectionIds.has(sectionId)) {
+            continue
+          }
+          await apiFetch(`/schedules/${scheduleId}/classes`, {
+            method: 'POST',
+            body: { sectionID: sectionId },
+          })
+        }
+
+        await this.fetchScheduleById(scheduleId)
+        await this.fetchSchedules()
+        this.clearSuggestions()
+      } catch (error) {
+        this.error = error.message || 'Failed to apply suggested schedule'
         throw error
       } finally {
         this.mutationLoading = false

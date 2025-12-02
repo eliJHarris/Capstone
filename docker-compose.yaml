@@ -155,6 +155,7 @@ services:
       DB_USER: adviseme_app
       DB_NAME: adviseme
       DB_PASSWORD_FILE: /run/secrets/dbapppass
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
     expose:
       - "8000"
     depends_on:
@@ -164,6 +165,7 @@ services:
       - adviseme-net
     secrets:
       - dbapppass
+      - jwt_secret
 
 
   frontend:

@@ -128,6 +128,145 @@
           </v-card-text>
         </v-card>
 
+        <v-card class="mb-4" variant="tonal">
+          <v-card-title class="d-flex align-center">
+            <div>
+              <div class="text-subtitle-1">AI suggested schedules</div>
+              <div class="text-caption text-medium-emphasis">
+                Generate 12–15 credit options from open sections.
+              </div>
+            </div>
+            <v-spacer />
+            <v-btn
+              color="primary"
+              variant="flat"
+              :loading="suggestionLoading"
+              :disabled="!isDraft || suggestionLoading || loading"
+              @click="emitSuggestions"
+            >
+              Get suggested schedule
+            </v-btn>
+          </v-card-title>
+          <v-card-text>
+            <v-textarea
+              v-model="localSuggestionNote"
+              label="Preferences or constraints (optional)"
+              rows="2"
+              auto-grow
+              density="comfortable"
+              variant="outlined"
+              placeholder="e.g., Avoid Friday classes, prefer mornings, cap at 14 credits."
+              :disabled="suggestionLoading"
+              class="mb-3"
+              @change="emitNote"
+              @blur="emitNote"
+            />
+
+            <v-alert
+              v-if="suggestionError"
+              type="error"
+              density="comfortable"
+              class="mb-3"
+            >
+              {{ suggestionError }}
+            </v-alert>
+
+            <div v-if="suggestionLoading" class="py-4 d-flex align-center">
+              <v-progress-circular indeterminate color="primary" class="mr-3" />
+              <div class="text-medium-emphasis">Generating schedule options...</div>
+            </div>
+            <template v-else-if="suggestions && suggestions.length">
+              <v-alert
+                v-if="generalRecommendations"
+                type="info"
+                variant="tonal"
+                density="comfortable"
+                class="mb-3"
+              >
+                {{ generalRecommendations }}
+              </v-alert>
+
+              <v-row dense>
+                <v-col
+                  v-for="option in suggestions"
+                  :key="option.option_number"
+                  cols="12"
+                >
+                  <v-sheet rounded="lg" border class="pa-3">
+                    <div class="d-flex align-center mb-2">
+                      <div>
+                        <div class="text-subtitle-1">Option {{ option.option_number }}</div>
+                        <div class="text-caption text-medium-emphasis">
+                          Total credits: {{ option.total_credits }}
+                        </div>
+                      </div>
+                      <v-spacer />
+                      <v-btn
+                        color="primary"
+                        size="small"
+                        class="mr-2"
+                        :disabled="!isDraft || mutationLoading"
+                        :loading="isApplyingOption(option, 'confirm')"
+                        @click="applySuggestion(option, 'confirm')"
+                      >
+                        Confirm
+                      </v-btn>
+                      <v-btn
+                        variant="text"
+                        size="small"
+                        :disabled="suggestionLoading"
+                        @click="cancelSuggestion(option)"
+                      >
+                        Cancel
+                      </v-btn>
+                    </div>
+
+                    <div v-if="option.rationale" class="text-body-2 mb-2">
+                      {{ option.rationale }}
+                    </div>
+
+                    <v-chip-group column>
+                      <v-chip
+                        v-for="course in option.courses"
+                        :key="`${option.option_number}-${course.section || course.course_code}`"
+                        class="mr-2 mb-2"
+                        color="secondary"
+                        variant="tonal"
+                        label
+                      >
+                        {{ course.course_code || course.course_name }} ({{ course.credits }} cr)
+                        <span
+                          v-if="course.section"
+                          class="text-caption text-medium-emphasis"
+                        >
+                          &nbsp;• Section {{ course.section }}
+                        </span>
+                      </v-chip>
+                    </v-chip-group>
+
+                    <div v-if="option.warnings && option.warnings.length" class="mt-2">
+                      <div class="text-caption text-medium-emphasis mb-1">Warnings</div>
+                      <v-chip
+                        v-for="warning in option.warnings"
+                        :key="warning"
+                        color="warning"
+                        variant="tonal"
+                        size="small"
+                        class="mr-2 mb-1"
+                      >
+                        {{ warning }}
+                      </v-chip>
+                    </div>
+                  </v-sheet>
+                </v-col>
+              </v-row>
+            </template>
+            <div v-else class="text-caption text-medium-emphasis">
+              No suggestions yet. Ask for a suggested schedule to get started.
+            </div>
+          </v-card-text>
+        </v-card>
+
         <div class="d-flex align-center mb-2">
           <h3 class="text-subtitle-1 mb-0">Classes ({{ classes.length }})</h3>
         </div>
@@ -228,6 +367,28 @@
       </v-card-actions>
     </v-card>
   </v-dialog>
+
+  <v-dialog v-model="suggestionStrategyDialog" max-width="520">
+    <v-card>
+      <v-card-title>How should we add these classes?</v-card-title>
+      <v-card-text>
+        <v-radio-group v-model="suggestionStrategy" hide-details>
+          <v-radio label="Add to current classes" value="merge" />
+          <v-radio label="Replace current classes with suggested" value="replace" />
+        </v-radio-group>
+        <div class="text-caption text-medium-emphasis mt-2">
+          Your existing classes: {{ classes.length }} • Suggested: {{ pendingSuggestionOption?.courses?.length || 0 }}
+        </div>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn variant="text" @click="suggestionStrategyDialog = false">Cancel</v-btn>
+        <v-btn color="primary" :loading="mutationLoading" @click="confirmSuggestionStrategy">
+          Continue
+        </v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
 </template>
 
 <script setup>
@@ -258,9 +419,39 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  suggestions: {
+    type: Array,
+    default: () => [],
+  },
+  suggestionLoading: {
+    type: Boolean,
+    default: false,
+  },
+  suggestionError: {
+    type: String,
+    default: '',
+  },
+  suggestionNote: {
+    type: String,
+    default: '',
+  },
+  generalRecommendations: {
+    type: String,
+    default: '',
+  },
 })
 
-const emit = defineEmits(['update-status', 'delete', 'add-class', 'remove-class', 'search-sections'])
+const emit = defineEmits([
+  'update-status',
+  'delete',
+  'add-class',
+  'remove-class',
+  'search-sections',
+  'request-suggestions',
+  'apply-suggestion',
+  'cancel-suggestion',
+  'update:suggestion-note',
+])
 
 const classes = computed(() => props.schedule?.classes ?? [])
 const isDraft = computed(() => props.schedule?.status === 'DRAFT')
@@ -269,6 +460,11 @@ const sectionId = ref('')
 const sectionSearch = ref('')
 const dialogOpen = ref(false)
 const pendingAction = ref(null)
+const suggestionPendingAction = ref('')
+const localSuggestionNote = ref('')
+const suggestionStrategyDialog = ref(false)
+const suggestionStrategy = ref('merge')
+const pendingSuggestionOption = ref(null)
 
 watch(
   () => props.schedule?.status,
@@ -290,8 +486,19 @@ watch(
 watch(
   () => props.mutationLoading,
   (value) => {
-    if (!value) pendingAction.value = null
+    if (!value) {
+      pendingAction.value = null
+      suggestionPendingAction.value = ''
+    }
   }
+)
+
+watch(
+  () => props.suggestionNote,
+  (value) => {
+    localSuggestionNote.value = value || ''
+  },
+  { immediate: true }
 )
 
 const addDisabled = computed(() => !sectionId.value || props.mutationLoading || !isDraft.value)
@@ -322,6 +529,45 @@ function confirmDelete() {
     pendingAction.value = 'delete'
     emit('delete', props.schedule.scheduleID)
   }
+}
+
+function emitNote() {
+  emit('update:suggestion-note', localSuggestionNote.value)
+}
+
+function emitSuggestions() {
+  emitNote()
+  emit('request-suggestions', localSuggestionNote.value)
+}
+
+function applySuggestion(option, mode) {
+  if (!option) return
+  if (classes.value.length > 0) {
+    pendingSuggestionOption.value = option
+    suggestionStrategy.value = 'merge'
+    suggestionStrategyDialog.value = true
+    return
+  }
+  suggestionPendingAction.value = `${mode}-${option.option_number}`
+  emit('apply-suggestion', { option, strategy: 'merge' })
+}
+
+function isApplyingOption(option, mode) {
+  return suggestionPendingAction.value === `${mode}-${option.option_number}` && props.mutationLoading
+}
+
+function cancelSuggestion(option) {
+  if (!option) return
+  emit('cancel-suggestion', option.option_number)
+}
+
+function confirmSuggestionStrategy() {
+  if (!pendingSuggestionOption.value) return
+  const strategy = suggestionStrategy.value === 'replace' ? 'replace' : 'merge'
+  suggestionPendingAction.value = `${strategy}-${pendingSuggestionOption.value.option_number}`
+  emit('apply-suggestion', { option: pendingSuggestionOption.value, strategy })
+  suggestionStrategyDialog.value = false
+  pendingSuggestionOption.value = null
 }
 
 function emitSearch(value) {

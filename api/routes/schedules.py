@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -10,9 +11,13 @@ from schemas.schedule import (
     ScheduleListResponse,
     AddClassToSchedule,
     ScheduleStatus,
-    SectionSearchItem
+    SectionSearchItem,
+    ScheduleSuggestionRequest,
+    ScheduleSuggestionResponse,
 )
 from services.schedule_service import ScheduleService
+from services.schedule_ai_service import ScheduleAISuggestionService
+from services.openai_service import get_openai_service
 from dependencies.auth import require_user
 
 router = APIRouter(
@@ -87,6 +92,32 @@ def search_sections_for_schedule(
         search=search,
         limit=limit,
     )
+
+
+@router.post("/{schedule_id}/suggestions", response_model=ScheduleSuggestionResponse)
+async def generate_schedule_suggestions(
+    schedule_id: int,
+    payload: ScheduleSuggestionRequest = ScheduleSuggestionRequest(),
+    user=Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate AI-assisted schedule suggestions using current degree context and open sections.
+    """
+    try:
+        openai_service = get_openai_service()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    service = ScheduleAISuggestionService(db, openai_service)
+    try:
+        return await run_in_threadpool(service.generate, schedule_id, payload.note)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=502, detail=f"Failed to generate schedule suggestions: {exc}"
+        ) from exc
 
 
 @router.post("/", response_model=ScheduleResponse, status_code=201)

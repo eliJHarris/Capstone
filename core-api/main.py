@@ -7,6 +7,7 @@ import sys
 import time
 import json
 import re
+import requests
 
 from pdf_scraper.scrape_pdfs import run_pdf_scraper
 from fastapi import FastAPI, Depends, HTTPException, Header, Query
@@ -70,6 +71,8 @@ DATABASE_URL = f"mysql+pymysql://{DB_USER}:{quote_plus(DB_PASS)}@{DB_HOST}/{DB_N
 engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True)
 
 API_WORKDIR = Path(os.getenv("API_WORKDIR", "/code")).resolve()
+# Default to docker-compose service name; override with DEGREE_API_BASE for local dev
+DEGREE_API_BASE = os.getenv("DEGREE_API_BASE", "http://api-service:8000/api").rstrip("/")
 
 # ---------- Models ----------
 class ScheduleStatus(str, Enum):
@@ -163,6 +166,32 @@ class ScheduleListResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ScheduleSuggestionRequest(BaseModel):
+    note: Optional[str] = Field(
+        None, description="Preference or constraint to include in the suggestion prompt"
+    )
+
+
+class SuggestedCourse(BaseModel):
+    course_code: str
+    course_name: Optional[str] = None
+    credits: float
+    section: Optional[str] = None
+
+
+class SuggestedScheduleOption(BaseModel):
+    option_number: int
+    courses: List[SuggestedCourse]
+    total_credits: float
+    rationale: Optional[str] = None
+    warnings: List[str] = Field(default_factory=list)
+
+
+class ScheduleSuggestionResponse(BaseModel):
+    schedules: List[SuggestedScheduleOption]
+    general_recommendations: Optional[str] = None
 
 class PDFScrapeRequest(BaseModel):
     start_url: str
@@ -399,6 +428,38 @@ def _search_sections_for_schedule(conn, schedule, search: Optional[str], limit: 
     rows = conn.execute(text(query), params).mappings().all()
     return [dict(row) for row in rows]
 
+# ------------- Suggestion helper -------------
+
+def _request_schedule_suggestions(schedule_id: int, payload: ScheduleSuggestionRequest, authorization: str):
+    """
+    Forward suggestion generation to the degree API (FastAPI service) so we reuse shared logic and OpenAI integration.
+    """
+    url = f"{DEGREE_API_BASE}/schedules/{schedule_id}/suggestions"
+    headers = {"Authorization": authorization, "Content-Type": "application/json"}
+    try:
+        resp = requests.post(url, json=payload.dict(), headers=headers, timeout=20)
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Suggestion service unreachable: {exc}")
+
+    if resp.status_code >= 400:
+        try:
+            detail = resp.json().get("detail", resp.text)
+        except Exception:
+            detail = resp.text
+
+        if resp.status_code == 404:
+            raise HTTPException(status_code=404, detail=detail or "Schedule not found")
+
+        raise HTTPException(
+            status_code=502,
+            detail=f"Suggestion service error (status {resp.status_code}): {detail}",
+        )
+
+    try:
+        return resp.json()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Invalid suggestion response: {exc}")
+
 # ------------- CRUD & Routes for schedules remain unchanged -------------
 
 @app.get("/schedules", response_model=List[ScheduleListResponse])
@@ -481,6 +542,22 @@ def list_sections_for_schedule(
         schedule = _lookup_schedule(conn, schedule_id)
         sections = _search_sections_for_schedule(conn, schedule, search, limit)
         return sections
+
+@app.post(
+    "/schedules/{schedule_id}/suggestions",
+    response_model=ScheduleSuggestionResponse,
+    summary="Generate AI schedule suggestions",
+)
+def generate_schedule_suggestions(
+    schedule_id: int,
+    payload: ScheduleSuggestionRequest = ScheduleSuggestionRequest(),
+    authorization: str = Header(...),
+    user=Depends(verify_token),
+):
+    """
+    Forward schedule suggestion generation to the degree API while enforcing the same auth as other core endpoints.
+    """
+    return _request_schedule_suggestions(schedule_id, payload, authorization)
 
 
 @app.post("/schedules", response_model=ScheduleResponse, status_code=201)

@@ -203,11 +203,20 @@
           :mutation-loading="mutationLoading"
           :section-options="sectionOptions"
           :section-loading="sectionSearchLoading"
+          :suggestions="suggestions"
+          :suggestion-loading="suggestionLoading"
+          :suggestion-error="suggestionError"
+          :general-recommendations="suggestionRecommendations"
+          :suggestion-note="suggestionNote"
           @update-status="handleStatusUpdate"
           @delete="handleDelete"
           @add-class="handleAddClass"
           @remove-class="handleRemoveClass"
           @search-sections="handleSectionSearch"
+          @request-suggestions="handleGenerateSuggestions"
+          @apply-suggestion="handleApplySuggestion"
+          @cancel-suggestion="handleCancelSuggestion"
+          @update:suggestion-note="updateSuggestionNote"
         />
       </v-col>
     </v-row>
@@ -244,6 +253,10 @@ const {
   sectionOptions,
   sectionSearchLoading,
   error,
+  suggestions,
+  suggestionRecommendations,
+  suggestionLoading,
+  suggestionError,
 } = storeToRefs(scheduleStore)
 
 const statusOptions = computed(() => scheduleStore.statusOptions)
@@ -272,6 +285,7 @@ const filterAdviseeSearch = ref('')
 const filterTermSearch = ref('')
 const adviseeLoading = ref(false)
 const termLoading = ref(false)
+const suggestionNote = ref('')
 
 const feedback = reactive({
   show: false,
@@ -473,9 +487,60 @@ const handleSectionSearch = async (query) => {
   }
 }
 
+const updateSuggestionNote = (value) => {
+  suggestionNote.value = value || ''
+}
+
+const handleGenerateSuggestions = async (note) => {
+  if (!selectedScheduleId.value) return
+
+  if (selectedSchedule.value && selectedSchedule.value.status !== 'DRAFT') {
+    showFeedback('Switch the schedule to DRAFT to add suggested classes', 'error')
+    return
+  }
+
+  try {
+    await scheduleStore.generateSuggestions(selectedScheduleId.value, note ?? suggestionNote.value)
+    showFeedback('Generated schedule suggestions')
+  } catch (err) {
+    showFeedback(err.message || 'Failed to generate suggestions', 'error')
+  }
+}
+
+const handleApplySuggestion = async ({ option, strategy = 'merge' } = {}) => {
+  if (!selectedScheduleId.value || !option) return
+  if (selectedSchedule.value && selectedSchedule.value.status !== 'DRAFT') {
+    showFeedback('Schedule must be in DRAFT to add suggested classes', 'error')
+    return
+  }
+
+  try {
+    await scheduleStore.applySuggestedOption(selectedScheduleId.value, option, strategy)
+    const message =
+      strategy === 'replace'
+        ? 'Replaced current classes with suggested schedule.'
+        : 'Added suggested classes to your current schedule.'
+    showFeedback(message)
+    await scheduleStore.searchSections(selectedScheduleId.value, '')
+  } catch (err) {
+    showFeedback(err.message || 'Failed to apply suggested schedule', 'error')
+  }
+}
+
+const handleClearSuggestions = () => {
+  scheduleStore.clearSuggestions()
+  suggestionNote.value = ''
+}
+
+const handleCancelSuggestion = (optionNumber) => {
+  if (!optionNumber) return
+  scheduleStore.removeSuggestionOption(optionNumber)
+}
+
 watch(
   () => selectedScheduleId.value,
   async (id) => {
+    handleClearSuggestions()
     if (id) {
       await scheduleStore.searchSections(id, '')
     }
