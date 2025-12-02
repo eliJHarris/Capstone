@@ -206,8 +206,8 @@
                         size="small"
                         class="mr-2"
                         :disabled="!isDraft || mutationLoading"
-                        :loading="isApplyingOption(option, 'confirm')"
-                        @click="applySuggestion(option, 'confirm')"
+                        :loading="isApplyingOption(option)"
+                        @click="applySuggestion(option)"
                       >
                         Confirm
                       </v-btn>
@@ -367,28 +367,6 @@
       </v-card-actions>
     </v-card>
   </v-dialog>
-
-  <v-dialog v-model="suggestionStrategyDialog" max-width="520">
-    <v-card>
-      <v-card-title>How should we add these classes?</v-card-title>
-      <v-card-text>
-        <v-radio-group v-model="suggestionStrategy" hide-details>
-          <v-radio label="Add to current classes" value="merge" />
-          <v-radio label="Replace current classes with suggested" value="replace" />
-        </v-radio-group>
-        <div class="text-caption text-medium-emphasis mt-2">
-          Your existing classes: {{ classes.length }} • Suggested: {{ pendingSuggestionOption?.courses?.length || 0 }}
-        </div>
-      </v-card-text>
-      <v-card-actions>
-        <v-spacer />
-        <v-btn variant="text" @click="suggestionStrategyDialog = false">Cancel</v-btn>
-        <v-btn color="primary" :loading="mutationLoading" @click="confirmSuggestionStrategy">
-          Continue
-        </v-btn>
-      </v-card-actions>
-    </v-card>
-  </v-dialog>
 </template>
 
 <script setup>
@@ -462,9 +440,6 @@ const dialogOpen = ref(false)
 const pendingAction = ref(null)
 const suggestionPendingAction = ref('')
 const localSuggestionNote = ref('')
-const suggestionStrategyDialog = ref(false)
-const suggestionStrategy = ref('merge')
-const pendingSuggestionOption = ref(null)
 
 watch(
   () => props.schedule?.status,
@@ -540,34 +515,24 @@ function emitSuggestions() {
   emit('request-suggestions', localSuggestionNote.value)
 }
 
-function applySuggestion(option, mode) {
+function applySuggestion(option) {
   if (!option) return
-  if (classes.value.length > 0) {
-    pendingSuggestionOption.value = option
-    suggestionStrategy.value = 'merge'
-    suggestionStrategyDialog.value = true
-    return
-  }
-  suggestionPendingAction.value = `${mode}-${option.option_number}`
-  emit('apply-suggestion', { option, strategy: 'merge' })
+  const strategy = option.option_number === 3 ? 'replace' : 'merge'
+  suggestionPendingAction.value = `${strategy}-${option.option_number}`
+  emit('apply-suggestion', { option, strategy })
 }
 
-function isApplyingOption(option, mode) {
-  return suggestionPendingAction.value === `${mode}-${option.option_number}` && props.mutationLoading
+function isApplyingOption(option) {
+  return (
+    props.mutationLoading &&
+    (suggestionPendingAction.value === `merge-${option.option_number}` ||
+      suggestionPendingAction.value === `replace-${option.option_number}`)
+  )
 }
 
 function cancelSuggestion(option) {
   if (!option) return
   emit('cancel-suggestion', option.option_number)
-}
-
-function confirmSuggestionStrategy() {
-  if (!pendingSuggestionOption.value) return
-  const strategy = suggestionStrategy.value === 'replace' ? 'replace' : 'merge'
-  suggestionPendingAction.value = `${strategy}-${pendingSuggestionOption.value.option_number}`
-  emit('apply-suggestion', { option: pendingSuggestionOption.value, strategy })
-  suggestionStrategyDialog.value = false
-  pendingSuggestionOption.value = null
 }
 
 function emitSearch(value) {

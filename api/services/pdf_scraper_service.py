@@ -1,9 +1,9 @@
+import json
 import os
-import subprocess
-import sys
 import time
 from pathlib import Path
-from typing import List
+
+from pdf_scraper.scrape_pdfs import run_pdf_scraper
 
 from schemas.pdf_scraper import PDFScrapeRequest, PDFScrapeResponse
 
@@ -19,69 +19,44 @@ def _resolve_output_path(output_path: Path) -> Path:
     return output_path.resolve()
 
 
-def _build_command(request: PDFScrapeRequest, script_path: Path, output_path: Path) -> List[str]:
-    """Convert a request payload into CLI arguments for the scraper."""
-    command: List[str] = [
-        sys.executable,
-        str(script_path),
-        str(request.start_url),
-        "--output",
-        str(output_path),
-        "--max-pages",
-        str(request.max_pages),
-        "--delay",
-        str(request.delay),
-        "--timeout",
-        str(request.timeout),
-    ]
-
-    if request.verbose:
-        command.append("--verbose")
-
-    for keyword in request.require_keywords:
-        command.extend(["--require-keyword", keyword])
-
-    return command
-
-
 class PDFScraperService:
-    """Service wrapper for invoking the standalone PDF scraper."""
-
-    @staticmethod
-    def _script_path() -> Path:
-        candidate = os.environ.get("PDF_SCRAPER_PATH", "/pdf_scraper/scrape_pdfs.py")
-        script_path = Path(candidate).resolve()
-        return script_path
+    """Service wrapper for invoking the PDF scraper utility within the container."""
 
     @classmethod
     def run_scraper(cls, request: PDFScrapeRequest) -> PDFScrapeResponse:
-        script_path = cls._script_path()
-        if not script_path.exists():
-            raise FileNotFoundError(
-                f"PDF scraper script not found at {script_path}. Check docker-compose volume mounts."
-            )
-
         output_path_input = Path(request.output_path) if request.output_path else Path(
-            f"pdf_results/output_{int(time.time())}.txt"
+            f"pdf_results/output_{int(time.time())}.json"
         )
         output_path = _resolve_output_path(output_path_input)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        command = _build_command(request, script_path, output_path)
-
         start_time = time.monotonic()
-        process = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-        )
-        duration = time.monotonic() - start_time
+        try:
+            results = run_pdf_scraper(
+                start_url=str(request.start_url),
+                max_pages=request.max_pages,
+                delay=request.delay,
+                keywords=request.require_keywords,
+            )
+            with open(output_path, "w", encoding="utf-8") as file:
+                json.dump(results, file, indent=2)
+            duration = time.monotonic() - start_time
 
-        return PDFScrapeResponse(
-            success=process.returncode == 0,
-            exit_code=process.returncode,
-            output_path=str(output_path),
-            stdout=process.stdout or "",
-            stderr=process.stderr or "",
-            duration_seconds=duration,
-        )
+            return PDFScrapeResponse(
+                success=True,
+                exit_code=0,
+                output_path=str(output_path),
+                stdout="OK",
+                stderr="",
+                duration_seconds=duration,
+            )
+        except Exception as exc:  # noqa: BLE001
+            duration = time.monotonic() - start_time
+            return PDFScrapeResponse(
+                success=False,
+                exit_code=1,
+                output_path=str(output_path),
+                stdout="",
+                stderr=str(exc),
+                duration_seconds=duration,
+            )

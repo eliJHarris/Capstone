@@ -95,53 +95,6 @@ services:
       - ldap_admin_pass
       - jwt_secret
 
-  core-api:
-    build:
-      context: ./core-api
-      dockerfile: Dockerfile
-    container_name: adviseme-core
-    restart: unless-stopped
-
-    volumes:
-      - ./pdf_scraper:/code/pdf_scraper:ro
-
-    environment:
-      DB_HOST: adviseme-db
-      DB_USER: adviseme_app
-      DB_NAME: adviseme
-      DB_PASS_FILE: /run/secrets/dbapppass
-      JWT_SECRET_FILE: /run/secrets/jwt_secret
-      ALLOWED_ORIGINS: "https://localhost,https://localhost:5173,https://localhost:3000,https://adviseme.local"
-      PORT: "8081"
-      PDF_SCRAPER_PATH: /pdf_scraper/scrape_pdfs.py
-      API_WORKDIR: /code
-
-    expose:
-      - "8081"
-
-    depends_on:
-      db:
-        condition: service_healthy
-      openldap:
-        condition: service_started
-
-    networks:
-      - adviseme-net
-
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/', timeout=2)\" >/dev/null 2>&1 || exit 1"
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-    secrets:
-      - dbapppass
-      - jwt_secret
-
   api-service:
     build:
       context: ./api
@@ -176,8 +129,8 @@ services:
     expose:
       - "80"
     depends_on:
-      - core-api
       - auth-api
+      - api-service
     networks:
       - adviseme-net
 
@@ -188,7 +141,6 @@ services:
     depends_on:
       - frontend
       - auth-api
-      - core-api
       - api-service
     volumes:
       - ./reverse-proxy/conf.d:/etc/nginx/conf.d:ro

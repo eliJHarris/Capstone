@@ -1,9 +1,12 @@
+import os
+
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from db.database import engine, get_db
+from dependencies.auth import require_user
 from routes.schedules import router as schedules_router
 from routes.pdf_scraper import router as pdf_scraper_router
 from routes.notifications import router as notifications_router
@@ -23,24 +26,51 @@ app = FastAPI(
 )
 
 # Configure CORS
+DEFAULT_ALLOWED = (
+    "http://localhost,"
+    "https://localhost,"
+    "http://localhost:5173,"
+    "https://localhost:5173,"
+    "http://localhost:3000,"
+    "https://localhost:3000,"
+    "https://adviseme.local"
+)
+
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", DEFAULT_ALLOWED).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],           # restrict in production
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=os.getenv(
+        "ALLOWED_ORIGIN_REGEX",
+        r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(schedules_router, prefix="/api")
-app.include_router(pdf_scraper_router, prefix="/api")
-app.include_router(notifications_router, prefix="/api")
-app.include_router(users_router, prefix="/api")
-app.include_router(openai_router, prefix="/api")
-app.include_router(degree_plans_router, prefix="/api")
-app.include_router(degree_import_router, prefix="/api")
-app.include_router(advisees_router, prefix="/api")
-app.include_router(terms_router, prefix="/api")
+# Include routers (primary /api paths) and compatibility mounts without the prefix
+_ROUTERS = [
+    schedules_router,
+    pdf_scraper_router,
+    notifications_router,
+    users_router,
+    openai_router,
+    degree_plans_router,
+    degree_import_router,
+    advisees_router,
+    terms_router,
+]
+
+for router in _ROUTERS:
+    app.include_router(router, prefix="/api")
+    # Backwards-compatible mount for clients that previously hit core-api without the /api prefix
+    app.include_router(router, include_in_schema=False)
 
 
 # Health check endpoints
@@ -51,7 +81,12 @@ async def read_root():
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy"}
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return {"status": "ok"}
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "degraded", "error": str(exc)}
 
 
 @app.get("/db")
@@ -63,3 +98,8 @@ def database_check():
             return {"status": "connected", "version": result.scalar()}
     except Exception as e:
         return {"status": "error", "message": f"Error connecting to database: {e}"}
+
+
+@app.get("/me")
+def me(user=Depends(require_user)):
+    return {"user": user}

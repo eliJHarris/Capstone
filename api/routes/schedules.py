@@ -61,6 +61,33 @@ def get_schedules(
     )
 
 
+@router.get("", response_model=List[ScheduleListResponse], include_in_schema=False)
+def get_schedules_no_slash(
+    advisee_id: Optional[int] = Query(None, description="Filter by advisee ID"),
+    advisee_name: Optional[str] = Query(None, description="Filter by advisee username"),
+    term_id: Optional[int] = Query(None, description="Filter by term ID"),
+    term_name: Optional[str] = Query(None, description="Filter by term code/name"),
+    status: Optional[ScheduleStatus] = Query(None, description="Filter by status"),
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=500, description="Maximum number of records to return"),
+    user=Depends(require_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Compatibility handler to avoid redirecting /schedules -> /schedules/ when callers omit the trailing slash.
+    """
+    return get_schedules(
+        advisee_id=advisee_id,
+        advisee_name=advisee_name,
+        term_id=term_id,
+        term_name=term_name,
+        status=status,
+        skip=skip,
+        limit=limit,
+        user=user,
+        db=db,
+    )
+
 @router.get("/{schedule_id}", response_model=ScheduleResponse)
 def get_schedule(
     schedule_id: int,

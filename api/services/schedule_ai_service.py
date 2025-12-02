@@ -12,6 +12,7 @@ from models.degree_plan import (
     DegreeRequirementSet,
 )
 from models.schedule import (
+    Class,
     Course,
     Schedule,
     Section,
@@ -73,7 +74,12 @@ class ScheduleAISuggestionService:
     def _load_schedule(self, schedule_id: int) -> tuple[Schedule, Term]:
         schedule = (
             self.db.query(Schedule)
-            .options(joinedload(Schedule.term))
+            .options(
+                joinedload(Schedule.term),
+                joinedload(Schedule.classes)
+                .joinedload(Class.section)
+                .joinedload(Section.course),
+            )
             .filter(Schedule.scheduleID == schedule_id)
             .first()
         )
@@ -212,6 +218,24 @@ class ScheduleAISuggestionService:
         note: Optional[str],
     ) -> str:
         completed_courses = context.completedCourses if context and context.completedCourses else []
+        current_classes = []
+        for cls in getattr(schedule, "classes", []) or []:
+            section = cls.section
+            course = section.course if section else None
+            seats_remaining = (
+                max((section.capacity or 0) - (section.enrolled or 0), 0) if section else None
+            )
+            current_classes.append(
+                {
+                    "class_id": cls.classID,
+                    "section_id": getattr(cls, "sectionID", None),
+                    "course_code": course.courseName if course else None,
+                    "course_name": course.courseName if course else None,
+                    "credits": course.credits if course else None,
+                    "crn": section.crn if section else None,
+                    "seats_remaining": seats_remaining,
+                }
+            )
         remaining_requirements = self._build_remaining_requirements(requirement, context, validation)
 
         payload = {
@@ -220,6 +244,7 @@ class ScheduleAISuggestionService:
             "major": advisee.major if advisee else "Undeclared",
             "semester": term.code if term else str(schedule.termID),
             "completed_courses": completed_courses,
+            "current_schedule": current_classes,
             "remaining_requirements": remaining_requirements,
             "available_courses": available_courses,
             "prerequisites": [],
@@ -231,11 +256,15 @@ class ScheduleAISuggestionService:
             f"Student : {payload['student_id']} ({payload['student_name'] or 'student'}) , "
             f"Major : {payload['major']} , Semester : {payload['semester']}\n"
             f"Completed : {json.dumps(payload['completed_courses'], default=str)}\n"
+            f"Current Schedule Classes : {json.dumps(payload['current_schedule'], default=str)}\n"
             f"Remaining Requirements : {json.dumps(payload['remaining_requirements'], default=str)}\n"
             f"Available Courses : {json.dumps(payload['available_courses'], default=str)}\n"
             "Prerequisites : []\n"
-            "Generate 2 -3 valid schedules (12 -15 credits each ). "
+            "Generate 3 valid schedules (12 -15 credits each). "
             "Use only the section_id values from Available Courses when suggesting sections. "
+            "Rules: Option 1 and Option 2 must KEEP the existing classes (current schedule) and add new sections to reach 12-15 credits. "
+            "Option 3 must IGNORE existing classes and propose a fresh schedule. "
+            "If the current schedule already satisfies credits and requirements, you may make one option simply 'keep current schedule' without adding new sections. "
             "Return as JSON with structure : "
             '{"schedules":[{"option_number":1,"courses":[{"course_code":"...","course_name":"...",'
             '"credits":3,"section":"section_id"}],"total_credits":12,"rationale":"...","warnings":["..."]}],'
