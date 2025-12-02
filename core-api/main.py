@@ -133,8 +133,10 @@ class SectionSearchItem(BaseModel):
 class ScheduleResponse(BaseModel):
     scheduleID: int
     adviseeID: int
+    adviseeName: Optional[str] = None
     termID: int
     termCode: str
+    termName: Optional[str] = None
     source: ScheduleSource
     status: ScheduleStatus
     createdWhen: datetime
@@ -148,8 +150,10 @@ class ScheduleResponse(BaseModel):
 class ScheduleListResponse(BaseModel):
     scheduleID: int
     adviseeID: int
+    adviseeName: Optional[str] = None
     termID: int
     termCode: str
+    termName: Optional[str] = None
     source: ScheduleSource
     status: ScheduleStatus
     createdWhen: datetime
@@ -176,6 +180,13 @@ class PDFScrapeResponse(BaseModel):
     stdout: str
     stderr: str
     duration_seconds: float
+
+
+class TermResponse(BaseModel):
+    termID: int
+    code: str
+    startDate: datetime
+    endDate: datetime
 
 # ---------- Utils ------------
 def _resolve_output_path(requested: Optional[str]) -> Path:
@@ -219,6 +230,36 @@ def test_db(user=Depends(verify_token)):
         ver = conn.execute(text("SELECT VERSION()")).scalar_one()
     return {"authenticated_user": user.get("sub"), "db_version": ver}
 
+
+@app.get("/terms", response_model=List[TermResponse])
+def list_terms(
+    search: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+    user=Depends(verify_token),
+):
+    params = {"offset": skip, "limit": limit}
+    filters = []
+
+    if search:
+        filters.append("code LIKE :search")
+        params["search"] = f"%{search}%"
+
+    where_clause = " AND ".join(filters)
+    if where_clause:
+        where_clause = " WHERE " + where_clause
+
+    query = f"""
+        SELECT termID, code, startDate, endDate
+        FROM terms
+        {where_clause}
+        ORDER BY startDate DESC
+        LIMIT :limit OFFSET :offset
+    """
+    with engine.connect() as conn:
+        rows = conn.execute(text(query), params).mappings().all()
+        return [dict(row) for row in rows]
+
 # ---------- PDF SCRAPER (PATCHED) ----------
 @app.post("/pdf-scraper", response_model=PDFScrapeResponse)
 @app.post("/api/pdf-scraper", response_model=PDFScrapeResponse, include_in_schema=False)
@@ -257,8 +298,10 @@ def trigger_pdf_scraper(payload: PDFScrapeRequest, user=Depends(verify_token)):
 SCHEDULE_DETAIL_SQL = """
 SELECT s.scheduleID,
        s.adviseeID,
+       u.username AS adviseeName,
        s.termID,
        t.code AS termCode,
+        t.code AS termName,
        s.source,
        s.status,
        s.createdWhen,
@@ -266,6 +309,8 @@ SELECT s.scheduleID,
        s.rejectedWhen
 FROM schedules s
 JOIN terms t ON t.termID = s.termID
+JOIN adviseeProfile ap ON ap.adviseeID = s.adviseeID
+JOIN users u ON u.userID = ap.userID
 WHERE s.scheduleID = :schedule_id
 """
 
@@ -359,7 +404,9 @@ def _search_sections_for_schedule(conn, schedule, search: Optional[str], limit: 
 @app.get("/schedules", response_model=List[ScheduleListResponse])
 def list_schedules(
     advisee_id: Optional[int] = None,
+    advisee_name: Optional[str] = None,
     term_id: Optional[int] = None,
+    term_name: Optional[str] = None,
     status: Optional[ScheduleStatus] = None,
     skip: int = 0,
     limit: int = 100,
@@ -371,9 +418,15 @@ def list_schedules(
     if advisee_id is not None:
         filters.append("s.adviseeID = :advisee_id")
         params["advisee_id"] = advisee_id
+    if advisee_name:
+        filters.append("LOWER(u.username) LIKE :advisee_name")
+        params["advisee_name"] = f"%{advisee_name.lower()}%"
     if term_id is not None:
         filters.append("s.termID = :term_id")
         params["term_id"] = term_id
+    if term_name:
+        filters.append("LOWER(t.code) LIKE :term_name")
+        params["term_name"] = f"%{term_name.lower()}%"
     if status is not None:
         filters.append("s.status = :status")
         params["status"] = status.value
@@ -385,8 +438,10 @@ def list_schedules(
     query = f"""
     SELECT s.scheduleID,
            s.adviseeID,
+           u.username AS adviseeName,
            s.termID,
            t.code AS termCode,
+           t.code AS termName,
            s.source,
            s.status,
            s.createdWhen,
@@ -395,6 +450,8 @@ def list_schedules(
            (SELECT COUNT(*) FROM classes c WHERE c.scheduleID = s.scheduleID) AS classCount
     FROM schedules s
     JOIN terms t ON t.termID = s.termID
+    JOIN adviseeProfile ap ON ap.adviseeID = s.adviseeID
+    JOIN users u ON u.userID = ap.userID
     WHERE 1=1 {where_clause}
     ORDER BY s.createdWhen DESC
     LIMIT :limit OFFSET :offset

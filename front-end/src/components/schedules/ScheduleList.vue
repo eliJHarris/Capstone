@@ -34,7 +34,7 @@
         <template #prepend>
           <v-avatar color="primary">
             <span class="text-body-2 font-weight-medium">
-              {{ schedule.termCode || schedule.termID }}
+              {{ schedule.termName || schedule.termCode || schedule.termID }}
             </span>
           </v-avatar>
         </template>
@@ -42,7 +42,8 @@
           Schedule #{{ schedule.scheduleID }}
         </v-list-item-title>
         <v-list-item-subtitle>
-          Advisee {{ schedule.adviseeID }} • Created {{ formatTimestamp(schedule.createdWhen) }}
+          {{ schedule.adviseeName || `Advisee ${schedule.adviseeID}` }} • Created
+          {{ formatTimestamp(schedule.createdWhen) }}
         </v-list-item-subtitle>
         <template #append>
           <div class="d-flex flex-column align-end ga-2">

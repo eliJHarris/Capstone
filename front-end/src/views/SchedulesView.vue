@@ -32,23 +32,51 @@
         <v-card rounded="xl" variant="flat" class="mb-4">
           <v-card-title>Filter schedules</v-card-title>
           <v-card-text>
-            <v-form @submit.prevent="applyFilters">
-              <v-text-field
-                v-model="filters.adviseeId"
-                label="Advisee ID"
-                type="number"
+              <v-form @submit.prevent="applyFilters">
+              <v-autocomplete
+                v-model="filterAdvisee"
+                v-model:search="filterAdviseeSearch"
+                :items="adviseeOptions"
+                :loading="adviseeLoading"
+                item-title="title"
+                item-value="value"
+                label="Advisee"
                 density="comfortable"
                 variant="outlined"
                 class="mb-3"
-              />
-              <v-text-field
-                v-model="filters.termId"
-                label="Term ID"
-                type="number"
+                return-object
+                clearable
+                @update:search="handleFilterAdviseeSearch"
+              >
+                <template #item="{ props, item }">
+                  <v-list-item v-bind="props">
+                    <v-list-item-title>{{ item?.raw?.name || item?.raw?.title }}</v-list-item-title>
+                    <v-list-item-subtitle>{{ item?.raw?.email }}</v-list-item-subtitle>
+                  </v-list-item>
+                </template>
+              </v-autocomplete>
+              <v-autocomplete
+                v-model="filterTerm"
+                v-model:search="filterTermSearch"
+                :items="termOptions"
+                :loading="termLoading"
+                item-title="title"
+                item-value="value"
+                label="Term"
                 density="comfortable"
                 variant="outlined"
                 class="mb-3"
-              />
+                return-object
+                clearable
+                @update:search="handleFilterTermSearch"
+              >
+                <template #item="{ props, item }">
+                  <v-list-item v-bind="props">
+                    <v-list-item-title>{{ item?.raw?.code || item?.raw?.title }}</v-list-item-title>
+                    <v-list-item-subtitle>{{ formatTermRange(item?.raw) }}</v-list-item-subtitle>
+                  </v-list-item>
+                </template>
+              </v-autocomplete>
               <v-select
                 v-model="filters.status"
                 :items="statusOptions"
@@ -84,24 +112,50 @@
           <v-card-title>Create schedule</v-card-title>
           <v-card-text>
             <v-form @submit.prevent="handleCreate">
-              <v-text-field
-                v-model="createForm.adviseeID"
-                label="Advisee ID"
-                type="number"
+              <v-autocomplete
+                v-model="createForm.advisee"
+                v-model:search="adviseeSearch"
+                :items="adviseeOptions"
+                :loading="adviseeLoading"
+                item-title="title"
+                item-value="value"
+                label="Advisee"
                 density="comfortable"
                 variant="outlined"
                 class="mb-3"
-                required
-              />
-              <v-text-field
-                v-model="createForm.termID"
-                label="Term ID"
-                type="number"
+                return-object
+                clearable
+                @update:search="handleAdviseeSearch"
+              >
+                <template #item="{ props, item }">
+                  <v-list-item v-bind="props">
+                    <v-list-item-title>{{ item?.raw?.name || item?.raw?.title }}</v-list-item-title>
+                    <v-list-item-subtitle>{{ item?.raw?.email }}</v-list-item-subtitle>
+                  </v-list-item>
+                </template>
+              </v-autocomplete>
+              <v-autocomplete
+                v-model="createForm.term"
+                v-model:search="termSearch"
+                :items="termOptions"
+                :loading="termLoading"
+                item-title="title"
+                item-value="value"
+                label="Term"
                 density="comfortable"
                 variant="outlined"
                 class="mb-3"
-                required
-              />
+                return-object
+                clearable
+                @update:search="handleTermSearch"
+              >
+                <template #item="{ props, item }">
+                  <v-list-item v-bind="props">
+                    <v-list-item-title>{{ item?.raw?.code || item?.raw?.title }}</v-list-item-title>
+                    <v-list-item-subtitle>{{ formatTermRange(item?.raw) }}</v-list-item-subtitle>
+                  </v-list-item>
+                </template>
+              </v-autocomplete>
               <v-select
                 v-model="createForm.source"
                 :items="sourceOptions"
@@ -170,11 +224,13 @@
 </template>
 
 <script setup>
-import { reactive, computed, onMounted, watch } from 'vue'
+import { reactive, computed, onMounted, watch, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import ScheduleDetails from '@/components/schedules/ScheduleDetails.vue'
 import ScheduleList from '@/components/schedules/ScheduleList.vue'
 import { useScheduleStore } from '@/stores/schedules'
+import { fetchAdvisees } from '@/services/advisees'
+import { fetchTerms } from '@/services/terms'
 
 const scheduleStore = useScheduleStore()
 const {
@@ -200,11 +256,22 @@ watch(
 )
 
 const createForm = reactive({
-  adviseeID: '',
-  termID: '',
+  advisee: null,
+  term: null,
   source: sourceOptions.value[0],
   status: statusOptions.value[0],
 })
+
+const adviseeOptions = ref([])
+const termOptions = ref([])
+const adviseeSearch = ref('')
+const termSearch = ref('')
+const filterAdvisee = ref(null)
+const filterTerm = ref(null)
+const filterAdviseeSearch = ref('')
+const filterTermSearch = ref('')
+const adviseeLoading = ref(false)
+const termLoading = ref(false)
 
 const feedback = reactive({
   show: false,
@@ -213,7 +280,7 @@ const feedback = reactive({
 })
 
 const scheduleError = computed(() => error.value)
-const createDisabled = computed(() => !createForm.adviseeID || !createForm.termID)
+const createDisabled = computed(() => !createForm.advisee || !createForm.term)
 
 const clearError = () => scheduleStore.clearError()
 
@@ -223,6 +290,83 @@ const showFeedback = (text, color = 'success') => {
   feedback.show = true
 }
 
+const formatTermRange = (term) => {
+  if (!term?.startDate || !term?.endDate) return ''
+  const format = (value) =>
+    new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(value))
+  return `${format(term.startDate)} - ${format(term.endDate)}`
+}
+
+const loadAdvisees = async (search = '') => {
+  adviseeLoading.value = true
+  try {
+    const data = await fetchAdvisees({ search, limit: 10 })
+    adviseeOptions.value = data.map((item) => ({
+      value: Number(item.adviseeID),
+      title: item.name || `Advisee #${item.adviseeID}`,
+      subtitle: item.email,
+      raw: item,
+      name: item.name,
+      email: item.email,
+    }))
+  } catch (err) {
+    showFeedback(err.message || 'Failed to load advisees', 'error')
+  } finally {
+    adviseeLoading.value = false
+  }
+}
+
+const loadTerms = async (search = '') => {
+  termLoading.value = true
+  try {
+    const data = await fetchTerms({ search, limit: 20 })
+    termOptions.value = data.map((term) => ({
+      value: Number(term.termID),
+      title: term.code,
+      subtitle: formatTermRange(term),
+      raw: term,
+    }))
+  } catch (err) {
+    showFeedback(err.message || 'Failed to load terms', 'error')
+  } finally {
+    termLoading.value = false
+  }
+}
+
+const handleAdviseeSearch = (value) => {
+  adviseeSearch.value = value
+}
+
+const handleTermSearch = (value) => {
+  termSearch.value = value
+}
+
+const handleFilterAdviseeSearch = (value) => {
+  filterAdviseeSearch.value = value
+  filters.adviseeName = value || ''
+}
+
+const handleFilterTermSearch = (value) => {
+  filterTermSearch.value = value
+  filters.termName = value || ''
+}
+
+watch(adviseeSearch, (value) => {
+  loadAdvisees(value)
+})
+
+watch(termSearch, (value) => {
+  loadTerms(value)
+})
+
+watch(filterAdvisee, (value) => {
+  filters.adviseeName = value?.name || value?.title || ''
+})
+
+watch(filterTerm, (value) => {
+  filters.termName = value?.raw?.code || value?.title || ''
+})
+
 const refreshList = async () => {
   await scheduleStore.fetchSchedules()
   if (selectedScheduleId.value) {
@@ -231,25 +375,33 @@ const refreshList = async () => {
 }
 
 const applyFilters = async () => {
-  scheduleStore.setFilters({ ...filters })
+  scheduleStore.setFilters({
+    ...filters,
+    adviseeName: filterAdvisee.value?.name || filterAdviseeSearch.value || '',
+    termName: filterTerm.value?.raw?.code || filterTerm.value?.title || filterTermSearch.value || '',
+  })
   await scheduleStore.fetchSchedules()
 }
 
 const resetFilters = async () => {
   scheduleStore.resetFilters()
   Object.assign(filters, { ...scheduleStore.filters })
+  filterAdvisee.value = null
+  filterTerm.value = null
+  filterAdviseeSearch.value = ''
+  filterTermSearch.value = ''
   await scheduleStore.fetchSchedules()
 }
 
 const handleCreate = async () => {
   if (createDisabled.value) {
-    showFeedback('Advisee ID and Term ID are required', 'error')
+    showFeedback('Advisee and Term are required', 'error')
     return
   }
 
   const payload = {
-    adviseeID: Number(createForm.adviseeID),
-    termID: Number(createForm.termID),
+    adviseeID: Number(createForm.advisee?.value),
+    termID: Number(createForm.term?.value),
     source: createForm.source,
     status: createForm.status,
   }
@@ -257,11 +409,13 @@ const handleCreate = async () => {
   try {
     await scheduleStore.createSchedule(payload)
     Object.assign(createForm, {
-      adviseeID: '',
-      termID: '',
+      advisee: null,
+      term: null,
       source: sourceOptions.value[0],
       status: statusOptions.value[0],
     })
+    adviseeSearch.value = ''
+    termSearch.value = ''
     showFeedback('Schedule created successfully')
   } catch (err) {
     showFeedback(err.message || 'Failed to create schedule', 'error')
@@ -332,5 +486,7 @@ onMounted(() => {
   if (!schedules.value.length) {
     scheduleStore.fetchSchedules()
   }
+  loadAdvisees()
+  loadTerms()
 })
 </script>

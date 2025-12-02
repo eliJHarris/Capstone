@@ -13,6 +13,8 @@ from models.schedule import (
     ScheduleSourceEnum,
     SectionStatusEnum,
 )
+from models.advisee import AdviseeProfile
+from models.user import User
 from schemas.schedule import (
     ScheduleCreate,
     ScheduleUpdate,
@@ -88,7 +90,9 @@ class ScheduleService:
     def get_all_schedules(
         db: Session,
         advisee_id: Optional[int] = None,
+        advisee_name: Optional[str] = None,
         term_id: Optional[int] = None,
+        term_name: Optional[str] = None,
         schedule_status: Optional[ScheduleStatus] = None,
         skip: int = 0,
         limit: int = 100
@@ -99,6 +103,8 @@ class ScheduleService:
         query = (
             db.query(Schedule)
             .join(Term)
+            .join(AdviseeProfile, AdviseeProfile.adviseeID == Schedule.adviseeID)
+            .join(User, User.userID == AdviseeProfile.userID)
             .options(joinedload(Schedule.term))
             .order_by(Schedule.createdWhen.desc())
         )
@@ -106,24 +112,39 @@ class ScheduleService:
         # Apply filters
         if advisee_id:
             query = query.filter(Schedule.adviseeID == advisee_id)
+        if advisee_name:
+            query = query.filter(User.username.ilike(f"%{advisee_name}%"))
         if term_id:
             query = query.filter(Schedule.termID == term_id)
+        if term_name:
+            query = query.filter(Term.code.ilike(f"%{term_name}%"))
         if schedule_status:
             query = query.filter(Schedule.status == schedule_status.value)
 
         schedules = query.offset(skip).limit(limit).all()
 
+        advisee_ids = [schedule.adviseeID for schedule in schedules]
+        advisee_name_map = {}
+        if advisee_ids:
+            rows = (
+                db.query(AdviseeProfile.adviseeID, User.username)
+                .join(User, User.userID == AdviseeProfile.userID)
+                .filter(AdviseeProfile.adviseeID.in_(advisee_ids))
+                .all()
+            )
+            advisee_name_map = {advisee_id: username for advisee_id, username in rows}
+
         # Build response with class count
         result = []
         for schedule in schedules:
             class_count = db.query(Class).filter(Class.scheduleID == schedule.scheduleID).count()
-            term = db.query(Term).filter(Term.termID == schedule.termID).first()
-
             result.append(ScheduleListResponse(
                 scheduleID=schedule.scheduleID,
                 adviseeID=schedule.adviseeID,
+                adviseeName=advisee_name_map.get(schedule.adviseeID, ""),
                 termID=schedule.termID,
-                termCode=term.code if term else "",
+                termCode=schedule.term.code if schedule.term else "",
+                termName=schedule.term.code if schedule.term else "",
                 source=ScheduleService._status_value(schedule.source),
                 status=ScheduleService._status_value(schedule.status),
                 createdWhen=schedule.createdWhen,
@@ -176,14 +197,22 @@ class ScheduleService:
                         crn=section.crn,
                         professorName=section.professorName,
                         createdDate=cls.createdDate,
-                    )
+                )
                 )
 
         return ScheduleResponse(
             scheduleID=schedule.scheduleID,
             adviseeID=schedule.adviseeID,
+            adviseeName=(
+                db.query(User.username)
+                .join(AdviseeProfile, AdviseeProfile.userID == User.userID)
+                .filter(AdviseeProfile.adviseeID == schedule.adviseeID)
+                .scalar()
+                or ""
+            ),
             termID=schedule.termID,
             termCode=schedule.term.code if schedule.term else "",
+            termName=schedule.term.code if schedule.term else "",
             source=ScheduleService._status_value(schedule.source),
             status=ScheduleService._status_value(schedule.status),
             createdWhen=schedule.createdWhen,

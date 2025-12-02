@@ -72,8 +72,10 @@ class SectionSearchItem(BaseModel):
 class ScheduleResponse(BaseModel):
     scheduleID: int
     adviseeID: int
+    adviseeName: Optional[str] = None
     termID: int
     termCode: str
+    termName: Optional[str] = None
     source: ScheduleSource
     status: ScheduleStatus
     createdWhen: datetime
@@ -89,8 +91,10 @@ class ScheduleResponse(BaseModel):
 class ScheduleListResponse(BaseModel):
     scheduleID: int
     adviseeID: int
+    adviseeName: Optional[str] = None
     termID: int
     termCode: str
+    termName: Optional[str] = None
     source: ScheduleSource
     status: ScheduleStatus
     createdWhen: datetime

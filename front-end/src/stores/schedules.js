@@ -2,8 +2,8 @@ import { defineStore } from 'pinia'
 import { apiFetch } from '@/services/apiClient'
 
 const createDefaultFilters = () => ({
-  adviseeId: '',
-  termId: '',
+  adviseeName: '',
+  termName: '',
   status: '',
   limit: 50,
 })
@@ -47,6 +47,8 @@ export const useScheduleStore = defineStore('schedules', {
 
       if (params.adviseeId) query.append('advisee_id', params.adviseeId)
       if (params.termId) query.append('term_id', params.termId)
+      if (params.adviseeName) query.append('advisee_name', params.adviseeName)
+      if (params.termName) query.append('term_name', params.termName)
       if (params.status) query.append('status', params.status)
       if (params.skip !== undefined) query.append('skip', params.skip)
       query.append('limit', params.limit || 50)

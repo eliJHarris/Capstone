@@ -5,7 +5,8 @@
         <div>
           <div class="text-h6">Schedule #{{ schedule.scheduleID }}</div>
           <div class="text-caption text-medium-emphasis">
-            Term {{ schedule.termCode || schedule.termID }} • Advisee {{ schedule.adviseeID }}
+            Term {{ schedule.termName || schedule.termCode || schedule.termID }} • Advisee
+            {{ schedule.adviseeName || schedule.adviseeID }}
           </div>
         </div>
         <v-spacer />

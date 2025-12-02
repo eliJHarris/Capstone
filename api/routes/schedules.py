@@ -24,7 +24,9 @@ router = APIRouter(
 @router.get("/", response_model=List[ScheduleListResponse])
 def get_schedules(
     advisee_id: Optional[int] = Query(None, description="Filter by advisee ID"),
+    advisee_name: Optional[str] = Query(None, description="Filter by advisee username"),
     term_id: Optional[int] = Query(None, description="Filter by term ID"),
+    term_name: Optional[str] = Query(None, description="Filter by term code/name"),
     status: Optional[ScheduleStatus] = Query(None, description="Filter by status"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Maximum number of records to return"),
@@ -35,7 +37,9 @@ def get_schedules(
     Get all schedules with optional filtering.
 
     - **advisee_id**: Filter by advisee ID
+    - **advisee_name**: Filter by advisee username
     - **term_id**: Filter by term ID
+    - **term_name**: Filter by term code/name
     - **status**: Filter by schedule status (DRAFT, APPROVED, REJECTED)
     - **skip**: Pagination - number of records to skip
     - **limit**: Pagination - maximum number of records to return
@@ -43,7 +47,9 @@ def get_schedules(
     return ScheduleService.get_all_schedules(
         db=db,
         advisee_id=advisee_id,
+        advisee_name=advisee_name,
         term_id=term_id,
+        term_name=term_name,
         schedule_status=status,
         skip=skip,
         limit=limit

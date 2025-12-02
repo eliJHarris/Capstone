@@ -12,6 +12,7 @@ from routes.openai import router as openai_router
 from routes.degree_plans import router as degree_plans_router
 from routes.degree_import import router as degree_import_router
 from routes.advisees import router as advisees_router
+from routes.terms import router as terms_router
 
 
 # Initialize FastAPI app
@@ -39,6 +40,7 @@ app.include_router(openai_router, prefix="/api")
 app.include_router(degree_plans_router, prefix="/api")
 app.include_router(degree_import_router, prefix="/api")
 app.include_router(advisees_router, prefix="/api")
+app.include_router(terms_router, prefix="/api")
 
 
 # Health check endpoints
