@@ -47,7 +47,7 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     allow_origin_regex=os.getenv(
         "ALLOWED_ORIGIN_REGEX",
-        r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+        r"https?://.*",
     ),
     allow_credentials=True,
     allow_methods=["*"],

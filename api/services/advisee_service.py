@@ -37,7 +37,11 @@ class AdviseeService:
         skip: int = 0,
         limit: int = 50,
     ) -> List[AdviseeListItem]:
-        query = db.query(AdviseeProfile, User).join(User, User.userID == AdviseeProfile.userID)
+        query = (
+            db.query(AdviseeProfile, User, AdvisorProfile)
+            .join(User, User.userID == AdviseeProfile.userID)
+            .outerjoin(AdvisorProfile, AdvisorProfile.advisorID == AdviseeProfile.advisorID)
+        )
 
         if advisee_id is not None:
             query = query.filter(AdviseeProfile.adviseeID == advisee_id)
@@ -71,13 +75,14 @@ class AdviseeService:
         rows = query.order_by(User.username.asc()).offset(skip).limit(limit).all()
 
         advisees: List[AdviseeListItem] = []
-        for profile, user in rows:
+        for profile, user, advisor in rows:
             advisees.append(
                 AdviseeListItem(
                     adviseeID=profile.adviseeID,
                     userID=user.userID,
                     name=user.username,
                     email=user.email,
+                    advisorName=advisor.name if advisor else None,
                     major=profile.major,
                     degreePlan=profile.degree_plan,
                     classification=profile.classification.value

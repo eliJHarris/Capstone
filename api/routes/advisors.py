@@ -43,6 +43,18 @@ def get_advisor_profiles(
     return _get_advisor_profiles(advisorID, name, office, skip, limit, db)
 
 
+@router.get("", response_model=List[AdvisorProfileResponse], include_in_schema=False)
+def get_advisor_profiles_no_slash(
+    advisorID: Optional[int] = Query(None, description="Filter by advisor ID(matches user id)"),
+    name: Optional[str] = Query(None, description="Filter by advisor name"),
+    office: Optional[str] = Query(None, description="Filter by advisor office"),
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=500, description="Maximum number of records to return"),
+    db: Session = Depends(get_db)
+):
+    return _get_advisor_profiles(advisorID, name, office, skip, limit, db)
+
+
 def _get_advisor_profile(advisor_id: int, db: Session):
     return AdvisorProfileService.get_by_id(db=db, advisor_id=advisor_id)
 

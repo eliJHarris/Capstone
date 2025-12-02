@@ -1,20 +1,24 @@
 const normalizeBaseUrl = (value) => {
   if (!value) return ''
-  return value.endsWith('/') ? value.slice(0, -1) : value
+  const trimmed = value.endsWith('/') ? value.slice(0, -1) : value
+  return trimmed
+}
+
+const ensureApiPrefix = (value) => {
+  const base = normalizeBaseUrl(value)
+  if (!base) return ''
+  return base.endsWith('/api') ? base : `${base}/api`
 }
 
 const resolveDefaultApiBase = () => {
   if (typeof window !== 'undefined' && window?.location?.origin) {
-    const current = new URL(window.location.href)
-    current.protocol = 'https:'
-    return `${current.origin}/api`
+    return `${window.location.origin}/api`
   }
-  return 'https://localhost/api'
+  return 'http://localhost:8000/api'
 }
 
 const DEFAULT_API_BASE = resolveDefaultApiBase()
-
-export const API_BASE_URL = normalizeBaseUrl(
+export const API_BASE_URL = ensureApiPrefix(
   import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE
 )
 
@@ -92,4 +96,3 @@ export async function apiUpload(path, file) {
 
   return response.json();
 }
-
