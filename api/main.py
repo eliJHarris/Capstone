@@ -10,10 +10,9 @@ from routes.notifications import router as notifications_router
 from routes.users import router as users_router
 from routes.openai import router as openai_router
 from routes.advisors import router as advisor_router
-from routes.advisees import router as advisee_router
+from routes.advisees import router as advisees_router
 from routes.degree_plans import router as degree_plans_router
 from routes.degree_import import router as degree_import_router
-from routes.advisees import router as advisees_router
 
 
 # Initialize FastAPI app
@@ -39,10 +38,9 @@ app.include_router(notifications_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(openai_router, prefix="/api")
 app.include_router(advisor_router, prefix="/api")
-app.include_router(advisee_router, prefix="/api")
+app.include_router(advisees_router, prefix="/api")
 app.include_router(degree_plans_router, prefix="/api")
 app.include_router(degree_import_router, prefix="/api")
-app.include_router(advisees_router, prefix="/api")
 
 
 # Health check endpoints
