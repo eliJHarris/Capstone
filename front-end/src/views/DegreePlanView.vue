@@ -306,6 +306,7 @@ const FALLBACK_ADVISEES = [
 
 const profile = computed(() => studentStore.studentProfile)
 const adviseeId = computed(() => profile.value?.advisee_id)
+const activeAdviseeId = computed(() => selectedAdviseeId.value || adviseeId.value || null)
 const selectedAdvisee = computed(() => advisees.value.find((item) => item.adviseeID === selectedAdviseeId.value) || null)
 const currentAdviseeName = computed(() => selectedAdvisee.value?.name || profile.value?.student_name || 'Advisee')
 const currentAdviseeMajor = computed(() => selectedAdvisee.value?.major || profile.value?.major || 'Major TBD')
@@ -341,9 +342,9 @@ const requirementInfo = computed(() => degreePlanStore.requirementSet)
 const issues = computed(() => degreePlanStore.latestValidation?.issues || [])
 
 async function importPdfUrl() {
-  if (!adviseeId.value) return
+  if (!activeAdviseeId.value) return
   try {
-    await degreePlanStore.importDegreePlan(adviseeId.value, pdfURL.value)
+    await degreePlanStore.importDegreePlan(activeAdviseeId.value, pdfURL.value)
     showImportDialog.value = false
     pdfURL.value = ""
   } catch (err) {
@@ -351,9 +352,9 @@ async function importPdfUrl() {
   }
 }
 
-async function loadSummary() {
-  if (!adviseeId.value) return
-  await degreePlanStore.loadSummary(adviseeId.value)
+async function loadSummary(targetAdviseeId = activeAdviseeId.value) {
+  if (!targetAdviseeId) return
+  await degreePlanStore.loadSummary(targetAdviseeId)
 }
 
 async function loadAdviseeDirectory() {
@@ -375,7 +376,9 @@ async function loadAdviseeDirectory() {
     advisees.value = FALLBACK_ADVISEES
   } finally {
     adviseeListLoading.value = false
-    const initial = adviseeId.value || advisees.value[0]?.adviseeID || null
+    const preferred = Number(adviseeId.value) || null
+    const foundPreferred = advisees.value.find((item) => item.adviseeID === preferred)
+    const initial = foundPreferred?.adviseeID || advisees.value[0]?.adviseeID || null
     if (initial && selectedAdviseeId.value !== initial) {
       selectedAdviseeId.value = Number(initial)
     }
@@ -383,8 +386,8 @@ async function loadAdviseeDirectory() {
 }
 
 async function handleManualValidation() {
-  if (!adviseeId.value) return
-  await degreePlanStore.triggerValidation(adviseeId.value)
+  if (!activeAdviseeId.value) return
+  await degreePlanStore.triggerValidation(activeAdviseeId.value)
 }
 
 const sampleRequirementTemplate = computed(() => ({
@@ -428,12 +431,12 @@ const sampleCompletedCourses = [
 ]
 
 async function seedDegreePlan() {
-  if (!adviseeId.value || seeding.value) return
+  if (!activeAdviseeId.value || seeding.value) return
   seeding.value = true
   try {
     const requirement = await saveRequirementSet(sampleRequirementTemplate.value)
     await degreePlanStore.syncContext(
-      adviseeId.value,
+      activeAdviseeId.value,
       {
         requirementSetID: requirement.requirementSetID,
         completedCourses: sampleCompletedCourses,
@@ -468,7 +471,7 @@ watch(selectedAdviseeId, async (newId, oldId) => {
   } else {
     studentStore.updateProfile({ advisee_id: newId })
   }
-  await loadSummary()
+  await loadSummary(newId)
 })
 
 onMounted(() => {
