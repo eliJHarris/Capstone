@@ -18,13 +18,16 @@ ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+ENABLE_CORS = os.getenv("ENABLE_CORS", "false").lower() == "true"
+
+if ENABLE_CORS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 def _read_secret(env_name: str, default: str = "") -> str:
     """Allow *_FILE overrides for sensitive settings."""

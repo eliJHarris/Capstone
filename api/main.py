@@ -44,17 +44,20 @@ ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=os.getenv(
-        "ALLOWED_ORIGIN_REGEX",
-        r"https?://.*",
-    ),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+ENABLE_CORS = os.getenv("ENABLE_CORS", "false").lower() == "true"
+
+if ENABLE_CORS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=ALLOWED_ORIGINS,
+        allow_origin_regex=os.getenv(
+            "ALLOWED_ORIGIN_REGEX",
+            r"https?://.*",
+        ),
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Include routers (primary /api paths) and compatibility mounts without the prefix
 _ROUTERS = [
