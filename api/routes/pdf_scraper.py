@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 
+from dependencies.auth import require_user
 from schemas.pdf_scraper import PDFScrapeRequest, PDFScrapeResponse
 from services.pdf_scraper_service import PDFScraperService
 
@@ -11,7 +12,10 @@ router = APIRouter(
 
 
 @router.post("/", response_model=PDFScrapeResponse)
-async def trigger_pdf_scraper(payload: PDFScrapeRequest) -> PDFScrapeResponse:
+async def trigger_pdf_scraper(
+    payload: PDFScrapeRequest,
+    user=Depends(require_user),
+) -> PDFScrapeResponse:
     """
     Trigger the PDF scraper synchronously using the provided configuration.
     """

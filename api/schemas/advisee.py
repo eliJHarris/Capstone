@@ -69,6 +69,7 @@ class AdviseeListItem(BaseModel):
     userID: int
     name: str
     email: Optional[str]
+    advisorName: Optional[str] = None
     major: Optional[str]
     degreePlan: Optional[str]
     classification: Optional[str]

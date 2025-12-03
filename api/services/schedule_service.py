@@ -3,14 +3,26 @@ from typing import List, Optional
 from datetime import datetime
 from fastapi import HTTPException, status
 
-from models.schedule import Schedule, Class, Section, Course, Term
+from models.schedule import (
+    Schedule,
+    Class,
+    Section,
+    Course,
+    Term,
+    ScheduleStatusEnum,
+    ScheduleSourceEnum,
+    SectionStatusEnum,
+)
+from models.advisee import AdviseeProfile
+from models.user import User
 from schemas.schedule import (
     ScheduleCreate,
     ScheduleUpdate,
     ScheduleResponse,
     ScheduleListResponse,
     ClassInSchedule,
-    ScheduleStatus
+    ScheduleStatus,
+    SectionSearchItem,
 )
 
 
@@ -18,10 +30,69 @@ class ScheduleService:
     """Service layer for Schedule CRUD operations"""
 
     @staticmethod
+    def _status_value(value) -> str:
+        return value.value if hasattr(value, "value") else str(value)
+
+    @staticmethod
+    def list_sections_for_schedule(
+        db: Session,
+        schedule_id: int,
+        search: Optional[str] = None,
+        limit: int = 20,
+    ) -> List[SectionSearchItem]:
+        schedule = db.query(Schedule).filter(Schedule.scheduleID == schedule_id).first()
+        if not schedule:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Schedule with ID {schedule_id} not found",
+            )
+
+        query = (
+            db.query(Section)
+            .join(Course)
+            .filter(
+                Section.termID == schedule.termID,
+                Section.status == SectionStatusEnum.OPEN,
+            )
+        )
+
+        if search:
+            like = f"%{search}%"
+            query = query.filter(
+                (Course.courseName.ilike(like))
+                | (Course.description.ilike(like))
+                | (Section.crn.ilike(like))
+            )
+
+        query = query.order_by(Course.courseName.asc(), Section.crn.asc()).limit(limit)
+        sections = query.all()
+
+        results: List[SectionSearchItem] = []
+        for section in sections:
+            course = section.course
+            results.append(
+                SectionSearchItem(
+                    sectionID=section.sectionID,
+                    crn=section.crn,
+                    courseName=course.courseName,
+                    courseDescription=course.description,
+                    professorName=section.professorName,
+                    credits=course.credits,
+                    capacity=section.capacity,
+                    enrolled=section.enrolled,
+                    seatsRemaining=max(section.capacity - section.enrolled, 0),
+                    status=ScheduleService._status_value(section.status),
+                )
+            )
+        return results
+
+    @staticmethod
     def get_all_schedules(
         db: Session,
         advisee_id: Optional[int] = None,
+        advisee_name: Optional[str] = None,
         term_id: Optional[int] = None,
+        term_name: Optional[str] = None,
         schedule_status: Optional[ScheduleStatus] = None,
         skip: int = 0,
         limit: int = 100
@@ -29,31 +100,53 @@ class ScheduleService:
         """
         Get all schedules with optional filtering
         """
-        query = db.query(Schedule).join(Term)
+        query = (
+            db.query(Schedule)
+            .join(Term)
+            .join(AdviseeProfile, AdviseeProfile.adviseeID == Schedule.adviseeID)
+            .join(User, User.userID == AdviseeProfile.userID)
+            .options(joinedload(Schedule.term))
+            .order_by(Schedule.createdWhen.desc())
+        )
 
         # Apply filters
         if advisee_id:
             query = query.filter(Schedule.adviseeID == advisee_id)
+        if advisee_name:
+            query = query.filter(User.username.ilike(f"%{advisee_name}%"))
         if term_id:
             query = query.filter(Schedule.termID == term_id)
+        if term_name:
+            query = query.filter(Term.code.ilike(f"%{term_name}%"))
         if schedule_status:
             query = query.filter(Schedule.status == schedule_status.value)
 
         schedules = query.offset(skip).limit(limit).all()
 
+        advisee_ids = [schedule.adviseeID for schedule in schedules]
+        advisee_name_map = {}
+        if advisee_ids:
+            rows = (
+                db.query(AdviseeProfile.adviseeID, User.username)
+                .join(User, User.userID == AdviseeProfile.userID)
+                .filter(AdviseeProfile.adviseeID.in_(advisee_ids))
+                .all()
+            )
+            advisee_name_map = {advisee_id: username for advisee_id, username in rows}
+
         # Build response with class count
         result = []
         for schedule in schedules:
             class_count = db.query(Class).filter(Class.scheduleID == schedule.scheduleID).count()
-            term = db.query(Term).filter(Term.termID == schedule.termID).first()
-
             result.append(ScheduleListResponse(
                 scheduleID=schedule.scheduleID,
                 adviseeID=schedule.adviseeID,
+                adviseeName=advisee_name_map.get(schedule.adviseeID, ""),
                 termID=schedule.termID,
-                termCode=term.code if term else "",
-                source=schedule.source,
-                status=schedule.status,
+                termCode=schedule.term.code if schedule.term else "",
+                termName=schedule.term.code if schedule.term else "",
+                source=ScheduleService._status_value(schedule.source),
+                status=ScheduleService._status_value(schedule.status),
                 createdWhen=schedule.createdWhen,
                 approvedWhen=schedule.approvedWhen,
                 rejectedWhen=schedule.rejectedWhen,
@@ -67,7 +160,17 @@ class ScheduleService:
         """
         Get a specific schedule by ID with all classes
         """
-        schedule = db.query(Schedule).filter(Schedule.scheduleID == schedule_id).first()
+        schedule = (
+            db.query(Schedule)
+            .options(
+                joinedload(Schedule.term),
+                joinedload(Schedule.classes)
+                .joinedload(Class.section)
+                .joinedload(Section.course),
+            )
+            .filter(Schedule.scheduleID == schedule_id)
+            .first()
+        )
 
         if not schedule:
             raise HTTPException(
@@ -75,36 +178,43 @@ class ScheduleService:
                 detail=f"Schedule with ID {schedule_id} not found"
             )
 
-        # Get term info
-        term = db.query(Term).filter(Term.termID == schedule.termID).first()
-
-        # Get all classes with section and course info
-        classes = db.query(Class).filter(Class.scheduleID == schedule_id).all()
-
         class_list = []
-        for cls in classes:
-            section = db.query(Section).filter(Section.sectionID == cls.sectionID).first()
-            if section:
-                course = db.query(Course).filter(Course.courseID == section.courseID).first()
-                if course:
-                    class_list.append(ClassInSchedule(
+        for cls in schedule.classes:
+            section = cls.section
+            course = section.course if section else None
+            if section and course:
+                class_list.append(
+                    ClassInSchedule(
                         classID=cls.classID,
                         sectionID=cls.sectionID,
+                        sectionStatus=ScheduleService._status_value(section.status),
+                        capacity=section.capacity,
+                        enrolled=section.enrolled,
+                        seatsRemaining=max(section.capacity - section.enrolled, 0),
                         courseName=course.courseName,
                         courseDescription=course.description,
                         credits=course.credits,
                         crn=section.crn,
                         professorName=section.professorName,
-                        createdDate=cls.createdDate
-                    ))
+                        createdDate=cls.createdDate,
+                )
+                )
 
         return ScheduleResponse(
             scheduleID=schedule.scheduleID,
             adviseeID=schedule.adviseeID,
+            adviseeName=(
+                db.query(User.username)
+                .join(AdviseeProfile, AdviseeProfile.userID == User.userID)
+                .filter(AdviseeProfile.adviseeID == schedule.adviseeID)
+                .scalar()
+                or ""
+            ),
             termID=schedule.termID,
-            termCode=term.code if term else "",
-            source=schedule.source,
-            status=schedule.status,
+            termCode=schedule.term.code if schedule.term else "",
+            termName=schedule.term.code if schedule.term else "",
+            source=ScheduleService._status_value(schedule.source),
+            status=ScheduleService._status_value(schedule.status),
             createdWhen=schedule.createdWhen,
             approvedWhen=schedule.approvedWhen,
             rejectedWhen=schedule.rejectedWhen,
@@ -128,9 +238,9 @@ class ScheduleService:
         new_schedule = Schedule(
             adviseeID=schedule_data.adviseeID,
             termID=schedule_data.termID,
-            source=schedule_data.source,
-            status=schedule_data.status,
-            createdWhen=datetime.now(),
+            source=ScheduleSourceEnum(schedule_data.source.value),
+            status=ScheduleStatusEnum(schedule_data.status.value),
+            createdWhen=datetime.utcnow(),
             approvedWhen=None,
             rejectedWhen=None
         )
@@ -152,25 +262,34 @@ class ScheduleService:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Schedule with ID {schedule_id} not found"
-            )
+        )
 
         # Update fields if provided
         if schedule_data.status is not None:
-            schedule.status = schedule_data.status
+            if (
+                schedule_data.status == ScheduleStatus.APPROVED
+                and db.query(Class).filter(Class.scheduleID == schedule_id).count() == 0
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cannot approve a schedule with no classes",
+                )
+
+            schedule.status = ScheduleStatusEnum(schedule_data.status.value)
 
             # Update timestamp based on status
             if schedule_data.status == ScheduleStatus.APPROVED:
-                schedule.approvedWhen = datetime.now()
+                schedule.approvedWhen = datetime.utcnow()
                 schedule.rejectedWhen = None
             elif schedule_data.status == ScheduleStatus.REJECTED:
-                schedule.rejectedWhen = datetime.now()
+                schedule.rejectedWhen = datetime.utcnow()
                 schedule.approvedWhen = None
             elif schedule_data.status == ScheduleStatus.DRAFT:
                 schedule.approvedWhen = None
                 schedule.rejectedWhen = None
 
         if schedule_data.source is not None:
-            schedule.source = schedule_data.source
+            schedule.source = ScheduleSourceEnum(schedule_data.source.value)
 
         db.commit()
         db.refresh(schedule)
@@ -206,6 +325,12 @@ class ScheduleService:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Schedule with ID {schedule_id} not found"
+        )
+
+        if ScheduleService._status_value(schedule.status) != ScheduleStatus.DRAFT.value:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only DRAFT schedules can be modified",
             )
 
         # Verify section exists
@@ -221,6 +346,18 @@ class ScheduleService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Section belongs to term {section.termID} but schedule is for term {schedule.termID}"
+        )
+
+        if ScheduleService._status_value(section.status) != SectionStatusEnum.OPEN.value:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Section {section_id} is not open for scheduling",
+            )
+
+        if section.enrolled >= section.capacity:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Section {section_id} is full",
             )
 
         # Check if class already exists in schedule
@@ -239,10 +376,11 @@ class ScheduleService:
         new_class = Class(
             sectionID=section_id,
             scheduleID=schedule_id,
-            createdDate=datetime.now()
+            createdDate=datetime.utcnow()
         )
 
         db.add(new_class)
+        section.enrolled = min(section.capacity, section.enrolled + 1)
         db.commit()
 
         return ScheduleService.get_schedule_by_id(db, schedule_id)
@@ -252,17 +390,28 @@ class ScheduleService:
         """
         Remove a class from a schedule
         """
-        # Verify class exists and belongs to the schedule
-        cls = db.query(Class).filter(
-            Class.classID == class_id,
-            Class.scheduleID == schedule_id
-        ).first()
+        cls = (
+            db.query(Class)
+            .options(joinedload(Class.section), joinedload(Class.schedule))
+            .filter(Class.classID == class_id, Class.scheduleID == schedule_id)
+            .first()
+        )
 
         if not cls:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Class {class_id} not found in schedule {schedule_id}"
             )
+
+        if ScheduleService._status_value(cls.schedule.status) != ScheduleStatus.DRAFT.value:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only DRAFT schedules can be modified",
+            )
+
+        # Keep capacity accounting accurate
+        if cls.section and cls.section.enrolled > 0:
+            cls.section.enrolled -= 1
 
         db.delete(cls)
         db.commit()

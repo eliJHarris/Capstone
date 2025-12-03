@@ -1,10 +1,9 @@
 import enum
 
 from sqlalchemy import Column, DateTime, DECIMAL, Enum, ForeignKey, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 
-Base = declarative_base()
+from .base import Base
 
 
 class Classification(str, enum.Enum):

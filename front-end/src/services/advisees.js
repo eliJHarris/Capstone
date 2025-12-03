@@ -13,9 +13,34 @@ const buildQuery = (params = {}) => {
 export async function fetchAdvisees(params = {}) {
   const query = buildQuery({
     advisor_id: params.advisorId,
+    advisor_is_null: params.advisorIsNull,
+    classification: params.classification,
+    status: params.status,
+    major: params.major,
+    degree_plan: params.degreePlan,
     search: params.search,
     skip: params.skip ?? 0,
     limit: params.limit ?? 100,
   })
   return apiFetch(`/advisees${query}`)
+}
+
+export async function updateAdvisee(adviseeId, payload) {
+  if (!adviseeId) {
+    throw new Error('adviseeId is required to update an advisee')
+  }
+  return apiFetch(`/advisees/${adviseeId}`, {
+    method: 'PUT',
+    body: payload,
+  })
+}
+
+export async function updateAdviseeAdvisor(adviseeId, advisorId) {
+  if (advisorId === undefined) {
+    throw new Error('advisorId must be provided (use null to unassign)')
+  }
+
+  return updateAdvisee(adviseeId, {
+    advisorID: advisorId ?? null,
+  })
 }

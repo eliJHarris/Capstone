@@ -40,6 +40,10 @@ class AddClassToSchedule(BaseModel):
 class ClassInSchedule(BaseModel):
     classID: int
     sectionID: int
+    sectionStatus: str
+    capacity: int
+    enrolled: int
+    seatsRemaining: int
     courseName: str
     courseDescription: Optional[str]
     credits: int
@@ -51,12 +55,27 @@ class ClassInSchedule(BaseModel):
         from_attributes = True
 
 
+class SectionSearchItem(BaseModel):
+    sectionID: int
+    crn: str
+    courseName: str
+    courseDescription: Optional[str]
+    professorName: Optional[str]
+    credits: int
+    capacity: int
+    enrolled: int
+    seatsRemaining: int
+    status: str
+
+
 # Schema for schedule response
 class ScheduleResponse(BaseModel):
     scheduleID: int
     adviseeID: int
+    adviseeName: Optional[str] = None
     termID: int
     termCode: str
+    termName: Optional[str] = None
     source: ScheduleSource
     status: ScheduleStatus
     createdWhen: datetime
@@ -72,8 +91,10 @@ class ScheduleResponse(BaseModel):
 class ScheduleListResponse(BaseModel):
     scheduleID: int
     adviseeID: int
+    adviseeName: Optional[str] = None
     termID: int
     termCode: str
+    termName: Optional[str] = None
     source: ScheduleSource
     status: ScheduleStatus
     createdWhen: datetime
@@ -83,3 +104,38 @@ class ScheduleListResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ScheduleSuggestionRequest(BaseModel):
+    """Optional note to steer AI-generated schedules."""
+
+    note: Optional[str] = Field(
+        None,
+        description="Preference or constraint to include in the suggestion prompt",
+    )
+
+
+class SuggestedCourse(BaseModel):
+    course_code: str
+    course_name: Optional[str] = None
+    credits: float
+    section: Optional[str] = None
+
+    class Config:
+        allow_population_by_field_name = True
+
+
+class SuggestedScheduleOption(BaseModel):
+    option_number: int
+    courses: List[SuggestedCourse]
+    total_credits: float
+    rationale: Optional[str] = None
+    warnings: List[str] = Field(default_factory=list)
+
+    class Config:
+        allow_population_by_field_name = True
+
+
+class ScheduleSuggestionResponse(BaseModel):
+    schedules: List[SuggestedScheduleOption]
+    general_recommendations: Optional[str] = None

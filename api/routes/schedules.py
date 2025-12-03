@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -9,9 +10,15 @@ from schemas.schedule import (
     ScheduleResponse,
     ScheduleListResponse,
     AddClassToSchedule,
-    ScheduleStatus
+    ScheduleStatus,
+    SectionSearchItem,
+    ScheduleSuggestionRequest,
+    ScheduleSuggestionResponse,
 )
 from services.schedule_service import ScheduleService
+from services.schedule_ai_service import ScheduleAISuggestionService
+from services.openai_service import get_openai_service
+from dependencies.auth import require_user
 
 router = APIRouter(
     prefix="/schedules",
@@ -22,17 +29,22 @@ router = APIRouter(
 @router.get("/", response_model=List[ScheduleListResponse])
 def get_schedules(
     advisee_id: Optional[int] = Query(None, description="Filter by advisee ID"),
+    advisee_name: Optional[str] = Query(None, description="Filter by advisee username"),
     term_id: Optional[int] = Query(None, description="Filter by term ID"),
+    term_name: Optional[str] = Query(None, description="Filter by term code/name"),
     status: Optional[ScheduleStatus] = Query(None, description="Filter by status"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Maximum number of records to return"),
+    user=Depends(require_user),
     db: Session = Depends(get_db)
 ):
     """
     Get all schedules with optional filtering.
 
     - **advisee_id**: Filter by advisee ID
+    - **advisee_name**: Filter by advisee username
     - **term_id**: Filter by term ID
+    - **term_name**: Filter by term code/name
     - **status**: Filter by schedule status (DRAFT, APPROVED, REJECTED)
     - **skip**: Pagination - number of records to skip
     - **limit**: Pagination - maximum number of records to return
@@ -40,16 +52,46 @@ def get_schedules(
     return ScheduleService.get_all_schedules(
         db=db,
         advisee_id=advisee_id,
+        advisee_name=advisee_name,
         term_id=term_id,
+        term_name=term_name,
         schedule_status=status,
         skip=skip,
         limit=limit
     )
 
 
+@router.get("", response_model=List[ScheduleListResponse], include_in_schema=False)
+def get_schedules_no_slash(
+    advisee_id: Optional[int] = Query(None, description="Filter by advisee ID"),
+    advisee_name: Optional[str] = Query(None, description="Filter by advisee username"),
+    term_id: Optional[int] = Query(None, description="Filter by term ID"),
+    term_name: Optional[str] = Query(None, description="Filter by term code/name"),
+    status: Optional[ScheduleStatus] = Query(None, description="Filter by status"),
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=500, description="Maximum number of records to return"),
+    user=Depends(require_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Compatibility handler to avoid redirecting /schedules -> /schedules/ when callers omit the trailing slash.
+    """
+    return get_schedules(
+        advisee_id=advisee_id,
+        advisee_name=advisee_name,
+        term_id=term_id,
+        term_name=term_name,
+        status=status,
+        skip=skip,
+        limit=limit,
+        user=user,
+        db=db,
+    )
+
 @router.get("/{schedule_id}", response_model=ScheduleResponse)
 def get_schedule(
     schedule_id: int,
+    user=Depends(require_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -60,9 +102,55 @@ def get_schedule(
     return ScheduleService.get_schedule_by_id(db=db, schedule_id=schedule_id)
 
 
+@router.get("/{schedule_id}/sections", response_model=List[SectionSearchItem])
+def search_sections_for_schedule(
+    schedule_id: int,
+    search: Optional[str] = Query(None, description="Search by course name, description, or CRN"),
+    limit: int = Query(20, ge=1, le=100, description="Max results"),
+    user=Depends(require_user),
+    db: Session = Depends(get_db)
+):
+    """
+    List sections in the same term as the schedule, filtered by search, only OPEN sections.
+    """
+    return ScheduleService.list_sections_for_schedule(
+        db=db,
+        schedule_id=schedule_id,
+        search=search,
+        limit=limit,
+    )
+
+
+@router.post("/{schedule_id}/suggestions", response_model=ScheduleSuggestionResponse)
+async def generate_schedule_suggestions(
+    schedule_id: int,
+    payload: ScheduleSuggestionRequest = ScheduleSuggestionRequest(),
+    user=Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate AI-assisted schedule suggestions using current degree context and open sections.
+    """
+    try:
+        openai_service = get_openai_service()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    service = ScheduleAISuggestionService(db, openai_service)
+    try:
+        return await run_in_threadpool(service.generate, schedule_id, payload.note)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=502, detail=f"Failed to generate schedule suggestions: {exc}"
+        ) from exc
+
+
 @router.post("/", response_model=ScheduleResponse, status_code=201)
 def create_schedule(
     schedule: ScheduleCreate,
+    user=Depends(require_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -80,6 +168,7 @@ def create_schedule(
 def update_schedule(
     schedule_id: int,
     schedule: ScheduleUpdate,
+    user=Depends(require_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -97,6 +186,7 @@ def update_schedule(
 @router.delete("/{schedule_id}")
 def delete_schedule(
     schedule_id: int,
+    user=Depends(require_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -113,6 +203,7 @@ def delete_schedule(
 def add_class_to_schedule(
     schedule_id: int,
     class_data: AddClassToSchedule,
+    user=Depends(require_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -134,6 +225,7 @@ def add_class_to_schedule(
 def remove_class_from_schedule(
     schedule_id: int,
     class_id: int,
+    user=Depends(require_user),
     db: Session = Depends(get_db)
 ):
     """
