@@ -30,31 +30,36 @@
 </template>
 
 <script>
+import { normalizeRole, NORMALIZED_ROLES } from '@/utils/auth'
+
 export default {
   name: 'AppSidebar',
   props: {
-    role: { type: String, default: 'advisor' }
+    role: { type: String, default: NORMALIZED_ROLES.STUDENT }
   },
   computed: {
+    normalizedRole() {
+      return normalizeRole(this.role)
+    },
     roleLabel() {
-      return this.role === 'advisor' ? 'Advisor' : 'Student'
+      if (this.normalizedRole === NORMALIZED_ROLES.ADMIN) return 'Admin'
+      if (this.normalizedRole === NORMALIZED_ROLES.ADVISOR) return 'Advisor'
+      return 'Student'
     },
     navItems() {
-      if (this.role === 'advisor') {
+      if (this.normalizedRole === NORMALIZED_ROLES.STUDENT) {
         return [
-        { title: 'Dashboard', to: '/dashboard' },
-        { title: 'Notifications', to: '/notifications' },
-        { title: 'Student List', to: '/student-list' },
-        { title: 'Security', to: '/security' },
-        { title: 'Degree Plan', to: '/degree-plan' },
-        { title: 'Schedules / Appointments', to: '/schedules' },
-        { title: 'PDF Scraper', to: '/pdf-scraper' },
+          { title: 'Dashboard', to: '/dashboard' },
+          { title: 'Notifications', to: '/notifications' },
+          { title: 'Degree Plan', to: '/degree-plan' },
+          { title: 'Schedules / Appointments', to: '/schedules' },
+          { title: 'PDF Scraper', to: '/pdf-scraper' },
         ]
       }
       return [
         { title: 'Dashboard', to: '/dashboard' },
         { title: 'Notifications', to: '/notifications' },
-        { title: 'Class History', to: '/class-history' },
+        { title: 'Student List', to: '/student-list' },
         { title: 'Security', to: '/security' },
         { title: 'Degree Plan', to: '/degree-plan' },
         { title: 'Schedules / Appointments', to: '/schedules' },

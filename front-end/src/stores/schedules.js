@@ -2,7 +2,9 @@ import { defineStore } from 'pinia'
 import { apiFetch } from '@/services/apiClient'
 
 const createDefaultFilters = () => ({
+  adviseeId: null,
   adviseeName: '',
+  termId: null,
   termName: '',
   status: '',
   limit: 50,
