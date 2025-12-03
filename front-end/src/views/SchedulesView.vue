@@ -342,6 +342,7 @@ const filterTermSearch = ref('')
 const adviseeLoading = ref(false)
 const termLoading = ref(false)
 const suggestionNote = ref('')
+const initialStudentFetchApplied = ref(false)
 
 const studentAdviseeId = computed(() =>
   currentAdvisee.value?.adviseeID ? Number(currentAdvisee.value.adviseeID) : null
@@ -692,6 +693,29 @@ watch(
   }
 )
 
+const ensureInitialFetch = async () => {
+
+  handleBackToList()
+  await resetFilters()
+
+  if (isStudent.value) {
+    if (!studentScopeReady.value || initialStudentFetchApplied.value) return
+    await applyFilters()
+    initialStudentFetchApplied.value = true
+    return
+  }
+
+  await applyFilters()
+}
+
+watch(
+  () => studentScopeReady.value,
+  async (ready) => {
+    if (!ready || !isStudent.value || initialStudentFetchApplied.value) return
+    await ensureInitialFetch()
+  }
+)
+
 onMounted(async () => {
   try {
     await loadUserContext()
@@ -701,9 +725,7 @@ onMounted(async () => {
 
   syncStudentScope()
 
-  if (!schedules.value.length) {
-    await scopedFetchSchedules()
-  }
+  await ensureInitialFetch()
   await loadAdvisees()
   await loadTerms()
 })
