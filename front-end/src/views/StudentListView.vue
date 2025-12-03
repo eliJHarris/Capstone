@@ -275,7 +275,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { fetchAdvisees, updateAdvisee } from '@/services/advisees'
+import { fetchAdvisees, updateAdviseeAdvisor } from '@/services/advisees'
 import { fetchAdvisors } from '@/services/advisors'
 import { useStudentProfileStore } from '@/stores/studentProfile'
 
@@ -500,8 +500,8 @@ const handleAdvisorUpdate = async () => {
   if (!selectedAdvisee.value) return
   updatingAdvisor.value = true
   try {
-    const advisorId = advisorSelection.value || null
-    await updateAdvisee(selectedAdvisee.value.adviseeID, { advisorID: advisorId })
+    const advisorId = advisorSelection.value ?? null
+    await updateAdviseeAdvisor(selectedAdvisee.value.adviseeID, advisorId)
     const idx = advisees.value.findIndex((a) => a.adviseeID === selectedAdvisee.value.adviseeID)
     if (idx !== -1) {
       advisees.value[idx] = {

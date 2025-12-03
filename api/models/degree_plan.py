@@ -9,12 +9,11 @@ from sqlalchemy import (
     Text,
 )
 from sqlalchemy.dialects.mysql import JSON as MySQLJSON
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 import enum
 
-Base = declarative_base()
+from .base import Base
 
 
 class ValidationStatus(str, enum.Enum):

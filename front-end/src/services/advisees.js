@@ -33,3 +33,13 @@ export async function updateAdvisee(adviseeId, payload) {
     body: payload,
   })
 }
+
+export async function updateAdviseeAdvisor(adviseeId, advisorId) {
+  if (advisorId === undefined) {
+    throw new Error('advisorId must be provided (use null to unassign)')
+  }
+
+  return updateAdvisee(adviseeId, {
+    advisorID: advisorId ?? null,
+  })
+}

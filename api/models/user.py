@@ -1,10 +1,9 @@
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Enum, ForeignKey, Text, DECIMAL
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from sqlalchemy.ext.declarative import declarative_base
 import enum
 
-Base = declarative_base()
+from .base import Base
 
 # Define the ENUM type to mirror your SQL CHECK constraint
 class UserRole(str, enum.Enum):
@@ -21,3 +20,4 @@ class User(Base):
     role = Column(Enum(UserRole), nullable=False)
     isActive = Column(Integer, nullable=False, default=True)
     createdDate = Column(DateTime, nullable=False, default=func.now())
+    notifications = relationship("Notification", back_populates="user")

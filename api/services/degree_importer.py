@@ -5,12 +5,12 @@ from typing import Optional
 import requests
 from sqlalchemy.orm import Session
 
-from models.degree_requirements import (
+from models.degree_plan import (
     DegreeRequirementSet,
     AdviseeDegreeContext,
     DegreePlanValidation,
     ValidationStatus,
-    RunType,
+    ValidationRunType,
 )
 from pdf_scraper.scrape_pdfs import run_pdf_scraper
 from services.pdf_parser import extract_courses, extract_program_info
@@ -144,7 +144,7 @@ def import_degree_plan_from_pdf_url(db: Session, advisee_id: int, pdf_url: str):
         contextID=context.contextID,
         requirementSetID=requirement_set.requirementSetID,
         status=ValidationStatus.RUNNING,
-        runType=RunType.MANUAL,
+        runType=ValidationRunType.MANUAL,
         startedAt=datetime.now(),
         createdAt=now,
         updatedAt=now,
@@ -266,7 +266,7 @@ def import_degree_plan_from_pdf_bytes(
         contextID=context.contextID,
         requirementSetID=requirement_set.requirementSetID,
         status=ValidationStatus.RUNNING,
-        runType=RunType.MANUAL,
+        runType=ValidationRunType.MANUAL,
         startedAt=now,
         createdAt=now,
         updatedAt=now,
