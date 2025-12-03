@@ -10,21 +10,21 @@ Prerequisites
   
 
 Quick start (may need to run following with ```sudo```)
-1. Generate local secrets and certificates (self-signed, dev-only).
-   Every developer or deployment must create the password files under `secrets/`
-   (`db_root_pass.txt`, `dbapppass.txt`, `ldap_admin_pass.txt`, `ldap_bind_pass.txt`, `jwt_secret.txt`)
-   because they are git-ignored. You can either create them manually (one secret per file)
-   or run the helper script:
+1. Create a `.env` file with the required container secrets. Start from the sample and edit the values:
+   ```
+   cp .env.example .env
+   ```
+   Required keys: `DB_ROOT_PASSWORD`, `DB_APP_PASSWORD`, `LDAP_ADMIN_PASSWORD`, `JWT_SECRET`.
+2. Generate local certificates (self-signed, dev-only) for the reverse proxy and LDAP:
    ```
    ./ops/bootstrap-security.sh
    ```
-   This script provisions the password files, an HTTPS cert for the reverse proxy, and a private CA plus server cert for LDAP TLS.
-2. From the repository root (/home/user/Capstone) run:
+3. From the repository root (/home/user/Capstone) run:
    ```
    docker compose up --build
    ```
-2. Front-end should be available at http://localhost
-3. API should be available at http://localhost:8000
+4. Front-end should be available at http://localhost
+5. API should be available at http://localhost:8000
 
 Stop and remove containers
 ```
