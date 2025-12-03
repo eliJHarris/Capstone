@@ -72,7 +72,10 @@ export async function apiFetch(path, options = {}) {
 
   if (!response.ok) {
     const detail = typeof payload === 'string' ? payload : payload?.detail
-    throw new Error(detail || `API request failed with status ${response.status}`)
+    const error = new Error(detail || `API request failed with status ${response.status}`)
+    error.status = response.status
+    error.payload = payload
+    throw error
   }
 
   return payload

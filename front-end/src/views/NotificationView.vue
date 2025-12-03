@@ -75,7 +75,12 @@ const loadNotifications = async () => {
     notifications.value = data
   } catch (error) {
     console.error('Error fetching data:', error)
-    errorMsg.value = error.message || 'Failed to load notifications'
+    if (error?.status === 404) {
+      notifications.value = []
+      errorMsg.value = ''
+    } else {
+      errorMsg.value = error.message || 'Failed to load notifications'
+    }
   } finally {
     loading.value = false
   }
