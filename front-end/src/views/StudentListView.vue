@@ -61,7 +61,7 @@
             />
             <v-select
               v-model="filters.advisorId"
-              :items="advisorSelectItems"
+              :items="advisorFilterItems"
               :loading="advisorsLoading"
               item-title="title"
               item-value="value"
@@ -279,6 +279,8 @@ import { fetchAdvisees, updateAdviseeAdvisor } from '@/services/advisees'
 import { fetchAdvisors } from '@/services/advisors'
 import { useStudentProfileStore } from '@/stores/studentProfile'
 
+const UNASSIGNED_FILTER_VALUE = '__UNASSIGNED__'
+
 const advisees = ref([])
 const loading = ref(false)
 const error = ref(null)
@@ -324,6 +326,15 @@ const statusOptions = ['Active', 'Inactive', 'Graduated', 'Suspended'].map((valu
 
 const advisorSelectItems = computed(() => [
   { title: 'Unassigned', value: null, subtitle: 'Not linked to an advisor' },
+  ...advisors.value.map((advisor) => ({
+    title: advisor.name || `Advisor #${advisor.advisorID}`,
+    subtitle: advisor.office || '',
+    value: Number(advisor.advisorID),
+  })),
+])
+
+const advisorFilterItems = computed(() => [
+  { title: 'Unassigned', value: UNASSIGNED_FILTER_VALUE, subtitle: 'Not linked to an advisor' },
   ...advisors.value.map((advisor) => ({
     title: advisor.name || `Advisor #${advisor.advisorID}`,
     subtitle: advisor.office || '',
@@ -438,9 +449,12 @@ const loadAdvisors = async () => {
 const loadAdvisees = async () => {
   loading.value = true
   error.value = null
+  const isUnassignedAdvisorFilter = filters.advisorId === UNASSIGNED_FILTER_VALUE
+  const advisorIdFilter = isUnassignedAdvisorFilter ? undefined : filters.advisorId ?? undefined
   try {
     const data = await fetchAdvisees({
-      advisorId: filters.advisorId || undefined,
+      advisorId: advisorIdFilter,
+      advisorIsNull: isUnassignedAdvisorFilter ? true : undefined,
       classification: filters.classification || undefined,
       status: filters.status || undefined,
       search: filters.search || undefined,

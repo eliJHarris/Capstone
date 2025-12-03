@@ -13,6 +13,7 @@ const buildQuery = (params = {}) => {
 export async function fetchAdvisees(params = {}) {
   const query = buildQuery({
     advisor_id: params.advisorId,
+    advisor_is_null: params.advisorIsNull,
     classification: params.classification,
     status: params.status,
     major: params.major,

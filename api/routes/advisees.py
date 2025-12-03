@@ -20,6 +20,7 @@ router = APIRouter(prefix="/advisees", tags=["advisees"])
 def _list_advisees(
     advisor_id: Optional[int],
     advisor_id_legacy: Optional[int],
+    advisor_is_null: Optional[bool],
     advisee_id: Optional[int],
     advisee_id_legacy: Optional[int],
     user_id: Optional[int],
@@ -38,6 +39,7 @@ def _list_advisees(
     return AdviseeService.list_advisees(
         db=db,
         advisor_id=advisor_id if advisor_id is not None else advisor_id_legacy,
+        advisor_is_null=advisor_is_null,
         advisee_id=advisee_id if advisee_id is not None else advisee_id_legacy,
         user_id=user_id if user_id is not None else user_id_legacy,
         major=major,
@@ -57,6 +59,9 @@ def list_advisees_with_slash(
     advisor_id: Optional[int] = Query(None, description="Filter by advisor ID"),
     advisor_id_legacy: Optional[int] = Query(
         None, alias="advisorID", include_in_schema=False
+    ),
+    advisor_is_null: Optional[bool] = Query(
+        None, description="Filter to advisees without an assigned advisor"
     ),
     advisee_id: Optional[int] = Query(None, description="Filter by advisee ID"),
     advisee_id_legacy: Optional[int] = Query(
@@ -78,6 +83,7 @@ def list_advisees_with_slash(
     return _list_advisees(
         advisor_id,
         advisor_id_legacy,
+        advisor_is_null,
         advisee_id,
         advisee_id_legacy,
         user_id,
@@ -101,6 +107,9 @@ def list_advisees_no_slash(
     advisor_id_legacy: Optional[int] = Query(
         None, alias="advisorID", include_in_schema=False
     ),
+    advisor_is_null: Optional[bool] = Query(
+        None, description="Filter to advisees without an assigned advisor"
+    ),
     advisee_id: Optional[int] = Query(None, description="Filter by advisee ID"),
     advisee_id_legacy: Optional[int] = Query(
         None, alias="adviseeID", include_in_schema=False
@@ -121,6 +130,7 @@ def list_advisees_no_slash(
     return _list_advisees(
         advisor_id,
         advisor_id_legacy,
+        advisor_is_null,
         advisee_id,
         advisee_id_legacy,
         user_id,

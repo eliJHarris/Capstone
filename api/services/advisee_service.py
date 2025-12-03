@@ -25,6 +25,7 @@ class AdviseeService:
     def list_advisees(
         db: Session,
         advisor_id: Optional[int] = None,
+        advisor_is_null: Optional[bool] = None,
         search: Optional[str] = None,
         advisee_id: Optional[int] = None,
         user_id: Optional[int] = None,
@@ -49,6 +50,8 @@ class AdviseeService:
             query = query.filter(AdviseeProfile.userID == user_id)
         if advisor_id is not None:
             query = query.filter(AdviseeProfile.advisorID == advisor_id)
+        elif advisor_is_null:
+            query = query.filter(AdviseeProfile.advisorID.is_(None))
         if major:
             query = query.filter(AdviseeProfile.major == major)
         if degree_plan:
