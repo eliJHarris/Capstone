@@ -10,7 +10,7 @@
       <v-avatar size="48" class="mb-2">
         <img src=/src/assets/mockup/Avatar.png style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />
       </v-avatar>
-      <div class="subtitle-1 font-weight-medium">Jordan Casey</div>
+      <div class="subtitle-1 font-weight-medium">{{ userLabel }}</div>
       <div class="caption">{{ roleLabel }}</div>
     </div>
 
@@ -30,31 +30,74 @@
 </template>
 
 <script>
+import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { normalizeRole, NORMALIZED_ROLES } from '@/utils/auth'
+import { AUTH_ROLE_EVENT } from '@/composables/useUserRole'
+import { useCurrentUser } from '@/composables/useCurrentUser'
+
 export default {
   name: 'AppSidebar',
   props: {
-    role: { type: String, default: 'advisor' }
+    role: { type: String, default: NORMALIZED_ROLES.STUDENT }
+  },
+  setup() {
+    const { displayName, username, refreshIdentity } = useCurrentUser()
+    const userLabel = computed(() => displayName.value || username.value || 'User')
+
+    const handleIdentityChange = (event) => {
+      if (
+        event?.type === 'storage' &&
+        event?.key &&
+        event.key !== 'auth_user' &&
+        event.key !== 'auth_token'
+      ) {
+        return
+      }
+      refreshIdentity()
+    }
+
+    onMounted(() => {
+      refreshIdentity()
+      if (typeof window !== 'undefined') {
+        window.addEventListener('storage', handleIdentityChange)
+        window.addEventListener(AUTH_ROLE_EVENT, handleIdentityChange)
+      }
+    })
+
+    onBeforeUnmount(() => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('storage', handleIdentityChange)
+        window.removeEventListener(AUTH_ROLE_EVENT, handleIdentityChange)
+      }
+    })
+
+    return {
+      userLabel,
+    }
   },
   computed: {
+    normalizedRole() {
+      return normalizeRole(this.role)
+    },
     roleLabel() {
-      return this.role === 'advisor' ? 'Advisor' : 'Student'
+      if (this.normalizedRole === NORMALIZED_ROLES.ADMIN) return 'Admin'
+      if (this.normalizedRole === NORMALIZED_ROLES.ADVISOR) return 'Advisor'
+      return 'Student'
     },
     navItems() {
-      if (this.role === 'advisor') {
+      if (this.normalizedRole === NORMALIZED_ROLES.STUDENT) {
         return [
-        { title: 'Dashboard', to: '/dashboard' },
-        { title: 'Notifications', to: '/notifications' },
-        { title: 'Student List', to: '/student-list' },
-        { title: 'Security', to: '/security' },
-        { title: 'Degree Plan', to: '/degree-plan' },
-        { title: 'Schedules / Appointments', to: '/schedules' },
-        { title: 'PDF Scraper', to: '/pdf-scraper' },
+          { title: 'Dashboard', to: '/dashboard' },
+          { title: 'Notifications', to: '/notifications' },
+          { title: 'Degree Plan', to: '/degree-plan' },
+          { title: 'Schedules / Appointments', to: '/schedules' },
+          { title: 'PDF Scraper', to: '/pdf-scraper' },
         ]
       }
       return [
         { title: 'Dashboard', to: '/dashboard' },
         { title: 'Notifications', to: '/notifications' },
-        { title: 'Class History', to: '/class-history' },
+        { title: 'Student List', to: '/student-list' },
         { title: 'Security', to: '/security' },
         { title: 'Degree Plan', to: '/degree-plan' },
         { title: 'Schedules / Appointments', to: '/schedules' },

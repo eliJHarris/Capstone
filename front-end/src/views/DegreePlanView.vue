@@ -54,11 +54,12 @@
               item-title="label"
               item-value="value"
               :loading="adviseeListLoading"
-              :disabled="adviseeListLoading || !adviseeSelectItems.length"
+              :disabled="isStudent || adviseeListLoading || !adviseeSelectItems.length"
               density="comfortable"
               hide-details
               prepend-inner-icon="mdi-account-search"
               placeholder="Search by name or ID"
+              :clearable="!isStudent"
             >
               <template #no-data>
                 <v-list-item title="No advisees found" subtitle="Adjust filters or try again." />
@@ -132,6 +133,24 @@
     </v-dialog>
 
     <!-- ERRORS -->
+    <v-alert
+      v-if="userContextError"
+      type="error"
+      class="mb-4"
+      variant="tonal"
+    >
+      {{ userContextError }}
+    </v-alert>
+
+    <v-alert
+      v-if="isStudent"
+      type="info"
+      class="mb-4"
+      variant="tonal"
+    >
+      You are viewing your own degree plan.
+    </v-alert>
+
     <v-alert
       v-if="degreePlanStore.error"
       type="error"
@@ -285,9 +304,20 @@ import { useStudentProfileStore } from '@/stores/studentProfile'
 import { useDegreePlanStore } from '@/stores/degreePlans'
 import { saveRequirementSet } from '@/services/degreePlans'
 import { fetchAdvisees } from '@/services/advisees'
+import { useCurrentUser } from '@/composables/useCurrentUser'
+import { NORMALIZED_ROLES } from '@/utils/auth'
 
 const studentStore = useStudentProfileStore()
 const degreePlanStore = useDegreePlanStore()
+const {
+  role: userRole,
+  advisee: currentAdvisee,
+  loadUserContext,
+  loading: userContextLoading,
+  error: userContextError,
+} = useCurrentUser()
+
+const isStudent = computed(() => userRole.value === NORMALIZED_ROLES.STUDENT)
 
 const seeding = ref(false)
 const showImportDialog = ref(false)
@@ -305,8 +335,10 @@ const FALLBACK_ADVISEES = [
 ]
 
 const profile = computed(() => studentStore.studentProfile)
-const adviseeId = computed(() => profile.value?.advisee_id)
-const activeAdviseeId = computed(() => selectedAdviseeId.value || adviseeId.value || null)
+const studentAdviseeId = computed(() =>
+  currentAdvisee.value?.adviseeID ? Number(currentAdvisee.value.adviseeID) : profile.value?.advisee_id
+)
+const adviseeId = computed(() => selectedAdviseeId.value || studentAdviseeId.value || profile.value?.advisee_id)
 const selectedAdvisee = computed(() => advisees.value.find((item) => item.adviseeID === selectedAdviseeId.value) || null)
 const currentAdviseeName = computed(() => selectedAdvisee.value?.name || profile.value?.student_name || 'Advisee')
 const currentAdviseeMajor = computed(() => selectedAdvisee.value?.major || profile.value?.major || 'Major TBD')
@@ -361,15 +393,33 @@ async function loadAdviseeDirectory() {
   adviseeListLoading.value = true
   adviseeListError.value = null
   try {
-    const data = await fetchAdvisees({ limit: 200 })
-    advisees.value = data.map((item) => ({
-      adviseeID: Number(item.adviseeID),
-      name: item.name,
-      email: item.email,
-      major: item.major,
-      classification: item.classification,
-      status: item.status,
-    }))
+    if (isStudent.value) {
+      if (currentAdvisee.value?.adviseeID) {
+        advisees.value = [
+          {
+            adviseeID: Number(currentAdvisee.value.adviseeID),
+            name: currentAdvisee.value.name,
+            email: currentAdvisee.value.email,
+            major: currentAdvisee.value.major,
+            classification: currentAdvisee.value.classification,
+            status: currentAdvisee.value.status,
+          },
+        ]
+      } else {
+        adviseeListError.value = 'No advisee profile found for this account.'
+        advisees.value = []
+      }
+    } else {
+      const data = await fetchAdvisees({ limit: 200 })
+      advisees.value = data.map((item) => ({
+        adviseeID: Number(item.adviseeID),
+        name: item.name,
+        email: item.email,
+        major: item.major,
+        classification: item.classification,
+        status: item.status,
+      }))
+    }
   } catch (error) {
     console.error(error)
     adviseeListError.value = error.message || 'Failed to load advisees'
@@ -474,7 +524,12 @@ watch(selectedAdviseeId, async (newId, oldId) => {
   await loadSummary(newId)
 })
 
-onMounted(() => {
-  loadAdviseeDirectory()
+onMounted(async () => {
+  try {
+    await loadUserContext()
+  } catch (error) {
+    console.error('Failed to load user context for degree plan view', error)
+  }
+  await loadAdviseeDirectory()
 })
 </script>

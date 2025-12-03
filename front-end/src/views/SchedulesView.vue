@@ -27,6 +27,24 @@
       {{ scheduleError }}
     </v-alert>
 
+    <v-alert
+      v-if="userContextErrorMessage"
+      type="error"
+      class="mb-4"
+      closable
+    >
+      {{ userContextErrorMessage }}
+    </v-alert>
+
+    <v-alert
+      v-if="isStudent"
+      type="info"
+      variant="tonal"
+      class="mb-4"
+    >
+      You are viewing schedules for your account only.
+    </v-alert>
+
     <v-row dense>
       <v-col cols="12" md="4">
         <v-card rounded="xl" variant="flat" class="mb-4">
@@ -36,17 +54,18 @@
               <v-autocomplete
                 v-model="filterAdvisee"
                 v-model:search="filterAdviseeSearch"
-                :items="adviseeOptions"
-                :loading="adviseeLoading"
-                item-title="title"
-                item-value="value"
-                label="Advisee"
-                density="comfortable"
-                variant="outlined"
-                class="mb-3"
-                return-object
-                clearable
-                @update:search="handleFilterAdviseeSearch"
+              :items="adviseeOptions"
+              :loading="adviseeLoading"
+              :disabled="isStudent || userContextLoading"
+              item-title="title"
+              item-value="value"
+              label="Advisee"
+              density="comfortable"
+              variant="outlined"
+              class="mb-3"
+              return-object
+              :clearable="!isStudent"
+              @update:search="handleFilterAdviseeSearch"
               >
                 <template #item="{ props, item }">
                   <v-list-item v-bind="props">
@@ -117,6 +136,7 @@
                 v-model:search="adviseeSearch"
                 :items="adviseeOptions"
                 :loading="adviseeLoading"
+                :disabled="isStudent || userContextLoading"
                 item-title="title"
                 item-value="value"
                 label="Advisee"
@@ -124,7 +144,7 @@
                 variant="outlined"
                 class="mb-3"
                 return-object
-                clearable
+                :clearable="!isStudent"
                 @update:search="handleAdviseeSearch"
               >
                 <template #item="{ props, item }">
@@ -215,6 +235,8 @@
           :suggestion-error="suggestionError"
           :general-recommendations="suggestionRecommendations"
           :suggestion-note="suggestionNote"
+          :disable-status-change="isStudent"
+          :status-change-hint="isStudent ? 'Students cannot change schedule status.' : ''"
           @update-status="handleStatusUpdate"
           @delete="handleDelete"
           @add-class="handleAddClass"
@@ -257,6 +279,8 @@ import ScheduleList from '@/components/schedules/ScheduleList.vue'
 import { useScheduleStore } from '@/stores/schedules'
 import { fetchAdvisees } from '@/services/advisees'
 import { fetchTerms } from '@/services/terms'
+import { useCurrentUser } from '@/composables/useCurrentUser'
+import { NORMALIZED_ROLES } from '@/utils/auth'
 
 const scheduleStore = useScheduleStore()
 const {
@@ -275,6 +299,21 @@ const {
   suggestionLoading,
   suggestionError,
 } = storeToRefs(scheduleStore)
+
+const {
+  role: userRole,
+  advisee: currentAdvisee,
+  loadUserContext,
+  loading: userContextLoading,
+  error: userContextError,
+} = useCurrentUser()
+
+const isStudent = computed(() => userRole.value === NORMALIZED_ROLES.STUDENT)
+
+const studentScopeReady = computed(() => {
+  if (!isStudent.value) return true
+  return Boolean(studentAdviseeId.value) && !userContextError.value
+})
 
 const statusOptions = computed(() => scheduleStore.statusOptions)
 const sourceOptions = computed(() => scheduleStore.sourceOptions)
@@ -303,6 +342,23 @@ const filterTermSearch = ref('')
 const adviseeLoading = ref(false)
 const termLoading = ref(false)
 const suggestionNote = ref('')
+const initialStudentFetchApplied = ref(false)
+
+const studentAdviseeId = computed(() =>
+  currentAdvisee.value?.adviseeID ? Number(currentAdvisee.value.adviseeID) : null
+)
+
+const studentAdviseeOption = computed(() => {
+  if (!studentAdviseeId.value) return null
+  return {
+    value: studentAdviseeId.value,
+    title: currentAdvisee.value?.name || `Advisee #${studentAdviseeId.value}`,
+    subtitle: currentAdvisee.value?.email || '',
+    raw: currentAdvisee.value,
+    name: currentAdvisee.value?.name,
+    email: currentAdvisee.value?.email,
+  }
+})
 
 const feedback = reactive({
   show: false,
@@ -311,7 +367,13 @@ const feedback = reactive({
 })
 
 const scheduleError = computed(() => error.value)
-const createDisabled = computed(() => !createForm.advisee || !createForm.term)
+const userContextErrorMessage = computed(() => userContextError.value)
+const createDisabled = computed(() => {
+  if (isStudent.value) {
+    return !studentAdviseeId.value || !createForm.term
+  }
+  return !createForm.advisee || !createForm.term
+})
 
 const clearError = () => scheduleStore.clearError()
 
@@ -319,6 +381,33 @@ const showFeedback = (text, color = 'success') => {
   feedback.text = text
   feedback.color = color
   feedback.show = true
+}
+
+const scopedFetchSchedules = async (overrides = {}) => {
+  const scoped = { ...overrides }
+  if (!studentScopeReady.value) {
+    showFeedback('Unable to load your advisee profile. Please contact support.', 'error')
+    return
+  }
+  if (isStudent.value && studentAdviseeId.value) {
+    scoped.adviseeId = studentAdviseeId.value
+  }
+  await scheduleStore.fetchSchedules(scoped)
+}
+
+const syncStudentScope = () => {
+  if (!isStudent.value || !studentAdviseeOption.value) return
+  filterAdvisee.value = studentAdviseeOption.value
+  filters.adviseeName = studentAdviseeOption.value.name || studentAdviseeOption.value.title || ''
+  filters.adviseeId = studentAdviseeOption.value.value
+  if (!createForm.advisee) {
+    createForm.advisee = studentAdviseeOption.value
+  }
+  scheduleStore.setFilters({
+    ...scheduleStore.filters,
+    adviseeId: studentAdviseeOption.value.value,
+    adviseeName: studentAdviseeOption.value.name || studentAdviseeOption.value.title || '',
+  })
 }
 
 const formatTermRange = (term) => {
@@ -331,6 +420,11 @@ const formatTermRange = (term) => {
 const loadAdvisees = async (search = '') => {
   adviseeLoading.value = true
   try {
+    if (isStudent.value) {
+      adviseeOptions.value = studentAdviseeOption.value ? [studentAdviseeOption.value] : []
+      return
+    }
+
     const data = await fetchAdvisees({ search, limit: 10 })
     adviseeOptions.value = data.map((item) => ({
       value: Number(item.adviseeID),
@@ -365,6 +459,7 @@ const loadTerms = async (search = '') => {
 }
 
 const handleAdviseeSearch = (value) => {
+  if (isStudent.value) return
   adviseeSearch.value = value
 }
 
@@ -373,6 +468,7 @@ const handleTermSearch = (value) => {
 }
 
 const handleFilterAdviseeSearch = (value) => {
+  if (isStudent.value) return
   filterAdviseeSearch.value = value
   filters.adviseeName = value || ''
 }
@@ -383,6 +479,7 @@ const handleFilterTermSearch = (value) => {
 }
 
 watch(adviseeSearch, (value) => {
+  if (isStudent.value) return
   loadAdvisees(value)
 })
 
@@ -391,6 +488,7 @@ watch(termSearch, (value) => {
 })
 
 watch(filterAdvisee, (value) => {
+  if (isStudent.value) return
   filters.adviseeName = value?.name || value?.title || ''
 })
 
@@ -398,8 +496,18 @@ watch(filterTerm, (value) => {
   filters.termName = value?.raw?.code || value?.title || ''
 })
 
+watch(
+  () => currentAdvisee.value,
+  () => {
+    if (isStudent.value) {
+      syncStudentScope()
+      loadAdvisees()
+    }
+  }
+)
+
 const refreshList = async () => {
-  await scheduleStore.fetchSchedules()
+  await scopedFetchSchedules()
   if (selectedScheduleId.value) {
     await scheduleStore.fetchScheduleById(selectedScheduleId.value)
   }
@@ -408,30 +516,43 @@ const refreshList = async () => {
 const applyFilters = async () => {
   scheduleStore.setFilters({
     ...filters,
-    adviseeName: filterAdvisee.value?.name || filterAdviseeSearch.value || '',
+    adviseeId: isStudent.value ? studentAdviseeId.value : filters.adviseeId,
+    adviseeName: isStudent.value
+      ? studentAdviseeOption.value?.name || studentAdviseeOption.value?.title || ''
+      : filterAdvisee.value?.name || filterAdviseeSearch.value || '',
     termName: filterTerm.value?.raw?.code || filterTerm.value?.title || filterTermSearch.value || '',
   })
-  await scheduleStore.fetchSchedules()
+  await scopedFetchSchedules()
 }
 
 const resetFilters = async () => {
   scheduleStore.resetFilters()
   Object.assign(filters, { ...scheduleStore.filters })
-  filterAdvisee.value = null
+  filterAdvisee.value = isStudent.value ? studentAdviseeOption.value : null
   filterTerm.value = null
-  filterAdviseeSearch.value = ''
+  filterAdviseeSearch.value = isStudent.value
+    ? studentAdviseeOption.value?.name || ''
+    : ''
   filterTermSearch.value = ''
-  await scheduleStore.fetchSchedules()
+  if (isStudent.value) {
+    syncStudentScope()
+  }
+  await scopedFetchSchedules()
 }
 
 const handleCreate = async () => {
-  if (createDisabled.value) {
+  const adviseeId = isStudent.value ? studentAdviseeId.value : createForm.advisee?.value
+  if (!adviseeId || !createForm.term) {
     showFeedback('Advisee and Term are required', 'error')
     return
   }
 
+  createForm.advisee = isStudent.value && studentAdviseeOption.value
+    ? studentAdviseeOption.value
+    : createForm.advisee
+
   const payload = {
-    adviseeID: Number(createForm.advisee?.value),
+    adviseeID: Number(adviseeId),
     termID: Number(createForm.term?.value),
     source: createForm.source,
     status: createForm.status,
@@ -440,7 +561,7 @@ const handleCreate = async () => {
   try {
     await scheduleStore.createSchedule(payload)
     Object.assign(createForm, {
-      advisee: null,
+      advisee: isStudent.value ? studentAdviseeOption.value : null,
       term: null,
       source: sourceOptions.value[0],
       status: statusOptions.value[0],
@@ -455,6 +576,10 @@ const handleCreate = async () => {
 
 const handleStatusUpdate = async (newStatus) => {
   if (!selectedSchedule.value) return
+  if (isStudent.value) {
+    showFeedback('Students cannot change schedule status.', 'error')
+    return
+  }
   try {
     await scheduleStore.updateSchedule(selectedSchedule.value.scheduleID, { status: newStatus })
     showFeedback('Schedule status updated')
@@ -568,11 +693,40 @@ watch(
   }
 )
 
-onMounted(() => {
-  if (!schedules.value.length) {
-    scheduleStore.fetchSchedules()
+const ensureInitialFetch = async () => {
+
+  handleBackToList()
+  await resetFilters()
+
+  if (isStudent.value) {
+    if (!studentScopeReady.value || initialStudentFetchApplied.value) return
+    await applyFilters()
+    initialStudentFetchApplied.value = true
+    return
   }
-  loadAdvisees()
-  loadTerms()
+
+  await applyFilters()
+}
+
+watch(
+  () => studentScopeReady.value,
+  async (ready) => {
+    if (!ready || !isStudent.value || initialStudentFetchApplied.value) return
+    await ensureInitialFetch()
+  }
+)
+
+onMounted(async () => {
+  try {
+    await loadUserContext()
+  } catch (err) {
+    console.error('Failed to load user context', err)
+  }
+
+  syncStudentScope()
+
+  await ensureInitialFetch()
+  await loadAdvisees()
+  await loadTerms()
 })
 </script>

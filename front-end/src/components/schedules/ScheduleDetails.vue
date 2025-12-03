@@ -43,13 +43,14 @@
               label="Status"
               density="compact"
               variant="outlined"
+              :disabled="disableStatusChange"
             />
           </v-col>
           <v-col cols="12" md="6" class="d-flex align-end">
             <v-btn
               color="primary"
               block
-              :disabled="!statusChanged || mutationLoading"
+              :disabled="disableStatusChange || !statusChanged || mutationLoading"
               :loading="mutationLoading && pendingAction === 'status'"
               @click="handleStatusUpdate"
             >
@@ -57,6 +58,16 @@
             </v-btn>
           </v-col>
         </v-row>
+
+        <v-alert
+          v-if="disableStatusChange && statusChangeHint"
+          type="info"
+          variant="tonal"
+          density="comfortable"
+          class="mb-4"
+        >
+          {{ statusChangeHint }}
+        </v-alert>
 
         <v-row dense class="mb-4">
           <v-col cols="12" md="8">
@@ -410,6 +421,14 @@ const props = defineProps({
     default: '',
   },
   generalRecommendations: {
+    type: String,
+    default: '',
+  },
+  disableStatusChange: {
+    type: Boolean,
+    default: false,
+  },
+  statusChangeHint: {
     type: String,
     default: '',
   },
