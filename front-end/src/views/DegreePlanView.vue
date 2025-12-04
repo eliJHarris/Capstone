@@ -32,15 +32,6 @@
         Load Sample Plan
       </v-btn>
 
-      <!-- VALIDATE -->
-      <v-btn
-        color="primary"
-        :loading="degreePlanStore.validationLoading"
-        :disabled="!degreePlanStore.context || degreePlanStore.validationLoading"
-        @click="handleManualValidation"
-      >
-        Validate Plan
-      </v-btn>
     </div>
 
     <v-card rounded="xl" class="mb-4">
@@ -163,7 +154,7 @@
 
     <!-- REST OF PAGE -->
     <v-row dense>
-      <v-col cols="12" md="4">
+      <v-col cols="12" md="4" v-if="requirementInfo && !degreePlanStore.loading">
         <v-card rounded="xl" class="mb-4">
           <v-card-text class="text-center">
             <div class="text-subtitle-2 text-medium-emphasis mb-2">Completion</div>
@@ -339,6 +330,10 @@ const studentAdviseeId = computed(() =>
   currentAdvisee.value?.adviseeID ? Number(currentAdvisee.value.adviseeID) : profile.value?.advisee_id
 )
 const adviseeId = computed(() => selectedAdviseeId.value || studentAdviseeId.value || profile.value?.advisee_id)
+const activeAdviseeId = computed(() => {
+  const value = adviseeId.value
+  return value ? Number(value) : null
+})
 const selectedAdvisee = computed(() => advisees.value.find((item) => item.adviseeID === selectedAdviseeId.value) || null)
 const currentAdviseeName = computed(() => selectedAdvisee.value?.name || profile.value?.student_name || 'Advisee')
 const currentAdviseeMajor = computed(() => selectedAdvisee.value?.major || profile.value?.major || 'Major TBD')
@@ -372,6 +367,15 @@ const statusColor = computed(() => {
 
 const requirementInfo = computed(() => degreePlanStore.requirementSet)
 const issues = computed(() => degreePlanStore.latestValidation?.issues || [])
+
+async function autoValidatePlan(targetAdviseeId = activeAdviseeId.value) {
+  if (!targetAdviseeId) return
+  try {
+    await degreePlanStore.triggerValidation(targetAdviseeId)
+  } catch (error) {
+    console.error('Failed to auto-validate plan', error)
+  }
+}
 
 async function importPdfUrl() {
   if (!activeAdviseeId.value) return
@@ -435,16 +439,12 @@ async function loadAdviseeDirectory() {
   }
 }
 
-async function handleManualValidation() {
-  if (!activeAdviseeId.value) return
-  await degreePlanStore.triggerValidation(activeAdviseeId.value)
-}
-
 const sampleRequirementTemplate = computed(() => ({
-  programCode: profile.value.program_code || 'BS-CS',
-  catalogYear: profile.value.catalog_year || 'CAT2024',
-  programName: profile.value.major,
-  totalCredits: 120,
+  programCode: profile.value.program_code || '',
+  catalogYear: profile.value.catalog_year || '',
+  programName: profile.value.major || '',
+  totalCredits: profile.value.totalCredits || 0,
+
   requirementGroups: [
     {
       id: 'core',
@@ -522,6 +522,7 @@ watch(selectedAdviseeId, async (newId, oldId) => {
     studentStore.updateProfile({ advisee_id: newId })
   }
   await loadSummary(newId)
+  await autoValidatePlan(newId)
 })
 
 onMounted(async () => {

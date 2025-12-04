@@ -96,6 +96,7 @@ export const useDegreePlanStore = defineStore('degreePlan', {
 
         // Refresh summary after ingestion + auto-validation
         await this.loadSummary(adviseeId)
+        await this.triggerValidation(adviseeId)
 
       } catch (error) {
         this.error = error.message || 'PDF import failed'

@@ -11,6 +11,7 @@ import PdfScraperView from '@/views/PdfScraperView.vue'
 import DegreePlanView from '@/views/DegreePlanView.vue'
 import StudentListView from '@/views/StudentListView.vue'
 import ProfileView from '@/views/ProfileView.vue'
+import TranscriptsView from '@/views/TranscriptsView.vue'
 
 const dashboardChildren = [
   { path: 'dashboard', name: 'dashboard', component: DashboardHome },
@@ -43,6 +44,7 @@ const dashboardChildren = [
     component: ProfileView,
   },
   { path: 'schedules', name: 'schedules', component: SchedulesView },
+  { path: 'transcripts', name: 'transcripts', component: TranscriptsView },
   { path: 'pdf-scraper', name: 'pdf-scraper', component: PdfScraperView },
   { path: 'degree-plan', name: 'degree-plan', component: DegreePlanView },
 ]

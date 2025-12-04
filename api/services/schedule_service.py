@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 from datetime import datetime
 from fastapi import HTTPException, status
@@ -13,6 +14,7 @@ from models.schedule import (
     ScheduleSourceEnum,
     SectionStatusEnum,
 )
+from models.enrollment import Enrollment, EnrollmentStatus
 from models.advisee import AdviseeProfile
 from models.user import User
 from schemas.schedule import (
@@ -38,7 +40,7 @@ class ScheduleService:
         db: Session,
         schedule_id: int,
         search: Optional[str] = None,
-        limit: int = 20,
+        limit: Optional[int] = None,
     ) -> List[SectionSearchItem]:
         schedule = db.query(Schedule).filter(Schedule.scheduleID == schedule_id).first()
         if not schedule:
@@ -64,7 +66,10 @@ class ScheduleService:
                 | (Section.crn.ilike(like))
             )
 
-        query = query.order_by(Course.courseName.asc(), Section.crn.asc()).limit(limit)
+        query = query.order_by(Course.courseName.asc(), Section.crn.asc())
+
+        if limit:
+            query = query.limit(limit)
         sections = query.all()
 
         results: List[SectionSearchItem] = []
@@ -376,12 +381,45 @@ class ScheduleService:
         new_class = Class(
             sectionID=section_id,
             scheduleID=schedule_id,
+            termID=schedule.termID,
             createdDate=datetime.utcnow()
         )
 
         db.add(new_class)
         section.enrolled = min(section.capacity, section.enrolled + 1)
-        db.commit()
+
+        # Mirror the scheduled class into enrollments so the transcript view reflects in-progress courses
+        existing_enrollment = (
+            db.query(Enrollment)
+            .filter(
+                Enrollment.adviseeID == schedule.adviseeID,
+                Enrollment.sectionID == section_id,
+            )
+            .first()
+        )
+        if not existing_enrollment:
+            db.add(
+                Enrollment(
+                    adviseeID=schedule.adviseeID,
+                    sectionID=section_id,
+                    courseID=section.courseID,
+                    status=EnrollmentStatus.ENROLLED,
+                    grade=None,
+                    creditsEarned=0,
+                    attemptedNumber=1,
+                    createdWhen=datetime.utcnow(),
+                )
+            )
+
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            # Surface a clear message instead of a 500 when constraints are hit
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unable to add class due to a database constraint (likely duplicate section for this schedule)",
+            )
 
         return ScheduleService.get_schedule_by_id(db, schedule_id)
 
@@ -407,11 +445,24 @@ class ScheduleService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Only DRAFT schedules can be modified",
-            )
+        )
 
         # Keep capacity accounting accurate
         if cls.section and cls.section.enrolled > 0:
             cls.section.enrolled -= 1
+
+        # Remove the mirrored enrollment so the transcript no longer lists the course
+        enrollment = (
+            db.query(Enrollment)
+            .filter(
+                Enrollment.adviseeID == cls.schedule.adviseeID,
+                Enrollment.sectionID == cls.sectionID,
+                Enrollment.status == EnrollmentStatus.ENROLLED,
+            )
+            .first()
+        )
+        if enrollment:
+            db.delete(enrollment)
 
         db.delete(cls)
         db.commit()

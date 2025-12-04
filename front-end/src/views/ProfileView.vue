@@ -77,7 +77,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, watch } from 'vue'
 import { useStudentProfileStore } from '@/stores/studentProfile'
 import { useCurrentUser } from '@/composables/useCurrentUser'
 import { NORMALIZED_ROLES } from '@/utils/auth'
@@ -95,14 +95,21 @@ const formattedGpa = computed(() => {
 })
 const isStudent = computed(() => role.value === NORMALIZED_ROLES.STUDENT)
 
-onMounted(async () => {
-  if (!isStudent.value) return
+const maybeLoadProfile = async () => {
+  if (!isStudent.value) {
+    studentStore.reset()
+    return
+  }
   try {
     await loadUserContext()
   } catch (error) {
     console.error(error)
   }
-})
+}
+
+watch(isStudent, () => {
+  void maybeLoadProfile()
+}, { immediate: true })
 </script>
 
 <style scoped>

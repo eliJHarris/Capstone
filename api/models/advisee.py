@@ -26,7 +26,8 @@ class AdviseeProfile(Base):
     adviseeID = Column(Integer, primary_key=True, autoincrement=True, index=True)
     userID = Column(Integer, ForeignKey("users.userID", ondelete="CASCADE"), nullable=False, unique=True)
     advisorID = Column(Integer, ForeignKey("advisorProfile.advisorID", ondelete="SET NULL"), nullable=True)
-    major = Column(String(100), nullable=False)
+    # Stored as program code; column name in DB is majorCode
+    major = Column("majorCode", String(64), ForeignKey("majors.programCode", ondelete="RESTRICT"), nullable=False)
     degree_plan = Column(String(100))
     classification = Column(Enum(Classification), nullable=False)
     gpa = Column(DECIMAL(3, 2))
