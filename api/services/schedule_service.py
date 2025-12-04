@@ -17,6 +17,7 @@ from models.schedule import (
 from models.enrollment import Enrollment, EnrollmentStatus
 from models.advisee import AdviseeProfile
 from models.user import User
+from services.notification_service import NotificationService
 from schemas.schedule import (
     ScheduleCreate,
     ScheduleUpdate,
@@ -34,6 +35,11 @@ class ScheduleService:
     @staticmethod
     def _status_value(value) -> str:
         return value.value if hasattr(value, "value") else str(value)
+
+    @staticmethod
+    def _term_code(db: Session, term_id: int) -> str:
+        term_code = db.query(Term.code).filter(Term.termID == term_id).scalar()
+        return term_code or str(term_id)
 
     @staticmethod
     def list_sections_for_schedule(
@@ -251,6 +257,16 @@ class ScheduleService:
         )
 
         db.add(new_schedule)
+        db.flush()
+
+        NotificationService.notify_advisee_and_advisor(
+            db,
+            advisee_id=schedule_data.adviseeID,
+            description=(
+                f"Schedule {new_schedule.scheduleID} created for term "
+                f"{term.code} with status {new_schedule.status.value}."
+            ),
+        )
         db.commit()
         db.refresh(new_schedule)
 
@@ -269,6 +285,7 @@ class ScheduleService:
                 detail=f"Schedule with ID {schedule_id} not found"
         )
 
+        status_changed = False
         # Update fields if provided
         if schedule_data.status is not None:
             if (
@@ -280,7 +297,10 @@ class ScheduleService:
                     detail="Cannot approve a schedule with no classes",
                 )
 
-            schedule.status = ScheduleStatusEnum(schedule_data.status.value)
+            new_status = ScheduleStatusEnum(schedule_data.status.value)
+            if schedule.status != new_status:
+                status_changed = True
+            schedule.status = new_status
 
             # Update timestamp based on status
             if schedule_data.status == ScheduleStatus.APPROVED:
@@ -295,6 +315,17 @@ class ScheduleService:
 
         if schedule_data.source is not None:
             schedule.source = ScheduleSourceEnum(schedule_data.source.value)
+
+        if status_changed:
+            term_code = ScheduleService._term_code(db, schedule.termID)
+            NotificationService.notify_advisee_and_advisor(
+                db,
+                advisee_id=schedule.adviseeID,
+                description=(
+                    f"Schedule {schedule_id} status updated to "
+                    f"{schedule.status.value} for term {term_code}."
+                ),
+            )
 
         db.commit()
         db.refresh(schedule)
@@ -411,6 +442,17 @@ class ScheduleService:
                 )
             )
 
+        course_name = section.course.courseName if section.course else "Section"
+        term_code = ScheduleService._term_code(db, schedule.termID)
+        NotificationService.notify_advisee_and_advisor(
+            db,
+            advisee_id=schedule.adviseeID,
+            description=(
+                f"Added {course_name} ({section.crn}) to schedule "
+                f"{schedule_id} for term {term_code}."
+            ),
+        )
+
         try:
             db.commit()
         except IntegrityError:
@@ -463,6 +505,18 @@ class ScheduleService:
         )
         if enrollment:
             db.delete(enrollment)
+
+        course_name = cls.section.course.courseName if cls.section and cls.section.course else "Section"
+        crn = cls.section.crn if cls.section else "class"
+        term_code = ScheduleService._term_code(db, cls.schedule.termID)
+        NotificationService.notify_advisee_and_advisor(
+            db,
+            advisee_id=cls.schedule.adviseeID,
+            description=(
+                f"Removed {course_name} ({crn}) from schedule "
+                f"{schedule_id} for term {term_code}."
+            ),
+        )
 
         db.delete(cls)
         db.commit()

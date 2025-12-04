@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from models.advisor import AdvisorProfile
 from models.user import User
 from models.advisee import AdviseeProfile
+from services.notification_service import NotificationService
 from schemas.advisee import (
     AdviseeCreate,
     AdviseeListItem,
@@ -164,7 +165,10 @@ class AdviseeService:
                 detail=f"Advisee profile with ID {advisee_id} not found",
             )
 
+        user = db.query(User).filter(User.userID == advisee.userID).first()
+
         update_fields = advisee_data.dict(exclude_unset=True)
+        original_advisor_id = advisee.advisorID
 
         if "advisorID" in update_fields:
             advisor_id = update_fields["advisorID"]
@@ -176,10 +180,76 @@ class AdviseeService:
                         detail=f"Advisor with ID {advisor_id} not found",
                     )
 
+        def _format_value(value) -> str:
+            if value is None:
+                return "None"
+            return value.value if hasattr(value, "value") else str(value)
+
+        changed_fields = {}
         for field, value in update_fields.items():
-            setattr(advisee, field, value)
+            old_value = getattr(advisee, field)
+            if value != old_value:
+                changed_fields[field] = (old_value, value)
+                setattr(advisee, field, value)
 
         advisee.lastUpdated = datetime.now()
+
+        advisor_changed = "advisorID" in changed_fields
+        if advisor_changed:
+            _, new_advisor_id = changed_fields["advisorID"]
+            new_advisor_name = (
+                db.query(AdvisorProfile.name)
+                .filter(AdvisorProfile.advisorID == new_advisor_id)
+                .scalar()
+                if new_advisor_id
+                else None
+            )
+            display_name = user.username if user else f"Advisee {advisee.adviseeID}"
+
+            NotificationService.queue_notification(
+                db,
+                advisee.userID,
+                f"Advisor updated to {new_advisor_name or 'Unassigned'}.",
+            )
+            if new_advisor_id:
+                NotificationService.queue_notification(
+                    db,
+                    new_advisor_id,
+                    f"You have been assigned advisee {display_name} (ID {advisee.adviseeID}).",
+                )
+            if (
+                original_advisor_id
+                and original_advisor_id != new_advisor_id
+            ):
+                NotificationService.queue_notification(
+                    db,
+                    original_advisor_id,
+                    f"{display_name} (advisee {advisee.adviseeID}) is no longer assigned to you.",
+                )
+
+        non_advisor_changes = {
+            field: values
+            for field, values in changed_fields.items()
+            if field != "advisorID"
+        }
+        if non_advisor_changes:
+            labels = {
+                "major": "Major",
+                "degree_plan": "Degree plan",
+                "classification": "Classification",
+                "gpa": "GPA",
+                "credits_completed": "Credits completed",
+                "status": "Status",
+            }
+            updates_summary = "; ".join(
+                f"{labels.get(field, field)} -> {_format_value(new_value)}"
+                for field, (_, new_value) in non_advisor_changes.items()
+            )
+            NotificationService.notify_advisee_and_advisor(
+                db,
+                advisee_id=advisee.adviseeID,
+                description=f"Student record updated: {updates_summary}.",
+            )
 
         db.commit()
         db.refresh(advisee)

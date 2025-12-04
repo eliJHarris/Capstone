@@ -8,10 +8,55 @@ from schemas.notification import (
     notificationCreate,
     notificationResponse
 )
+from models.advisee import AdviseeProfile
 
 
 class NotificationService:
-    """Service layer for Schedule CRUD operations"""
+    """Service layer for notification CRUD operations"""
+    @staticmethod
+    def queue_notification(db: Session, user_id: Optional[int], description: str) -> Optional[Notification]:
+        """
+        Stage a notification for a single user without committing the session.
+        """
+        if not user_id:
+            return None
+
+        notification = Notification(
+            userID=user_id,
+            description=description,
+            createdAt=datetime.utcnow()
+        )
+        db.add(notification)
+        return notification
+
+    @staticmethod
+    def notify_advisee_and_advisor(
+        db: Session,
+        advisee_id: int,
+        description: str,
+        include_advisee: bool = True,
+        include_advisor: bool = True
+    ) -> None:
+        """
+        Convenience helper to notify the advisee's user account and their advisor (if assigned).
+        """
+        mapping = (
+            db.query(AdviseeProfile.userID, AdviseeProfile.advisorID)
+            .filter(AdviseeProfile.adviseeID == advisee_id)
+            .first()
+        )
+        if not mapping:
+            return
+
+        user_id, advisor_id = mapping
+        recipients = []
+        if include_advisee and user_id:
+            recipients.append(user_id)
+        if include_advisor and advisor_id:
+            recipients.append(advisor_id)
+
+        for recipient_id in set(recipients):
+            NotificationService.queue_notification(db, recipient_id, description)
 
     @staticmethod
     def get_all_notifications(
@@ -102,4 +147,3 @@ class NotificationService:
         db.commit()
 
         return {"message": f"Notification {notification_id} deleted successfully"}
-
