@@ -13,22 +13,22 @@ objectClass: top
 objectClass: organizationalUnit
 ou: Service
 
-dn: cn=Alice Advisor,ou=People,dc=adviseme,dc=local
+dn: cn=Dr. Johnson,ou=People,dc=adviseme,dc=local
 objectClass: inetOrgPerson
-cn: Alice Advisor
-sn: Advisor
-givenName: Alice
-uid: a
-mail: alice.advisor@adviseme.local
+cn: Dr. Johnson
+sn: Johnson
+givenName: Dr.
+uid: advisor_johnson
+mail: johnson@college.edu
 userPassword: 123
 
-dn: cn=Bob Advisee,ou=People,dc=adviseme,dc=local
+dn: cn=Student 01,ou=People,dc=adviseme,dc=local
 objectClass: inetOrgPerson
-cn: Bob Advisee
-sn: Advisee
-givenName: Bob
-uid: b
-mail: bob.advisee@adviseme.local
+cn: Student 01
+sn: Student
+givenName: Student
+uid: student_01
+mail: s01@college.edu
 userPassword: 123
 
 dn: cn=adviseme-app,ou=Service,dc=adviseme,dc=local
@@ -43,12 +43,11 @@ objectClass: top
 objectClass: groupOfNames
 cn: advisors
 member: cn=admin,dc=adviseme,dc=local
-member: cn=Alice Advisor,ou=People,dc=adviseme,dc=local
+member: cn=Dr. Johnson,ou=People,dc=adviseme,dc=local
 
 dn: cn=advisees,ou=Groups,dc=adviseme,dc=local
 objectClass: top
 objectClass: groupOfNames
 cn: advisees
 member: cn=admin,dc=adviseme,dc=local
-member: cn=Bob Advisee,ou=People,dc=adviseme,dc=local
-
+member: cn=Student 01,ou=People,dc=adviseme,dc=local

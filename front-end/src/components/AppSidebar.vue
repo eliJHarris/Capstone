@@ -88,6 +88,7 @@ export default {
       if (this.normalizedRole === NORMALIZED_ROLES.STUDENT) {
         return [
           { title: 'Dashboard', to: '/dashboard' },
+          { title: 'Profile', to: '/profile' },
           { title: 'Notifications', to: '/notifications' },
           { title: 'Degree Plan', to: '/degree-plan' },
           { title: 'Schedules / Appointments', to: '/schedules' },
@@ -96,6 +97,7 @@ export default {
       }
       return [
         { title: 'Dashboard', to: '/dashboard' },
+        { title: 'Profile', to: '/profile' },
         { title: 'Notifications', to: '/notifications' },
         { title: 'Student List', to: '/student-list' },
         { title: 'Security', to: '/security' },

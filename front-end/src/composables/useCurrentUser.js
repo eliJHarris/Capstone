@@ -2,6 +2,7 @@ import { ref, computed } from 'vue'
 import { fetchAdvisees } from '@/services/advisees'
 import { fetchUserByUsername } from '@/services/users'
 import { normalizeRole, resolveStoredIdentity, NORMALIZED_ROLES } from '@/utils/auth'
+import { useStudentProfileStore } from '@/stores/studentProfile'
 
 const identityRef = ref(resolveStoredIdentity())
 const userRef = ref(null)
@@ -20,6 +21,7 @@ const displayName = computed(
 )
 
 export function useCurrentUser() {
+  const studentProfileStore = useStudentProfileStore()
   const refreshIdentity = () => {
     identityRef.value = resolveStoredIdentity(role.value)
   }
@@ -51,8 +53,14 @@ export function useCurrentUser() {
         if (!adviseeRef.value) {
           throw new Error('No advisee profile found for this account')
         }
+        await studentProfileStore.loadDashboard({
+          advisee: adviseeRef.value,
+          user: userRecord,
+          identity: identityRef.value,
+        })
       } else {
         adviseeRef.value = null
+        studentProfileStore.reset()
       }
     } catch (err) {
       console.error(err)

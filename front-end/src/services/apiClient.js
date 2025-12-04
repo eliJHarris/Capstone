@@ -10,6 +10,25 @@ const ensureApiPrefix = (value) => {
   return base.endsWith('/api') ? base : `${base}/api`
 }
 
+const alignProtocolWithPage = (value) => {
+  if (!value || typeof window === 'undefined') {
+    return value
+  }
+  if (window.location.protocol === 'https:' && value.startsWith('http://')) {
+    try {
+      const resolved = new URL(value)
+      if (resolved.hostname === window.location.hostname) {
+        resolved.protocol = 'https:'
+        return resolved.toString()
+      }
+    } catch (error) {
+      // Fallback: best-effort replacement if URL parsing fails
+      return value.replace(/^http:/i, 'https:')
+    }
+  }
+  return value
+}
+
 const resolveDefaultApiBase = () => {
   if (typeof window !== 'undefined' && window?.location?.origin) {
     return `${window.location.origin}/api`
@@ -18,8 +37,8 @@ const resolveDefaultApiBase = () => {
 }
 
 const DEFAULT_API_BASE = resolveDefaultApiBase()
-export const API_BASE_URL = ensureApiPrefix(
-  import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE
+export const API_BASE_URL = alignProtocolWithPage(
+  ensureApiPrefix(import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE)
 )
 
 const getStoredToken = () => {

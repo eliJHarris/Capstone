@@ -1,8 +1,9 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Set
 from fastapi import BackgroundTasks, HTTPException
+from sqlalchemy import case
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from db.database import SessionLocal
 from models.degree_plan import (
@@ -11,6 +12,13 @@ from models.degree_plan import (
     DegreeRequirementSet,
     ValidationRunType,
     ValidationStatus,
+)
+from models.schedule import (
+    Schedule,
+    Class,
+    Section,
+    Course,
+    ScheduleStatusEnum,
 )
 from schemas.degree_plan import (
     AdviseeContextUpsert,
@@ -41,6 +49,81 @@ def _normalize_validation(validation: Optional[DegreePlanValidation]):
 
 
 class DegreePlanService:
+    @staticmethod
+    def _collect_courses_from_schedules(db: Session, advisee_id: int) -> List[dict]:
+        """Build a de-duplicated list of courses pulled from the advisee's schedules."""
+        schedules = (
+            db.query(Schedule)
+            .options(
+                joinedload(Schedule.term),
+                joinedload(Schedule.classes)
+                .joinedload(Class.section)
+                .joinedload(Section.course),
+            )
+            .filter(Schedule.adviseeID == advisee_id)
+            .order_by(
+                case((Schedule.status == ScheduleStatusEnum.APPROVED, 0), else_=1),
+                Schedule.createdWhen.desc(),
+            )
+            .all()
+        )
+
+        if not schedules:
+            return []
+
+        seen_sections: Set[int] = set()
+        raw_courses: List[dict] = []
+        for schedule in schedules:
+            term_label = schedule.term.code if schedule.term else None
+            schedule_status = (
+                schedule.status.value
+                if hasattr(schedule.status, "value")
+                else str(schedule.status)
+            )
+            course_status = (
+                "COMPLETED"
+                if schedule_status == ScheduleStatusEnum.APPROVED.value
+                else "PLANNED"
+            )
+
+            for cls in schedule.classes:
+                if cls.sectionID in seen_sections:
+                    continue
+                seen_sections.add(cls.sectionID)
+
+                section = cls.section
+                course: Optional[Course] = section.course if section else None
+                code = (course.courseName or "").strip() if course and course.courseName else ""
+                if not code and section and section.crn:
+                    code = section.crn
+
+                title = course.courseName if course else None
+                if course and course.description:
+                    title = course.description
+                elif not title and section and section.description:
+                    title = section.description
+
+                credits = 0.0
+                if course and course.credits:
+                    try:
+                        credits = float(course.credits)
+                    except (TypeError, ValueError):
+                        credits = 0.0
+                if credits <= 0:
+                    credits = 3.0
+
+                raw_courses.append(
+                    {
+                        "code": code or f"CLASS-{cls.classID}",
+                        "title": title,
+                        "credits": credits,
+                        "term": term_label,
+                        "status": course_status,
+                    }
+                )
+
+        return _serialize_completed_courses(raw_courses)
+
     @staticmethod
     def create_requirement_set(
         db: Session, payload: DegreeRequirementSetCreate
@@ -137,6 +220,13 @@ class DegreePlanService:
             .first()
         )
 
+        schedule_courses = DegreePlanService._collect_courses_from_schedules(
+            db, advisee_id
+        )
+        if context and schedule_courses:
+            # Surface live schedule-backed courses in the summary without mutating the DB record.
+            context.completedCourses = schedule_courses
+
         return {
             "context": context,
             "requirementSet": requirement,
@@ -212,6 +302,11 @@ class DegreePlanService:
             return
 
         completed_courses = context.completedCourses or []
+        schedule_courses = DegreePlanService._collect_courses_from_schedules(
+            db, validation.adviseeID
+        )
+        if schedule_courses:
+            completed_courses = schedule_courses
         requirement_groups = requirement.requirementData or []
 
         completed_by_code = {

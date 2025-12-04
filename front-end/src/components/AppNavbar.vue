@@ -12,18 +12,6 @@
 
     <v-spacer />
 
-    <v-text-field
-      hide-details
-      dense
-      placeholder="Search"
-      append-inner-icon="mdi-magnify"
-      style="max-width:320px"
-    />
-
-    <v-btn icon>
-      <v-icon>mdi-bell</v-icon>
-    </v-btn>
-
     <v-menu>
       <template #activator="{ props }">
         <v-btn v-bind="props" variant="text" class="d-flex align-center">
@@ -40,7 +28,6 @@
 
       <v-list>
         <v-list-item>Profile</v-list-item>
-        <v-list-item>Settings</v-list-item>
         <v-list-item class="logout-item" @click="handleLogout">
           <template #prepend>
             <v-icon color="red">mdi-logout</v-icon>
