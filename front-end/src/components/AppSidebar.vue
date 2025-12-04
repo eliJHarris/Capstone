@@ -24,16 +24,25 @@
         router
       >
         <v-list-item-title>{{ item.title }}</v-list-item-title>
+        <template #append v-if="item.badge && item.badge > 0">
+          <v-badge
+            :content="item.badge"
+            color="red"
+            inline
+            size="small"
+          />
+        </template>
       </v-list-item>
     </v-list>
   </v-navigation-drawer>
 </template>
 
 <script>
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { normalizeRole, NORMALIZED_ROLES } from '@/utils/auth'
 import { AUTH_ROLE_EVENT } from '@/composables/useUserRole'
 import { useCurrentUser } from '@/composables/useCurrentUser'
+import { useNotificationsStore } from '@/stores/notifications'
 
 export default {
   name: 'AppSidebar',
@@ -41,8 +50,25 @@ export default {
     role: { type: String, default: NORMALIZED_ROLES.STUDENT }
   },
   setup() {
-    const { displayName, username, refreshIdentity } = useCurrentUser()
+    const { displayName, username, refreshIdentity, user, loadUserContext } = useCurrentUser()
+    const notificationsStore = useNotificationsStore()
     const userLabel = computed(() => displayName.value || username.value || 'User')
+    const unreadCount = computed(() => notificationsStore.unreadCount)
+
+    const loadNotificationsForSidebar = async () => {
+      try {
+        let userId = user.value?.userID
+        if (!userId) {
+          await loadUserContext()
+          userId = user.value?.userID
+        }
+        if (userId) {
+          await notificationsStore.loadForUser(userId)
+        }
+      } catch (error) {
+        console.error('Failed to load notifications for sidebar', error)
+      }
+    }
 
     const handleIdentityChange = (event) => {
       if (
@@ -62,6 +88,7 @@ export default {
         window.addEventListener('storage', handleIdentityChange)
         window.addEventListener(AUTH_ROLE_EVENT, handleIdentityChange)
       }
+      loadNotificationsForSidebar()
     })
 
     onBeforeUnmount(() => {
@@ -71,8 +98,15 @@ export default {
       }
     })
 
+    watch(user, (next, prev) => {
+      if (next?.userID && next.userID !== prev?.userID) {
+        loadNotificationsForSidebar()
+      }
+    })
+
     return {
       userLabel,
+      unreadCount,
     }
   },
   computed: {
@@ -88,7 +122,7 @@ export default {
       if (this.normalizedRole === NORMALIZED_ROLES.STUDENT) {
         return [
           { title: 'Dashboard', to: '/dashboard' },
-          { title: 'Notifications', to: '/notifications' },
+          { title: 'Notifications', to: '/notifications', badge: this.unreadCount },
           { title: 'Transcripts', to: '/transcripts' },
           { title: 'Degree Plan', to: '/degree-plan' },
           { title: 'Schedules / Appointments', to: '/schedules' },
@@ -97,7 +131,7 @@ export default {
       }
       return [
         { title: 'Dashboard', to: '/dashboard' },
-        { title: 'Notifications', to: '/notifications' },
+        { title: 'Notifications', to: '/notifications', badge: this.unreadCount },
         { title: 'Student List', to: '/student-list' },
         { title: 'Security', to: '/security' },
         { title: 'Transcripts', to: '/transcripts' },

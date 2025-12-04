@@ -24,6 +24,7 @@ class NotificationService:
         notification = Notification(
             userID=user_id,
             description=description,
+            isRead=False,
             createdAt=datetime.utcnow()
         )
         db.add(notification)
@@ -63,6 +64,7 @@ class NotificationService:
         db: Session,
         notification_id: Optional[int] = None,
         user_id: Optional[int] = None,
+        is_read: Optional[bool] = None,
         skip: int = 0,
         limit: int = 100
     ) -> List[notificationResponse]:
@@ -76,6 +78,8 @@ class NotificationService:
             query = query.filter(Notification.notificationID == notification_id)
         if user_id:
             query = query.filter(Notification.userID == user_id)
+        if is_read is not None:
+            query = query.filter(Notification.isRead == is_read)
 
         notifications = query.offset(skip).limit(limit).all()
 
@@ -86,6 +90,7 @@ class NotificationService:
                 notificationID=notification.notificationID,
                 userID=notification.userID,
                 description=notification.description,
+                isRead=notification.isRead,
                 createdAt=notification.createdAt
             ))
 
@@ -108,6 +113,7 @@ class NotificationService:
             notificationID=notification.notificationID,
             userID=notification.userID,
             description=notification.description,
+            isRead=notification.isRead,
             createdAt=notification.createdAt
         )
 
@@ -121,7 +127,8 @@ class NotificationService:
         new_notification = Notification(
             userID=notification_data.userID,
             description=notification_data.description,
-            createdAt=datetime.now()
+            isRead=notification_data.isRead,
+            createdAt=datetime.utcnow()
         )
 
         db.add(new_notification)
@@ -129,6 +136,31 @@ class NotificationService:
         db.refresh(new_notification)
 
         return NotificationService.get_notification_by_id(db, new_notification.notificationID)
+
+    @staticmethod
+    def update_notification(db: Session, notification_id: int, is_read: bool) -> notificationResponse:
+        """
+        Update read status for a notification
+        """
+        notification = db.query(Notification).filter(Notification.notificationID == notification_id).first()
+
+        if not notification:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Notification with ID {notification_id} not found"
+            )
+
+        notification.isRead = is_read
+        db.commit()
+        db.refresh(notification)
+
+        return notificationResponse(
+            notificationID=notification.notificationID,
+            userID=notification.userID,
+            description=notification.description,
+            isRead=notification.isRead,
+            createdAt=notification.createdAt
+        )
 
     @staticmethod
     def delete_notification(db: Session, notification_id: int) -> dict:

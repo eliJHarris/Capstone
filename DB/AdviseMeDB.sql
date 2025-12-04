@@ -138,6 +138,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   notificationID  INT AUTO_INCREMENT PRIMARY KEY,
   userID          INT NOT NULL,
   description     VARCHAR(500) NOT NULL,
+  isRead          TINYINT(1) NOT NULL DEFAULT 0,
   createdAt       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT notificationUser FOREIGN KEY (userID) REFERENCES users(userID) ON DELETE CASCADE
 );
