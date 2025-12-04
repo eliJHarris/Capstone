@@ -18,7 +18,6 @@ from schemas.schedule import (
 from services.schedule_service import ScheduleService
 from services.schedule_ai_service import ScheduleAISuggestionService
 from services.openai_service import get_openai_service
-from dependencies.auth import require_user
 
 router = APIRouter(
     prefix="/schedules",
@@ -35,7 +34,6 @@ def get_schedules(
     status: Optional[ScheduleStatus] = Query(None, description="Filter by status"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Maximum number of records to return"),
-    user=Depends(require_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -70,7 +68,6 @@ def get_schedules_no_slash(
     status: Optional[ScheduleStatus] = Query(None, description="Filter by status"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Maximum number of records to return"),
-    user=Depends(require_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -84,14 +81,12 @@ def get_schedules_no_slash(
         status=status,
         skip=skip,
         limit=limit,
-        user=user,
         db=db,
     )
 
 @router.get("/{schedule_id}", response_model=ScheduleResponse)
 def get_schedule(
     schedule_id: int,
-    user=Depends(require_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -106,12 +101,12 @@ def get_schedule(
 def search_sections_for_schedule(
     schedule_id: int,
     search: Optional[str] = Query(None, description="Search by course name, description, or CRN"),
-    limit: int = Query(20, ge=1, le=100, description="Max results"),
-    user=Depends(require_user),
+    limit: Optional[int] = Query(None, ge=1, description="Optional max results"),
     db: Session = Depends(get_db)
 ):
     """
     List sections in the same term as the schedule, filtered by search, only OPEN sections.
+    Passing no limit returns all matching sections.
     """
     return ScheduleService.list_sections_for_schedule(
         db=db,
@@ -125,7 +120,6 @@ def search_sections_for_schedule(
 async def generate_schedule_suggestions(
     schedule_id: int,
     payload: ScheduleSuggestionRequest = ScheduleSuggestionRequest(),
-    user=Depends(require_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -150,7 +144,6 @@ async def generate_schedule_suggestions(
 @router.post("/", response_model=ScheduleResponse, status_code=201)
 def create_schedule(
     schedule: ScheduleCreate,
-    user=Depends(require_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -168,7 +161,6 @@ def create_schedule(
 def update_schedule(
     schedule_id: int,
     schedule: ScheduleUpdate,
-    user=Depends(require_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -186,7 +178,6 @@ def update_schedule(
 @router.delete("/{schedule_id}")
 def delete_schedule(
     schedule_id: int,
-    user=Depends(require_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -203,7 +194,6 @@ def delete_schedule(
 def add_class_to_schedule(
     schedule_id: int,
     class_data: AddClassToSchedule,
-    user=Depends(require_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -225,7 +215,6 @@ def add_class_to_schedule(
 def remove_class_from_schedule(
     schedule_id: int,
     class_id: int,
-    user=Depends(require_user),
     db: Session = Depends(get_db)
 ):
     """

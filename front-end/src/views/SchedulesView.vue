@@ -226,10 +226,11 @@
           class="mb-4"
           :schedule="selectedSchedule"
           :status-options="statusOptions"
-          :loading="loadingDetail"
-          :mutation-loading="mutationLoading"
-          :section-options="sectionOptions"
-          :section-loading="sectionSearchLoading"
+  :loading="loadingDetail"
+  :mutation-loading="mutationLoading"
+  :section-options="sectionOptions"
+  :section-results="sectionResults"
+  :section-loading="sectionSearchLoading"
           :suggestions="suggestions"
           :suggestion-loading="suggestionLoading"
           :suggestion-error="suggestionError"
@@ -292,6 +293,7 @@ const {
   mutationLoading,
   lastSyncedAt,
   sectionOptions,
+  sectionResults,
   sectionSearchLoading,
   error,
   suggestions,

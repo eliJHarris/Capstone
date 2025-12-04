@@ -92,6 +92,7 @@ class Class(Base):
     classID = Column(Integer, primary_key=True, index=True, autoincrement=True)
     sectionID = Column(Integer, ForeignKey("sections.sectionID"), nullable=False)
     scheduleID = Column(Integer, ForeignKey("schedules.scheduleID"), nullable=False)
+    termID = Column(Integer, nullable=False)
     createdDate = Column(DateTime, nullable=False)
 
     # Relationships
