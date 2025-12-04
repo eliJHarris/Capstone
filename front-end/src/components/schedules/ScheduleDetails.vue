@@ -14,6 +14,7 @@
         </div>
         <v-spacer />
         <v-btn
+          v-if="canDelete"
           variant="text"
           color="error"
           :disabled="mutationLoading"
@@ -527,7 +528,7 @@
     </v-card>
   </v-dialog>
 
-  <v-dialog v-model="dialogOpen" max-width="420">
+  <v-dialog v-if="canDelete" v-model="dialogOpen" max-width="420">
     <v-card>
       <v-card-title>Delete schedule?</v-card-title>
       <v-card-text>
@@ -607,6 +608,10 @@ const props = defineProps({
   statusChangeHint: {
     type: String,
     default: '',
+  },
+  canDelete: {
+    type: Boolean,
+    default: true,
   },
 })
 
@@ -725,6 +730,7 @@ function requestRemoveClass(classId) {
 
 function confirmDelete() {
   dialogOpen.value = false
+  if (!props.canDelete) return
   if (props.schedule) {
     pendingAction.value = 'delete'
     emit('delete', props.schedule.scheduleID)
