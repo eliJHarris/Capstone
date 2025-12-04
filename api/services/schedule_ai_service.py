@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from fastapi import HTTPException, status
 from pydantic import ValidationError
@@ -71,7 +71,8 @@ class ScheduleAISuggestionService:
                 detail="OpenAI response did not include any content.",
             ) from exc
 
-        return self._parse_response(content)
+        suggestions = self._parse_response(content)
+        return self._filter_suggestions(suggestions, available_courses)
 
     def _load_schedule(self, schedule_id: int) -> tuple[Schedule, Term]:
         schedule = (
@@ -391,6 +392,53 @@ class ScheduleAISuggestionService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="OpenAI response was missing required schedule suggestion fields.",
             ) from exc
+
+    def _filter_suggestions(
+        self,
+        suggestions: ScheduleSuggestionResponse,
+        available_courses: List[Dict[str, Any]],
+    ) -> ScheduleSuggestionResponse:
+        """
+        Drop any AI-suggested sections that are not actually available for the term.
+        This prevents downstream errors when the UI attempts to add nonexistent sections.
+        """
+        valid_section_ids: Set[str] = {
+            str(course["section_id"])
+            for course in available_courses
+            if course.get("section_id") is not None
+        }
+        filtered_options: List[SuggestedScheduleOption] = []
+
+        for option in suggestions.schedules:
+            valid_courses: List[SuggestedCourse] = []
+            removed: List[str] = []
+
+            for course in option.courses:
+                section_id = course.section
+                if section_id is None or str(section_id) not in valid_section_ids:
+                    label = course.course_code or course.course_name or str(section_id) or "course"
+                    removed.append(label)
+                    continue
+                valid_courses.append(course)
+
+            warnings = list(option.warnings)
+            if removed:
+                warnings.append(f"Removed unavailable sections: {', '.join(removed)}")
+
+            filtered_options.append(
+                SuggestedScheduleOption(
+                    option_number=option.option_number,
+                    courses=valid_courses,
+                    total_credits=sum(course.credits for course in valid_courses),
+                    rationale=option.rationale,
+                    warnings=warnings,
+                )
+            )
+
+        return ScheduleSuggestionResponse(
+            schedules=filtered_options,
+            general_recommendations=suggestions.general_recommendations,
+        )
 
     def _normalize_response(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         raw_options = payload.get("schedules") or payload.get("options") or payload.get("schedule_options") or []
