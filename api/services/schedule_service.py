@@ -155,6 +155,7 @@ class ScheduleService:
                 createdWhen=schedule.createdWhen,
                 approvedWhen=schedule.approvedWhen,
                 rejectedWhen=schedule.rejectedWhen,
+                advisorFeedback=schedule.advisorFeedback,
                 classCount=class_count
             ))
 
@@ -223,6 +224,7 @@ class ScheduleService:
             createdWhen=schedule.createdWhen,
             approvedWhen=schedule.approvedWhen,
             rejectedWhen=schedule.rejectedWhen,
+            advisorFeedback=schedule.advisorFeedback,
             classes=class_list
         )
 
@@ -247,7 +249,8 @@ class ScheduleService:
             status=ScheduleStatusEnum(schedule_data.status.value),
             createdWhen=datetime.utcnow(),
             approvedWhen=None,
-            rejectedWhen=None
+            rejectedWhen=None,
+            advisorFeedback=schedule_data.advisorFeedback,
         )
 
         db.add(new_schedule)
@@ -295,6 +298,8 @@ class ScheduleService:
 
         if schedule_data.source is not None:
             schedule.source = ScheduleSourceEnum(schedule_data.source.value)
+        if schedule_data.advisorFeedback is not None:
+            schedule.advisorFeedback = schedule_data.advisorFeedback.strip() or None
 
         db.commit()
         db.refresh(schedule)

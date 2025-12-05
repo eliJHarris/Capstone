@@ -43,6 +43,70 @@ DEFAULT_CATALOG_YEAR = os.environ.get("DEGREE_PLAN_DEFAULT_CATALOG_YEAR", "2024-
 CATALOG_YEAR_PATTERN = re.compile(r"(20\d{2})(?:[-/](20\d{2}))?")
 COURSE_CODE_PATTERN = re.compile(r"\b([A-Z]{2,4})\s*-?\s*(\d{3,4}[A-Z]?)\b")
 
+LAB_SCIENCE_PREFIXES = {
+    "ASTR",
+    "BIOL",
+    "CHEM",
+    "GEOG",
+    "GEOL",
+    "GEOS",
+    "PHSC",
+    "PHYS",
+}
+FINE_ARTS_PREFIXES = {
+    "ART",
+    "ARTH",
+    "DANC",
+    "FILM",
+    "MUS",
+    "THEA",
+}
+
+REQUIREMENT_CATEGORY_RULES = {
+    "lab_science": {
+        "label": "Lab Science Requirement",
+        "requirement_keywords": {
+            "LAB SCIENCE",
+            "SCIENCE LAB",
+            "LABORATORY SCIENCE",
+            "SCIENCE W/LAB",
+            "SCIENCE W-LAB",
+        },
+        "course_prefixes": LAB_SCIENCE_PREFIXES,
+        "course_keywords": {
+            "BIOLOGY",
+            "CHEMISTRY",
+            "PHYSICS",
+            "GEOLOGY",
+            "ASTRONOMY",
+            "LAB SCIENCE",
+        },
+    },
+    "fine_arts": {
+        "label": "Fine Arts Requirement",
+        "requirement_keywords": {
+            "FINE ART",
+            "FINE-ART",
+            "FINE ARTS",
+            "ARTS REQUIREMENT",
+            "CREATIVE ARTS",
+            "ART/MUSIC",
+            "ART OR MUSIC",
+            "ART OR THEATRE",
+        },
+        "course_prefixes": FINE_ARTS_PREFIXES,
+        "course_keywords": {
+            "FINE ART",
+            "MUSIC",
+            "THEATRE",
+            "THEATER",
+            "DANCE",
+            "ART HISTORY",
+            "ART APPRECIATION",
+        },
+    },
+}
+
 
 def _serialize_completed_courses(courses: List[dict]) -> List[dict]:
     serialized = []
@@ -76,6 +140,13 @@ def _extract_codes_from_text(value: Optional[str]) -> Set[str]:
     return normalized
 
 
+def _normalize_text_blob(*values: Optional[str]) -> str:
+    parts = [value.strip() for value in values if isinstance(value, str) and value.strip()]
+    if not parts:
+        return ""
+    return " ".join(parts).upper()
+
+
 class DegreePlanService:
     @staticmethod
     def _normalize_program_code(value: Optional[str]) -> Optional[str]:
@@ -85,6 +156,43 @@ class DegreePlanService:
         if not normalized:
             return None
         return normalized.replace(" ", "-").upper()
+
+    @staticmethod
+    def _detect_requirement_category(course: Optional[dict], group_description: Optional[str]) -> Optional[str]:
+        course = course or {}
+        text = _normalize_text_blob(
+            course.get("title"),
+            course.get("code"),
+            course.get("description"),
+            group_description,
+        )
+        if not text:
+            return None
+
+        for category, rule in REQUIREMENT_CATEGORY_RULES.items():
+            keywords = rule.get("requirement_keywords") or set()
+            if any(keyword in text for keyword in keywords):
+                return category
+        return None
+
+    @staticmethod
+    def _completed_satisfies_category(category: str, completed_courses: List[dict]) -> bool:
+        rule = REQUIREMENT_CATEGORY_RULES.get(category)
+        if not rule:
+            return False
+
+        prefixes = rule.get("course_prefixes") or set()
+        keywords = rule.get("course_keywords") or set()
+        for completed in completed_courses or []:
+            code = (completed.get("code") or "").upper().strip()
+            title = (completed.get("title") or "").upper().strip()
+            combined = _normalize_text_blob(code, title)
+
+            if code and any(code.startswith(prefix) for prefix in prefixes):
+                return True
+            if combined and any(keyword in combined for keyword in keywords):
+                return True
+        return False
 
     @classmethod
     def _ensure_context_alignment(
@@ -537,18 +645,26 @@ class DegreePlanService:
         else:
             context.completedCourses = completed_courses
 
-        # Convert to normalized set
         completed_codes = {
             (course.get("code") or "").upper().strip()
             for course in completed_courses
         }
 
-        # === 2. Load requirement groups
         requirement_groups = requirement.requirementData or []
-
         issues = []
         total_required_credits = float(requirement.totalCredits or 0)
         completed_credits = sum(float(c.get("credits", 0)) for c in completed_courses)
+
+        # ----------------------------------------
+        # CATEGORY DETECTION HELPER (Local)
+        # ----------------------------------------
+        def detect_category_group(group, courses):
+            description = group.get("description", "")
+            for course in courses:
+                category = DegreePlanService._detect_requirement_category(course, description)
+                if category:
+                    return category
+            return None
 
         # === 3. Validate each requirement group
         for group in requirement_groups:
@@ -559,23 +675,51 @@ class DegreePlanService:
 
             missing_list = []
 
-            # Validate each course in group
+            # ---------------------------------------------
+            # NEW — CATEGORY GROUP HANDLING
+            # ---------------------------------------------
+            detected_category = detect_category_group(group, group_courses)
+
+            if detected_category:
+                # If student already satisfied category → OK
+                if DegreePlanService._completed_satisfies_category(
+                    detected_category, completed_courses
+                ):
+                    continue
+
+                # Otherwise → ONE missing requirement entry
+                issues.append(
+                    {
+                        "requirementId": group_id,
+                        "message": f"Missing requirement: {REQUIREMENT_CATEGORY_RULES[detected_category]['label']}",
+                        "missingCourses": [
+                            REQUIREMENT_CATEGORY_RULES[detected_category]["label"]
+                        ],
+                    }
+                )
+                continue  # Skip standard course-by-course checking
+
+            # ------------------------------------------------
+            # NORMAL SPECIFIC COURSE VALIDATION
+            # ------------------------------------------------
             for course in group_courses:
+                course = course or {}
                 expanded_codes = DegreePlanService._expand_requirement_codes(
                     course, group_description
                 )
 
-                # If no course codes extracted, treat the item literally
+                # ------------------------------------------------
+                # NEW LOGIC — If no specific course numbers found,
+                # DO NOT treat optional choice items as required.
+                # ------------------------------------------------
                 if not expanded_codes:
-                    label = course.get("title") or course.get("code") or group_title
-                    missing_list.append(label)
-                    continue
+                    continue  # skip optional “choose from these” items
 
-                # Check if any acceptable code satisfies requirement
+                # If ANY acceptable code matches → satisfied
                 if not any(code in completed_codes for code in expanded_codes):
                     missing_list.append("/".join(sorted(expanded_codes)))
 
-            # If group has missing items → add an issue
+            # Report missing items for this requirement group
             if missing_list:
                 issues.append(
                     {
@@ -605,6 +749,7 @@ class DegreePlanService:
 
         db.commit()
         db.refresh(validation)
+
 
 
 

@@ -201,7 +201,7 @@
             <v-list-item>
               <v-list-item-title>Total Credits</v-list-item-title>
               <v-list-item-subtitle>
-                {{ requirementInfo?.totalCredits || '—' }}
+                {{ totalCreditsDisplay ?? requirementInfo?.totalCredits ?? '—' }}
               </v-list-item-subtitle>
             </v-list-item>
           </v-list>
@@ -366,6 +366,17 @@ const statusColor = computed(() => {
 })
 
 const requirementInfo = computed(() => degreePlanStore.requirementSet)
+const totalCreditsDisplay = computed(() => {
+  const selected = selectedAdvisee.value
+  if (selected && selected.creditsCompleted != null) {
+    return Number(selected.creditsCompleted)
+  }
+  const progressCredits = profile.value?.progress?.creditHoursCompleted
+  if (progressCredits != null) {
+    return Number(progressCredits)
+  }
+  return null
+})
 const issues = computed(() => degreePlanStore.latestValidation?.issues || [])
 
 async function autoValidatePlan(targetAdviseeId = activeAdviseeId.value) {
@@ -407,6 +418,7 @@ async function loadAdviseeDirectory() {
             major: currentAdvisee.value.major,
             classification: currentAdvisee.value.classification,
             status: currentAdvisee.value.status,
+            creditsCompleted: currentAdvisee.value.creditsCompleted ?? null,
           },
         ]
       } else {
@@ -422,6 +434,7 @@ async function loadAdviseeDirectory() {
         major: item.major,
         classification: item.classification,
         status: item.status,
+        creditsCompleted: item.creditsCompleted ?? null,
       }))
     }
   } catch (error) {

@@ -35,6 +35,18 @@
           to DRAFT to make changes.
         </v-alert>
 
+        <v-alert
+          v-if="isRejected && feedbackModel"
+          type="error"
+          variant="tonal"
+          border="start"
+          class="mb-4"
+          density="comfortable"
+        >
+          <div class="text-subtitle-2 mb-1">Advisor feedback</div>
+          <div class="text-body-2">{{ feedbackModel }}</div>
+        </v-alert>
+
         <v-row dense class="mb-4">
           <v-col cols="12" md="6">
             <v-select
@@ -50,11 +62,11 @@
             <v-btn
               color="primary"
               block
-              :disabled="disableStatusChange || !statusChanged || mutationLoading"
+              :disabled="disableStatusChange || !hasPendingChanges || mutationLoading"
               :loading="mutationLoading && pendingAction === 'status'"
               @click="handleStatusUpdate"
             >
-              Update Status
+              Save Updates
             </v-btn>
           </v-col>
         </v-row>
@@ -68,6 +80,21 @@
         >
           {{ statusChangeHint }}
         </v-alert>
+
+        <v-textarea
+          v-model="feedbackModel"
+          label="Advisor feedback"
+          variant="outlined"
+          density="comfortable"
+          rows="3"
+          auto-grow
+          class="mb-4"
+          :readonly="disableStatusChange"
+          :placeholder="disableStatusChange ? '' : 'Explain why changes are needed or next steps...'"
+        />
+        <div class="text-caption text-medium-emphasis mb-6">
+          Shared with the advisee when the schedule is rejected.
+        </div>
 
         <v-row dense class="mb-4">
           <v-col cols="12" md="8">
@@ -642,6 +669,7 @@ const sectionTableItems = computed(() =>
   }))
 )
 const isDraft = computed(() => props.schedule?.status === 'DRAFT')
+const isRejected = computed(() => props.schedule?.status === 'REJECTED')
 const statusModel = ref('')
 const sectionId = ref('')
 const sectionSearch = ref('')
@@ -653,11 +681,20 @@ const localSuggestionNote = ref('')
 const warningDialogOpen = ref(false)
 const warningDialogWarnings = ref([])
 const warningDialogOption = ref(null)
+const feedbackModel = ref('')
 
 watch(
   () => props.schedule?.status,
   (value) => {
     statusModel.value = value || ''
+  },
+  { immediate: true }
+)
+
+watch(
+  () => props.schedule?.advisorFeedback,
+  (value) => {
+    feedbackModel.value = value || ''
   },
   { immediate: true }
 )
@@ -692,6 +729,12 @@ watch(
 
 const addDisabled = computed(() => !sectionId.value || props.mutationLoading || !isDraft.value)
 const statusChanged = computed(() => props.schedule && statusModel.value && statusModel.value !== props.schedule.status)
+const normalizedFeedback = computed(() => (feedbackModel.value || '').trim())
+const feedbackChanged = computed(() => {
+  const current = (props.schedule?.advisorFeedback || '').trim()
+  return normalizedFeedback.value !== current
+})
+const hasPendingChanges = computed(() => statusChanged.value || feedbackChanged.value)
 
 function handleAddClass() {
   if (!sectionId.value || !isDraft.value) return
@@ -712,9 +755,12 @@ function handleAddClassFromList(sectionId) {
 }
 
 function handleStatusUpdate() {
-  if (!statusChanged.value) return
+  if (!hasPendingChanges.value) return
   pendingAction.value = 'status'
-  emit('update-status', statusModel.value)
+  emit('update-status', {
+    status: statusModel.value,
+    advisorFeedback: normalizedFeedback.value || null,
+  })
 }
 
 function requestRemoveClass(classId) {

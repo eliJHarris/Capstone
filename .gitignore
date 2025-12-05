@@ -45,13 +45,10 @@ env/
 *.sqlite3
 
 # Logs
-<<<<<<< HEAD
 *.log
-=======
 *.log
 
 
->>>>>>> origin/dev
 secrets/
 !secrets/.gitkeep
 # LDAP cert scaffolding

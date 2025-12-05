@@ -80,6 +80,7 @@ class Schedule(Base):
     createdWhen = Column(DateTime, nullable=False)
     approvedWhen = Column(DateTime)
     rejectedWhen = Column(DateTime)
+    advisorFeedback = Column(Text)
 
     # Relationships
     term = relationship("Term", back_populates="schedules")

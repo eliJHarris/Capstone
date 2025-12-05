@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS schedules (
   createdWhen  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   approvedWhen DATETIME NULL,
   rejectedWhen DATETIME NULL,
+  advisorFeedback TEXT NULL,
   UNIQUE KEY uq_advisee_term (adviseeID, termID),
   UNIQUE KEY uq_schedule_term_pair (scheduleID, termID),
   CONSTRAINT scheduleAdvisee FOREIGN KEY (adviseeID) REFERENCES adviseeProfile(adviseeID) ON DELETE CASCADE,

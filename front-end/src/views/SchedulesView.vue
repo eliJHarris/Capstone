@@ -576,17 +576,21 @@ const handleCreate = async () => {
   }
 }
 
-const handleStatusUpdate = async (newStatus) => {
+const handleStatusUpdate = async ({ status: newStatus, advisorFeedback } = {}) => {
   if (!selectedSchedule.value) return
   if (isStudent.value) {
     showFeedback('Students cannot change schedule status.', 'error')
     return
   }
+  if (newStatus === undefined && advisorFeedback === undefined) return
+  const payload = {}
+  if (newStatus !== undefined) payload.status = newStatus
+  if (advisorFeedback !== undefined) payload.advisorFeedback = advisorFeedback
   try {
-    await scheduleStore.updateSchedule(selectedSchedule.value.scheduleID, { status: newStatus })
-    showFeedback('Schedule status updated')
+    await scheduleStore.updateSchedule(selectedSchedule.value.scheduleID, payload)
+    showFeedback('Schedule updates saved')
   } catch (err) {
-    showFeedback(err.message || 'Failed to update status', 'error')
+    showFeedback(err.message || 'Failed to update schedule', 'error')
   }
 }
 
