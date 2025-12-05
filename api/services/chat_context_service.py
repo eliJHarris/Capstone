@@ -11,7 +11,16 @@ from models.degree_plan import (
     DegreePlanValidation,
     DegreeRequirementSet,
 )
-from models.schedule import Class, Course, Schedule, Section, SectionStatusEnum, Term
+from models.schedule import (
+    Class,
+    Course,
+    Schedule,
+    Section,
+    SectionStatusEnum,
+    Term,
+    CoursePrerequisite,
+)
+from models.enrollment import Enrollment, EnrollmentStatus
 from models.user import User
 from services.schedule_ai_service import ScheduleAISuggestionService
 
@@ -49,8 +58,13 @@ class ChatContextService:
             context, requirement, validation = self._load_degree_context(advisee_id)
 
         available_courses: List[Dict[str, Any]] = []
+        blocked_prerequisites: List[Dict[str, Any]] = []
         if schedule:
-            available_courses = self._load_available_sections(term.termID if term else schedule.termID, limit=50)
+            available_courses, blocked_prerequisites = self._load_available_sections(
+                term.termID if term else schedule.termID,
+                advisee_id=advisee_id,
+                limit=50,
+            )
 
         current_schedule = self._serialize_current_schedule(schedule)
         remaining_requirements = ScheduleAISuggestionService._build_remaining_requirements(
@@ -115,10 +129,12 @@ class ChatContextService:
             if validation
             else None,
             "available_courses": available_courses,
+            "prerequisite_blocks": blocked_prerequisites,
             "raw_json": json.dumps(
                 {
                     "remaining_requirements": remaining_requirements,
                     "available_courses": available_courses,
+                    "prerequisite_blocks": blocked_prerequisites,
                 },
                 default=str,
             ),
@@ -206,40 +222,90 @@ class ChatContextService:
 
         return context, requirement, validation
 
-    def _load_available_sections(self, term_id: int, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        sections = (
+    def _load_available_sections(
+        self, term_id: int, advisee_id: Optional[int] = None, limit: Optional[int] = None
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        sections_query = (
             self.db.query(Section)
             .options(joinedload(Section.course))
             .filter(Section.termID == term_id, Section.status == SectionStatusEnum.OPEN)
             .order_by(Section.crn.asc())
         )
         if limit:
-            sections = sections.limit(limit)
-        sections = sections.all()
+            sections_query = sections_query.limit(limit)
+        sections = sections_query.all()
+        if not sections:
+            return [], []
+
+        completed_course_ids: set[int] = set()
+        if advisee_id:
+            completed_course_ids = {
+                course_id
+                for (course_id,) in (
+                    self.db.query(Enrollment.courseID)
+                    .filter(
+                        Enrollment.adviseeID == advisee_id,
+                        Enrollment.status == EnrollmentStatus.COMPLETED,
+                        Enrollment.creditsEarned > 0,
+                    )
+                    .all()
+                )
+            }
+
+        course_ids = {section.courseID for section in sections}
+        prereq_rows = (
+            self.db.query(
+                CoursePrerequisite.courseID,
+                CoursePrerequisite.prerequisiteCourseID,
+                Course.courseName,
+            )
+            .join(Course, Course.courseID == CoursePrerequisite.prerequisiteCourseID)
+            .filter(CoursePrerequisite.courseID.in_(course_ids))
+            .all()
+        )
+        prereq_map: Dict[int, List[tuple[int, str]]] = {}
+        for course_id, prereq_id, prereq_name in prereq_rows:
+            prereq_map.setdefault(course_id, []).append((prereq_id, prereq_name))
+
         results: List[Dict[str, Any]] = []
+        blocked: List[Dict[str, Any]] = []
         for section in sections:
             course: Optional[Course] = section.course
             status_value = section.status.value if hasattr(section.status, "value") else str(section.status)
             seats_remaining = max((section.capacity or 0) - (section.enrolled or 0), 0)
             if seats_remaining <= 0:
                 continue
-            results.append(
-                {
-                    "course_id": section.courseID,
-                    "section_id": section.sectionID,
-                    "crn": section.crn,
-                    "course_code": course.courseName if course else f"Course {section.courseID}",
-                    "course_name": course.courseName if course else "",
-                    "course_description": course.description if course else "",
-                    "credits": course.credits if course else None,
-                    "professor": section.professorName,
-                    "capacity": section.capacity,
-                    "enrolled": section.enrolled,
-                    "seats_remaining": seats_remaining,
-                    "status": status_value,
-                }
-            )
-        return results
+            prereqs = prereq_map.get(section.courseID, [])
+            missing_prereqs: List[str] = []
+            if advisee_id:
+                missing_prereqs = [
+                    name or f"Course {prereq_id}"
+                    for prereq_id, name in prereqs
+                    if prereq_id not in completed_course_ids
+                ]
+
+            entry = {
+                "course_id": section.courseID,
+                "section_id": section.sectionID,
+                "crn": section.crn,
+                "course_code": course.courseName if course else f"Course {section.courseID}",
+                "course_name": course.courseName if course else "",
+                "course_description": course.description if course else "",
+                "credits": course.credits if course else None,
+                "professor": section.professorName,
+                "capacity": section.capacity,
+                "enrolled": section.enrolled,
+                "seats_remaining": seats_remaining,
+                "status": status_value,
+                "prerequisites": [name or f"Course {pid}" for pid, name in prereqs],
+                "missing_prerequisites": missing_prereqs,
+                "prerequisites_met": not missing_prereqs,
+            }
+            if advisee_id and missing_prereqs:
+                blocked.append(entry)
+                continue
+            results.append(entry)
+        return results, blocked
 
     def _serialize_current_schedule(self, schedule: Optional[Schedule]) -> List[Dict[str, Any]]:
         if not schedule:

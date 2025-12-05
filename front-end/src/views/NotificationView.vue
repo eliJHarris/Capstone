@@ -44,43 +44,63 @@
           Loading notifications...
         </v-alert>
 
-        <v-table v-else-if="notifications.length > 0">
-          <thead>
-            <tr>
-              <th class="text-left">Description</th>
-              <th class="text-left">Status</th>
-              <th class="text-left">Time</th>
-              <th class="text-left">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="notification in notifications" :key="notification.notificationID">
-              <td>{{ notification.description }}</td>
-              <td>
-                <v-chip
-                  size="small"
-                  :color="notification.isRead ? 'success' : 'secondary'"
-                  variant="tonal"
-                >
-                  {{ notification.isRead ? 'Read' : 'Unread' }}
-                </v-chip>
-              </td>
-              <td>{{ formatTimestamp(notification.createdAt) }}</td>
-              <td>
-                <v-btn
-                  size="small"
-                  variant="text"
-                  :color="notification.isRead ? 'secondary' : 'primary'"
-                  :loading="updatingId === notification.notificationID"
-                  :disabled="updatingId === notification.notificationID"
-                  @click="toggleReadState(notification, !notification.isRead)"
-                >
-                  {{ notification.isRead ? 'Mark as unread' : 'Mark as read' }}
-                </v-btn>
-              </td>
-            </tr>
-          </tbody>
-        </v-table>
+        <v-data-table
+          v-else-if="notifications.length > 0"
+          :headers="headers"
+          :items="notifications"
+          item-key="notificationID"
+          v-model:sort-by="sortBy"
+          :items-per-page="10"
+          hover
+          density="comfortable"
+          class="rounded-lg"
+        >
+          <template #item.description="{ item }">
+            <div class="font-weight-medium">
+              {{ item.raw?.description || item.description }}
+            </div>
+          </template>
+
+          <template #item.isRead="{ item }">
+            <v-chip
+              size="small"
+              :color="(item.raw?.isRead ?? item.isRead) ? 'success' : 'secondary'"
+              variant="tonal"
+            >
+              {{ (item.raw?.isRead ?? item.isRead) ? 'Read' : 'Unread' }}
+            </v-chip>
+          </template>
+
+          <template #item.createdAt="{ item }">
+            <div class="text-caption text-medium-emphasis">
+              {{ formatTimestamp(item.raw?.createdAt || item.createdAt) }}
+            </div>
+          </template>
+
+          <template #item.actions="{ item }">
+            <v-btn
+              size="small"
+              variant="text"
+              :color="(item.raw?.isRead ?? item.isRead) ? 'secondary' : 'primary'"
+              :loading="updatingId === (item.raw?.notificationID ?? item.notificationID)"
+              :disabled="updatingId === (item.raw?.notificationID ?? item.notificationID)"
+              @click="
+                toggleReadState(
+                  item.raw || item,
+                  !(item.raw?.isRead ?? item.isRead)
+                )
+              "
+            >
+              {{ (item.raw?.isRead ?? item.isRead) ? 'Mark as unread' : 'Mark as read' }}
+            </v-btn>
+          </template>
+
+          <template #no-data>
+            <v-alert type="info" border="start" variant="tonal" class="ma-4">
+              No notifications found.
+            </v-alert>
+          </template>
+        </v-data-table>
 
         <v-alert v-else type="info">No notifications found.</v-alert>
       </v-container>
@@ -97,6 +117,7 @@ import { useNotificationsStore } from '@/stores/notifications'
 
 const errorMsg = ref('')
 const updatingId = ref(null)
+const sortBy = ref([{ key: 'createdAt', order: 'desc' }])
 const notificationsStore = useNotificationsStore()
 const notifications = computed(() => notificationsStore.notifications)
 const unreadCount = computed(() => notificationsStore.unreadCount)
@@ -112,6 +133,13 @@ const formatTimestamp = (value) => {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleString()
 }
+
+const headers = [
+  { title: 'Description', key: 'description', sortable: false },
+  { title: 'Status', key: 'isRead', sortable: false, width: 140 },
+  { title: 'Time', key: 'createdAt' },
+  { title: 'Actions', key: 'actions', sortable: false, width: 160 },
+]
 
 const loadNotifications = async (force = false) => {
   errorMsg.value = ''

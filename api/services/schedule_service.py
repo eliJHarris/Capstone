@@ -9,6 +9,7 @@ from models.schedule import (
     Class,
     Section,
     Course,
+    CoursePrerequisite,
     Term,
     ScheduleStatusEnum,
     ScheduleSourceEnum,
@@ -40,6 +41,46 @@ class ScheduleService:
     def _term_code(db: Session, term_id: int) -> str:
         term_code = db.query(Term.code).filter(Term.termID == term_id).scalar()
         return term_code or str(term_id)
+
+    @staticmethod
+    def _validate_prerequisites(db: Session, advisee_id: int, target_course_id: int) -> None:
+        """
+        Ensure an advisee has completed the prerequisites for a course.
+        Mirrors the database trigger logic by requiring completed enrollments with earned credit.
+        """
+        prereqs = (
+            db.query(CoursePrerequisite.prerequisiteCourseID, Course.courseName)
+            .join(Course, Course.courseID == CoursePrerequisite.prerequisiteCourseID)
+            .filter(CoursePrerequisite.courseID == target_course_id)
+            .all()
+        )
+        if not prereqs:
+            return
+
+        completed_course_ids = {
+            course_id
+            for (course_id,) in (
+                db.query(Enrollment.courseID)
+                .filter(
+                    Enrollment.adviseeID == advisee_id,
+                    Enrollment.status == EnrollmentStatus.COMPLETED,
+                    Enrollment.creditsEarned > 0,
+                )
+                .all()
+            )
+        }
+
+        missing = [
+            name or f"Course {prereq_id}"
+            for prereq_id, name in prereqs
+            if prereq_id not in completed_course_ids
+        ]
+
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing prerequisites: " + ", ".join(missing),
+            )
 
     @staticmethod
     def list_sections_for_schedule(
@@ -407,6 +448,13 @@ class ScheduleService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Section {section_id} is already in schedule {schedule_id}"
             )
+
+        # Validate that the advisee has completed required prerequisites before scheduling
+        ScheduleService._validate_prerequisites(
+            db=db,
+            advisee_id=schedule.adviseeID,
+            target_course_id=section.courseID,
+        )
 
         # Create new class
         new_class = Class(

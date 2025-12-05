@@ -50,6 +50,18 @@ class Course(Base):
     sections = relationship("Section", back_populates="course")
 
 
+class CoursePrerequisite(Base):
+    __tablename__ = "coursePrerequisites"
+
+    courseID = Column(Integer, ForeignKey("courses.courseID"), primary_key=True)
+    prerequisiteCourseID = Column(Integer, ForeignKey("courses.courseID"), primary_key=True)
+    minimumGrade = Column(String(2))
+
+    # Relationships
+    course = relationship("Course", foreign_keys=[courseID])
+    prerequisite = relationship("Course", foreign_keys=[prerequisiteCourseID])
+
+
 class Section(Base):
     __tablename__ = "sections"
 

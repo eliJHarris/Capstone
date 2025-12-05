@@ -81,7 +81,13 @@ class NotificationService:
         if is_read is not None:
             query = query.filter(Notification.isRead == is_read)
 
-        notifications = query.offset(skip).limit(limit).all()
+        # Show newest notifications first so clients get a consistent order
+        notifications = (
+            query.order_by(Notification.createdAt.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
 
         # Build response with class count
         result = []
