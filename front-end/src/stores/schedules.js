@@ -2,7 +2,9 @@ import { defineStore } from 'pinia'
 import { apiFetch } from '@/services/apiClient'
 
 const createDefaultFilters = () => ({
+  adviseeId: null,
   adviseeName: '',
+  termId: null,
   termName: '',
   status: '',
   limit: 50,
@@ -18,6 +20,7 @@ export const useScheduleStore = defineStore('schedules', {
     mutationLoading: false,
     sectionSearchLoading: false,
     sectionOptions: [],
+    sectionResults: [],
     error: null,
     lastSyncedAt: null,
     filters: createDefaultFilters(),
@@ -100,9 +103,11 @@ export const useScheduleStore = defineStore('schedules', {
       this.selectedSchedule = null
       this.selectedScheduleId = null
       this.sectionOptions = []
+      this.sectionResults = []
     },
     clearSectionOptions() {
       this.sectionOptions = []
+      this.sectionResults = []
     },
     clearSuggestions() {
       this.suggestions = []
@@ -164,6 +169,7 @@ export const useScheduleStore = defineStore('schedules', {
       try {
         const qs = search ? `?search=${encodeURIComponent(search)}` : ''
         const data = await apiFetch(`/schedules/${scheduleId}/sections${qs}`)
+        this.sectionResults = data
         this.sectionOptions = data.map((item) => ({
           value: item.sectionID,
           title: `${item.courseName} (${item.crn})`,

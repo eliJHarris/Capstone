@@ -14,6 +14,7 @@
         </div>
         <v-spacer />
         <v-btn
+          v-if="canDelete"
           variant="text"
           color="error"
           :disabled="mutationLoading"
@@ -43,13 +44,14 @@
               label="Status"
               density="compact"
               variant="outlined"
+              :disabled="disableStatusChange"
             />
           </v-col>
           <v-col cols="12" md="6" class="d-flex align-end">
             <v-btn
               color="primary"
               block
-              :disabled="!statusChanged || mutationLoading"
+              :disabled="disableStatusChange || !statusChanged || mutationLoading"
               :loading="mutationLoading && pendingAction === 'status'"
               @click="handleStatusUpdate"
             >
@@ -57,6 +59,16 @@
             </v-btn>
           </v-col>
         </v-row>
+
+        <v-alert
+          v-if="disableStatusChange && statusChangeHint"
+          type="info"
+          variant="tonal"
+          density="comfortable"
+          class="mb-4"
+        >
+          {{ statusChangeHint }}
+        </v-alert>
 
         <v-row dense class="mb-4">
           <v-col cols="12" md="8">
@@ -97,16 +109,31 @@
                 </div>
               </template>
             </v-autocomplete>
+            <div class="d-flex align-center text-caption text-medium-emphasis mt-1">
+              <v-icon size="16" class="mr-1">mdi-table-eye</v-icon>
+              Use Browse classes to scan results in a wider table view.
+            </div>
           </v-col>
-          <v-col cols="12" md="4" class="d-flex align-end">
+          <v-col cols="12" md="4" class="d-flex flex-column justify-end">
             <v-btn
               color="secondary"
               block
               :disabled="addDisabled"
-              :loading="mutationLoading && pendingAction === 'add-class'"
+              :loading="isAddingSection(sectionId)"
               @click="handleAddClass"
             >
               Add Class
+            </v-btn>
+            <v-btn
+              class="mt-2"
+              variant="tonal"
+              color="primary"
+              block
+              :disabled="sectionLoading"
+              :loading="sectionLoading"
+              @click="sectionBrowserOpen = true"
+            >
+              Browse classes
             </v-btn>
           </v-col>
         </v-row>
@@ -248,17 +275,20 @@
                     </v-chip-group>
 
                     <div v-if="option.warnings && option.warnings.length" class="mt-2">
-                      <div class="text-caption text-medium-emphasis mb-1">Warnings</div>
-                      <v-chip
-                        v-for="warning in option.warnings"
-                        :key="warning"
-                        color="warning"
-                        variant="tonal"
-                        size="small"
-                        class="mr-2 mb-1"
-                      >
-                        {{ warning }}
-                      </v-chip>
+                      <div class="d-flex align-center mb-1">
+                        <div class="text-caption text-medium-emphasis">
+                          Warnings ({{ option.warnings.length }})
+                        </div>
+                        <v-spacer />
+                        <v-btn
+                          size="x-small"
+                          variant="text"
+                          color="warning"
+                          @click="openWarningDialog(option)"
+                        >
+                          View warnings
+                        </v-btn>
+                      </div>
                     </div>
                   </v-sheet>
                 </v-col>
@@ -344,7 +374,161 @@
     color="primary"
   />
 
-  <v-dialog v-model="dialogOpen" max-width="420">
+  <v-dialog v-model="sectionBrowserOpen" max-width="1100">
+    <v-card>
+      <v-card-title class="d-flex align-center">
+        <div>
+          <div class="text-subtitle-1">Browse classes</div>
+          <div class="text-caption text-medium-emphasis">
+            Search available sections for this schedule's term.
+          </div>
+        </div>
+        <v-spacer />
+        <v-text-field
+          v-model="sectionSearch"
+          prepend-inner-icon="mdi-magnify"
+          density="compact"
+          variant="outlined"
+          hide-details
+          clearable
+          placeholder="Search by course name, CRN, or professor"
+          :loading="sectionLoading"
+          style="max-width: 360px;"
+          @update:model-value="emitSearch"
+          @click:clear="emitSearch('')"
+        />
+        <v-btn
+          icon="mdi-close"
+          variant="text"
+          class="ml-2"
+          @click="sectionBrowserOpen = false"
+        />
+      </v-card-title>
+      <v-card-text>
+        <v-alert
+          v-if="!isDraft"
+          type="info"
+          variant="tonal"
+          density="comfortable"
+          class="mb-3"
+        >
+          Switch to DRAFT to add classes.
+        </v-alert>
+
+        <v-data-table
+          :headers="sectionHeaders"
+          :items="sectionTableItems"
+          :loading="sectionLoading"
+          item-key="sectionID"
+          :items-per-page="8"
+          hover
+          density="comfortable"
+        >
+          <template #item.course="{ item }">
+            <div class="font-weight-medium">
+              {{ item.raw?.courseName || item.courseName }}
+            </div>
+            <div class="text-caption text-medium-emphasis">
+              {{ item.raw?.courseDescription || item.courseDescription || '—' }}
+            </div>
+          </template>
+
+          <template #item.professorName="{ item }">
+            <div class="font-weight-medium">
+              {{ item.raw?.professorName || item.professorName || 'TBD' }}
+            </div>
+          </template>
+
+          <template #item.status="{ item }">
+            <v-chip
+              size="small"
+              :color="sectionStatusColor(item.raw?.status || item.status)"
+              variant="tonal"
+            >
+              {{ item.raw?.status || item.status }}
+            </v-chip>
+          </template>
+
+          <template #item.seats="{ item }">
+            <div class="font-weight-medium">
+              {{ item.raw?.enrolled ?? item.enrolled ?? 0 }} / {{ item.raw?.capacity ?? item.capacity ?? 0 }}
+            </div>
+            <div class="text-caption text-medium-emphasis">
+              {{ item.raw?.seatsRemaining ?? item.seatsRemaining ?? 0 }} open
+            </div>
+          </template>
+
+          <template #item.credits="{ item }">
+            <div class="text-right">{{ item.raw?.credits ?? item.credits }}</div>
+          </template>
+
+          <template #item.actions="{ item }">
+            <v-btn
+              color="primary"
+              size="small"
+              :disabled="!isDraft || mutationLoading"
+              :loading="isAddingSection(item.raw?.sectionID || item.sectionID)"
+              @click="handleAddClassFromList(item.raw?.sectionID || item.sectionID)"
+            >
+              Add
+            </v-btn>
+          </template>
+
+          <template #no-data>
+            <v-alert type="info" variant="tonal" class="ma-4" border="start">
+              No classes match your search. Try a different keyword.
+            </v-alert>
+          </template>
+        </v-data-table>
+      </v-card-text>
+    </v-card>
+  </v-dialog>
+
+  <v-dialog v-model="warningDialogOpen" max-width="700">
+    <v-card class="warning-dialog-card">
+      <v-card-title class="d-flex align-center">
+        <v-icon color="warning" class="mr-3">mdi-alert-circle-outline</v-icon>
+        <div>
+          <div class="text-subtitle-1">
+            Warnings for Option {{ warningDialogOption || '—' }}
+          </div>
+          <div class="text-caption text-medium-emphasis">
+            Review details before applying this schedule.
+          </div>
+        </div>
+        <v-spacer />
+        <v-btn icon="mdi-close" variant="text" @click="warningDialogOpen = false" />
+      </v-card-title>
+      <v-card-text>
+        <v-sheet class="pa-3 warning-sheet" rounded="lg" variant="tonal" color="warning">
+          <div class="text-body-2 text-medium-emphasis">
+            Consider resolving these items or confirm they are acceptable.
+          </div>
+        </v-sheet>
+
+        <v-list density="comfortable" class="warning-list mt-3" lines="three">
+          <v-list-item
+            v-for="(warning, idx) in warningDialogWarnings"
+            :key="`${warning}-${idx}`"
+            class="warning-list-item"
+          >
+            <template #prepend>
+              <div class="warning-bullet" />
+            </template>
+            <v-list-item-title class="text-body-2 warning-list-title">
+              {{ warning }}
+            </v-list-item-title>
+          </v-list-item>
+        </v-list>
+      </v-card-text>
+      <v-card-actions class="px-6 pb-4">
+        <v-spacer />
+        <v-btn variant="text" @click="warningDialogOpen = false">Close</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+
+  <v-dialog v-if="canDelete" v-model="dialogOpen" max-width="420">
     <v-card>
       <v-card-title>Delete schedule?</v-card-title>
       <v-card-text>
@@ -389,6 +573,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  sectionResults: {
+    type: Array,
+    default: () => [],
+  },
   sectionLoading: {
     type: Boolean,
     default: false,
@@ -413,6 +601,18 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  disableStatusChange: {
+    type: Boolean,
+    default: false,
+  },
+  statusChangeHint: {
+    type: String,
+    default: '',
+  },
+  canDelete: {
+    type: Boolean,
+    default: true,
+  },
 })
 
 const emit = defineEmits([
@@ -427,15 +627,37 @@ const emit = defineEmits([
   'update:suggestion-note',
 ])
 
+const sectionHeaders = [
+  { title: 'Course', key: 'course', sortable: false },
+  { title: 'CRN', key: 'crn', sortable: false },
+  { title: 'Professor', key: 'professorName', sortable: false },
+  { title: 'Status', key: 'status', sortable: false },
+  { title: 'Seats', key: 'seats', sortable: false },
+  { title: 'Credits', key: 'credits', align: 'end' },
+  { title: '', key: 'actions', sortable: false },
+]
+
 const classes = computed(() => props.schedule?.classes ?? [])
+const sectionTableItems = computed(() =>
+  (props.sectionResults || []).map((item) => ({
+    ...item,
+    course: item.courseName,
+    seats: item.seatsRemaining,
+    raw: item,
+  }))
+)
 const isDraft = computed(() => props.schedule?.status === 'DRAFT')
 const statusModel = ref('')
 const sectionId = ref('')
 const sectionSearch = ref('')
 const dialogOpen = ref(false)
+const sectionBrowserOpen = ref(false)
 const pendingAction = ref(null)
 const suggestionPendingAction = ref('')
 const localSuggestionNote = ref('')
+const warningDialogOpen = ref(false)
+const warningDialogWarnings = ref([])
+const warningDialogOption = ref(null)
 
 watch(
   () => props.schedule?.status,
@@ -450,6 +672,7 @@ watch(
   () => {
     sectionId.value = ''
     sectionSearch.value = ''
+    sectionBrowserOpen.value = false
     emitSearch('')
   }
 )
@@ -477,9 +700,20 @@ const statusChanged = computed(() => props.schedule && statusModel.value && stat
 
 function handleAddClass() {
   if (!sectionId.value || !isDraft.value) return
-  pendingAction.value = 'add-class'
+  pendingAction.value = `add-${sectionId.value}`
   emit('add-class', Number(sectionId.value))
   sectionId.value = ''
+  sectionSearch.value = ''
+  emitSearch('')
+}
+
+function handleAddClassFromList(sectionId) {
+  const id = Number(sectionId)
+  if (!id || !isDraft.value) return
+  pendingAction.value = `add-${id}`
+  emit('add-class', id)
+  sectionSearch.value = ''
+  emitSearch('')
 }
 
 function handleStatusUpdate() {
@@ -496,6 +730,7 @@ function requestRemoveClass(classId) {
 
 function confirmDelete() {
   dialogOpen.value = false
+  if (!props.canDelete) return
   if (props.schedule) {
     pendingAction.value = 'delete'
     emit('delete', props.schedule.scheduleID)
@@ -518,6 +753,12 @@ function applySuggestion(option) {
   emit('apply-suggestion', { option, strategy })
 }
 
+function openWarningDialog(option) {
+  warningDialogWarnings.value = option?.warnings || []
+  warningDialogOption.value = option?.option_number || null
+  warningDialogOpen.value = true
+}
+
 function isApplyingOption(option) {
   return (
     props.mutationLoading &&
@@ -534,6 +775,9 @@ function cancelSuggestion(option) {
 function emitSearch(value) {
   emit('search-sections', value)
 }
+
+const isAddingSection = (sectionId) =>
+  Boolean(sectionId) && props.mutationLoading && pendingAction.value === `add-${sectionId}`
 
 const seatSummary = (meta = {}) => {
   const { enrolled = 0, capacity = 0, seatsRemaining = Math.max((capacity || 0) - (enrolled || 0), 0) } = meta
@@ -559,3 +803,38 @@ const sectionStatusColor = (status) => {
   return map[status] || 'primary'
 }
 </script>
+
+<style scoped>
+.warning-list {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.warning-list-item {
+  align-items: flex-start;
+}
+
+.warning-list-title {
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+.warning-dialog-card {
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.18);
+}
+
+.warning-sheet {
+  background-color: rgba(255, 152, 0, 0.12) !important;
+  border: 1px solid rgba(255, 152, 0, 0.3);
+}
+
+.warning-bullet {
+  width: 10px;
+  height: 10px;
+  margin-top: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ffb74d, #f57c00);
+  box-shadow: 0 0 0 4px rgba(255, 152, 0, 0.15);
+}
+</style>

@@ -6,21 +6,18 @@ services:
     container_name: adviseme-db
     restart: unless-stopped
     environment:
-      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db_root_pass
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD?Set DB_ROOT_PASSWORD in .env}
       MARIADB_DATABASE: adviseme
       MARIADB_USER: adviseme_app
-      MARIADB_PASSWORD_FILE: /run/secrets/dbapppass
+      MARIADB_PASSWORD: ${DB_APP_PASSWORD?Set DB_APP_PASSWORD in .env}
     volumes:
       - dbdata:/var/lib/mysql
       - ./DB/AdviseMeDB.sql:/docker-entrypoint-initdb.d/AdviseMeDB.sql:ro
-    secrets:
-      - db_root_pass
-      - dbapppass
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "mariadb -h 127.0.0.1 -uroot -p\"$(cat /run/secrets/db_root_pass)\" -e 'SELECT 1' >/dev/null 2>&1"
+          "mariadb -h 127.0.0.1 -uroot -p\"$${MARIADB_ROOT_PASSWORD}\" -e 'SELECT 1' >/dev/null 2>&1"
         ]
       interval: 10s
       timeout: 5s
@@ -38,8 +35,8 @@ services:
       LDAP_DOMAIN: "adviseme.local"
       LDAP_BASE_DN: "dc=adviseme,dc=local"
       LDAP_READONLY_USER: "false"
-      LDAP_ADMIN_PASSWORD_FILE: /run/secrets/ldap_admin_pass
-      LDAP_CONFIG_PASSWORD_FILE: /run/secrets/ldap_admin_pass
+      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD?Set LDAP_ADMIN_PASSWORD in .env}
+      LDAP_CONFIG_PASSWORD: ${LDAP_ADMIN_PASSWORD?Set LDAP_ADMIN_PASSWORD in .env}
 
       # 🔓 Turn OFF TLS for now (plain LDAP on 389 inside Docker network)
       LDAP_TLS: "false"
@@ -58,8 +55,6 @@ services:
       # - "636:636"
     networks:
       - adviseme-net
-    secrets:
-      - ldap_admin_pass
 
   auth-api:
     build:
@@ -74,9 +69,9 @@ services:
 
       # 🔑 Bind directly as admin (using existing secret)
       LDAP_BIND_DN: cn=admin,dc=adviseme,dc=local
-      LDAP_BIND_PASSWORD_FILE: /run/secrets/ldap_admin_pass
+      LDAP_BIND_PASSWORD: ${LDAP_ADMIN_PASSWORD?Set LDAP_ADMIN_PASSWORD in .env}
 
-      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      JWT_SECRET: ${JWT_SECRET?Set JWT_SECRET in .env}
       JWT_EXPIRE_MINUTES: "60"
       ALLOWED_ORIGINS: "https://localhost,https://localhost:5173,https://localhost:3000,https://adviseme.local"
 
@@ -91,9 +86,6 @@ services:
       - openldap
     networks:
       - adviseme-net
-    secrets:
-      - ldap_admin_pass
-      - jwt_secret
 
   api-service:
     build:
@@ -107,8 +99,8 @@ services:
       DB_HOST: adviseme-db
       DB_USER: adviseme_app
       DB_NAME: adviseme
-      DB_PASSWORD_FILE: /run/secrets/dbapppass
-      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      DB_PASSWORD: ${DB_APP_PASSWORD?Set DB_APP_PASSWORD in .env}
+      JWT_SECRET: ${JWT_SECRET?Set JWT_SECRET in .env}
     expose:
       - "8000"
     depends_on:
@@ -116,9 +108,6 @@ services:
         condition: service_healthy
     networks:
       - adviseme-net
-    secrets:
-      - dbapppass
-      - jwt_secret
 
 
   frontend:
@@ -164,18 +153,6 @@ volumes:
   dbdata:
   ldap-data:
   ldap-config:
-
-secrets:
-  db_root_pass:
-    file: ./secrets/db_root_pass.txt
-  dbapppass:
-    file: ./secrets/dbapppass.txt
-  ldap_admin_pass:
-    file: ./secrets/ldap_admin_pass.txt
-  ldap_bind_pass:
-    file: ./secrets/ldap_bind_pass.txt
-  jwt_secret:
-    file: ./secrets/jwt_secret.txt
 
 networks:
   adviseme-net:

@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CERTS_DIR="$ROOT_DIR/reverse-proxy/certs"
 LDAP_CERTS_DIR="$ROOT_DIR/ldap/certs"
-SECRETS_SCRIPT="$ROOT_DIR/ldap/generatingDBpass.sh"
+ENV_FILE="$ROOT_DIR/.env"
 
 # ========================
 # NGINX / HTTPS CERT
@@ -65,14 +65,9 @@ rm -f "$LDAP_CERTS_DIR/ldap-server.csr" "$LDAP_CERTS_DIR/ldap-server.ext" "$LDAP
 
 chown -R "$(id -u)":"$(id -g)" "$LDAP_CERTS_DIR"
 
-# ========================
-# APP SECRETS
-# ========================
-if [ -x "$SECRETS_SCRIPT" ]; then
-  echo "Ensuring application secrets exist..."
-  (cd "$ROOT_DIR" && bash "$SECRETS_SCRIPT")
-else
-  echo "Warning: secrets script $SECRETS_SCRIPT not found or not executable" >&2
+if [ ! -f "$ENV_FILE" ]; then
+  echo
+  echo "Reminder: create $ENV_FILE with DB/LDAP/JWT secrets (copy .env.example)."
 fi
 
 echo "Security assets are ready."

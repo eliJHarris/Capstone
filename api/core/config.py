@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     """Centralized application configuration."""
 
     openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
-    openai_default_model: str = Field(default="gpt-4o-mini")
+    openai_default_model: str = Field(default="gpt-5.1")
     openai_embedding_model: str = Field(default="text-embedding-3-large")
 
     class Config:

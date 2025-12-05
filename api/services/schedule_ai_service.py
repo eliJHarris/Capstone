@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from fastapi import HTTPException, status
 from pydantic import ValidationError
@@ -11,6 +11,7 @@ from models.degree_plan import (
     DegreePlanValidation,
     DegreeRequirementSet,
 )
+from models.advisor import AdvisorProfile
 from models.schedule import (
     Class,
     Course,
@@ -18,7 +19,9 @@ from models.schedule import (
     Section,
     SectionStatusEnum,
     Term,
+    CoursePrerequisite,
 )
+from models.enrollment import Enrollment, EnrollmentStatus
 from models.user import User
 from schemas.schedule import (
     ScheduleSuggestionResponse,
@@ -37,19 +40,23 @@ class ScheduleAISuggestionService:
 
     def generate(self, schedule_id: int, note: Optional[str] = None) -> ScheduleSuggestionResponse:
         schedule, term = self._load_schedule(schedule_id)
-        advisee, user = self._load_advisee(schedule.adviseeID)
+        advisee, user, advisor = self._load_advisee(schedule.adviseeID)
         context, requirement, validation = self._load_degree_context(schedule.adviseeID)
-        available_courses = self._load_available_sections(schedule.termID)
+        available_courses, blocked_prerequisites = self._load_available_sections(
+            schedule.termID, schedule.adviseeID
+        )
 
         prompt = self._build_prompt(
             schedule=schedule,
             term=term,
             advisee=advisee,
             user=user,
+            advisor=advisor,
             context=context,
             requirement=requirement,
             validation=validation,
             available_courses=available_courses,
+            blocked_prerequisites=blocked_prerequisites,
             note=note,
         )
 
@@ -69,7 +76,8 @@ class ScheduleAISuggestionService:
                 detail="OpenAI response did not include any content.",
             ) from exc
 
-        return self._parse_response(content)
+        suggestions = self._parse_response(content)
+        return self._filter_suggestions(suggestions, available_courses, blocked_prerequisites)
 
     def _load_schedule(self, schedule_id: int) -> tuple[Schedule, Term]:
         schedule = (
@@ -97,20 +105,29 @@ class ScheduleAISuggestionService:
             )
         return schedule, term
 
-    def _load_advisee(self, advisee_id: int) -> tuple[Optional[AdviseeProfile], Optional[User]]:
+    def _load_advisee(
+        self, advisee_id: int
+    ) -> tuple[Optional[AdviseeProfile], Optional[User], Optional[AdvisorProfile]]:
         advisee = (
             self.db.query(AdviseeProfile)
             .filter(AdviseeProfile.adviseeID == advisee_id)
             .first()
         )
         user = None
+        advisor = None
         if advisee:
             user = (
                 self.db.query(User)
                 .filter(User.userID == advisee.userID)
                 .first()
             )
-        return advisee, user
+            if advisee.advisorID:
+                advisor = (
+                    self.db.query(AdvisorProfile)
+                    .filter(AdvisorProfile.advisorID == advisee.advisorID)
+                    .first()
+                )
+        return advisee, user, advisor
 
     def _load_degree_context(
         self, advisee_id: int
@@ -128,18 +145,75 @@ class ScheduleAISuggestionService:
             .order_by(DegreePlanValidation.createdAt.desc())
             .first()
         )
+
+        # Fallback: if the advisee has no saved context, pull the most recent requirement set
+        # for their major/degree plan so schedules still align to the correct program.
+        if not requirement:
+            advisee = (
+                self.db.query(AdviseeProfile)
+                .filter(AdviseeProfile.adviseeID == advisee_id)
+                .first()
+            )
+            program_code = None
+            if advisee:
+                program_code = advisee.degree_plan or advisee.major
+            if program_code:
+                requirement = (
+                    self.db.query(DegreeRequirementSet)
+                    .filter(DegreeRequirementSet.programCode == program_code)
+                    .order_by(DegreeRequirementSet.createdAt.desc())
+                    .first()
+                )
+
         return context, requirement, validation
 
-    def _load_available_sections(self, term_id: int, limit: int = 40) -> List[Dict[str, Any]]:
-        sections = (
+    def _load_available_sections(
+        self, term_id: int, advisee_id: Optional[int] = None, limit: Optional[int] = None
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        sections_query = (
             self.db.query(Section)
             .options(joinedload(Section.course))
             .filter(Section.termID == term_id, Section.status == SectionStatusEnum.OPEN)
             .order_by(Section.crn.asc())
-            .limit(limit)
+        )
+        if limit:
+            sections_query = sections_query.limit(limit)
+        sections = sections_query.all()
+        if not sections:
+            return [], []
+
+        completed_course_ids: Set[int] = set()
+        if advisee_id:
+            completed_course_ids = {
+                course_id
+                for (course_id,) in (
+                    self.db.query(Enrollment.courseID)
+                    .filter(
+                        Enrollment.adviseeID == advisee_id,
+                        Enrollment.status == EnrollmentStatus.COMPLETED,
+                        Enrollment.creditsEarned > 0,
+                    )
+                    .all()
+                )
+            }
+
+        course_ids = {section.courseID for section in sections}
+        prereq_rows = (
+            self.db.query(
+                CoursePrerequisite.courseID,
+                CoursePrerequisite.prerequisiteCourseID,
+                Course.courseName,
+            )
+            .join(Course, Course.courseID == CoursePrerequisite.prerequisiteCourseID)
+            .filter(CoursePrerequisite.courseID.in_(course_ids))
             .all()
         )
+        prereq_map: Dict[int, List[tuple[int, str]]] = {}
+        for course_id, prereq_id, prereq_name in prereq_rows:
+            prereq_map.setdefault(course_id, []).append((prereq_id, prereq_name))
+
         results: List[Dict[str, Any]] = []
+        blocked: List[Dict[str, Any]] = []
         for section in sections:
             course: Optional[Course] = section.course
             status_value = section.status.value if hasattr(section.status, "value") else str(section.status)
@@ -147,22 +221,37 @@ class ScheduleAISuggestionService:
             if seats_remaining <= 0:
                 # Skip sections that are already full to avoid unusable suggestions
                 continue
-            results.append(
-                {
-                    "section_id": section.sectionID,
-                    "crn": section.crn,
-                    "course_code": course.courseName if course else f"Course {section.courseID}",
-                    "course_name": course.courseName if course else "",
-                    "course_description": course.description if course else "",
-                    "credits": course.credits if course else None,
-                    "professor": section.professorName,
-                    "capacity": section.capacity,
-                    "enrolled": section.enrolled,
-                    "seats_remaining": seats_remaining,
-                    "status": status_value,
-                }
-            )
-        return results
+            prereqs = prereq_map.get(section.courseID, [])
+            missing_prereqs: List[str] = []
+            if advisee_id:
+                missing_prereqs = [
+                    name or f"Course {prereq_id}"
+                    for prereq_id, name in prereqs
+                    if prereq_id not in completed_course_ids
+                ]
+
+            entry = {
+                "course_id": section.courseID,
+                "section_id": section.sectionID,
+                "crn": section.crn,
+                "course_code": course.courseName if course else f"Course {section.courseID}",
+                "course_name": course.courseName if course else "",
+                "course_description": course.description if course else "",
+                "credits": course.credits if course else None,
+                "professor": section.professorName,
+                "capacity": section.capacity,
+                "enrolled": section.enrolled,
+                "seats_remaining": seats_remaining,
+                "status": status_value,
+                "prerequisites": [name or f"Course {pid}" for pid, name in prereqs],
+                "missing_prerequisites": missing_prereqs,
+                "prerequisites_met": not missing_prereqs,
+            }
+            if advisee_id and missing_prereqs:
+                blocked.append(entry)
+                continue
+            results.append(entry)
+        return results, blocked
 
     @staticmethod
     def _build_remaining_requirements(
@@ -211,12 +300,17 @@ class ScheduleAISuggestionService:
         term: Optional[Term],
         advisee: Optional[AdviseeProfile],
         user: Optional[User],
+        advisor: Optional[AdvisorProfile],
         context: Optional[AdviseeDegreeContext],
         requirement: Optional[DegreeRequirementSet],
         validation: Optional[DegreePlanValidation],
         available_courses: List[Dict[str, Any]],
+        blocked_prerequisites: List[Dict[str, Any]],
         note: Optional[str],
     ) -> str:
+        def _safe_enum_value(value: Any) -> Any:
+            return value.value if hasattr(value, "value") else value
+
         completed_courses = context.completedCourses if context and context.completedCourses else []
         current_classes = []
         for cls in getattr(schedule, "classes", []) or []:
@@ -228,38 +322,101 @@ class ScheduleAISuggestionService:
             current_classes.append(
                 {
                     "class_id": cls.classID,
+                    "course_id": course.courseID if course else None,
                     "section_id": getattr(cls, "sectionID", None),
                     "course_code": course.courseName if course else None,
                     "course_name": course.courseName if course else None,
                     "credits": course.credits if course else None,
                     "crn": section.crn if section else None,
+                    "section_status": _safe_enum_value(section.status) if section else None,
                     "seats_remaining": seats_remaining,
                 }
             )
         remaining_requirements = self._build_remaining_requirements(requirement, context, validation)
+        requirement_metadata = {
+            "program_code": requirement.programCode if requirement else None,
+            "program_name": requirement.programName if requirement else None,
+            "catalog_year": requirement.catalogYear if requirement else None,
+            "total_credits": requirement.totalCredits if requirement else None,
+        }
+        validation_summary = {
+            "status": _safe_enum_value(validation.status) if validation else None,
+            "completion_percent": getattr(validation, "completionPercent", None),
+            "message": getattr(validation, "message", None),
+            "issues": validation.issues if validation and validation.issues else [],
+            "run_type": _safe_enum_value(validation.runType) if validation else None,
+            "last_run": validation.createdAt if validation else None,
+        }
+        prereq_payload = {
+            "blocked_courses": [
+                {
+                    "course_id": item.get("course_id"),
+                    "course_code": item.get("course_code"),
+                    "section_id": item.get("section_id"),
+                    "missing_prerequisites": item.get("missing_prerequisites") or [],
+                }
+                for item in blocked_prerequisites
+            ]
+        }
+        advisor_info = None
+        if advisor:
+            advisor_info = {"advisor_id": advisor.advisorID, "name": advisor.name, "office": advisor.office}
 
         payload = {
             "student_id": schedule.adviseeID,
             "student_name": user.username if user else None,
-            "major": advisee.major if advisee else "Undeclared",
+            "student_email": user.email if user else None,
+            "major": advisee.major if advisee else (requirement.programCode if requirement else "Undeclared"),
+            "degree_plan": advisee.degree_plan if advisee else None,
+            "classification": _safe_enum_value(advisee.classification) if advisee and advisee.classification else None,
+            "gpa": float(advisee.gpa) if advisee and advisee.gpa is not None else None,
+            "credits_completed": advisee.credits_completed if advisee else None,
+            "status": _safe_enum_value(advisee.status) if advisee and advisee.status else None,
+            "advisor": advisor_info,
             "semester": term.code if term else str(schedule.termID),
+            "term_dates": {
+                "start": term.startDate if term else None,
+                "end": term.endDate if term else None,
+            },
+            "schedule_meta": {
+                "schedule_id": schedule.scheduleID,
+                "source": _safe_enum_value(schedule.source),
+                "status": _safe_enum_value(schedule.status),
+            },
             "completed_courses": completed_courses,
+            "context_overrides": context.overrides if context else None,
+            "context_notes": context.notes if context else None,
             "current_schedule": current_classes,
             "remaining_requirements": remaining_requirements,
+            "requirement_metadata": requirement_metadata,
+            "validation_summary": validation_summary,
             "available_courses": available_courses,
-            "prerequisites": [],
+            "prerequisites": prereq_payload,
             "preference_note": note or "",
         }
 
         prompt = (
             "You are an academic advising assistant for AdviseMe.\n"
             f"Student : {payload['student_id']} ({payload['student_name'] or 'student'}) , "
-            f"Major : {payload['major']} , Semester : {payload['semester']}\n"
+            f"Email : {payload['student_email'] or 'n/a'} , "
+            f"Major/Program : {payload['major']} , Degree Plan : {payload['degree_plan'] or 'n/a'} , "
+            f"Classification : {payload['classification'] or 'n/a'} , GPA : {payload['gpa'] or 'n/a'} , "
+            f"Credits Completed : {payload['credits_completed'] or 0} , Status : {payload['status'] or 'n/a'}\n"
+            f"Advisor : {payload['advisor'] or 'n/a'}\n"
+            f"Term : {payload['semester']} (start {payload['term_dates']['start']}, end {payload['term_dates']['end']})\n"
+            f"Schedule Meta : {json.dumps(payload['schedule_meta'], default=str)}\n"
+            f"Program Requirements : {json.dumps(payload['requirement_metadata'], default=str)}\n"
+            f"Context Overrides : {json.dumps(payload['context_overrides'], default=str)}\n"
+            f"Context Notes : {payload['context_notes'] or ''}\n"
             f"Completed : {json.dumps(payload['completed_courses'], default=str)}\n"
             f"Current Schedule Classes : {json.dumps(payload['current_schedule'], default=str)}\n"
             f"Remaining Requirements : {json.dumps(payload['remaining_requirements'], default=str)}\n"
+            f"Validation Summary : {json.dumps(payload['validation_summary'], default=str)}\n"
             f"Available Courses : {json.dumps(payload['available_courses'], default=str)}\n"
-            "Prerequisites : []\n"
+            f"Prerequisites : {json.dumps(payload['prerequisites'], default=str)}\n"
+            f"Preference Note : {payload['preference_note']}\n"
+            "Primary goal: pick classes that satisfy remaining degree requirements and keep the student on track "
+            "for timely graduation. Avoid random electives unrelated to the program unless explicitly requested.\n"
             "Generate 3 valid schedules (12 -15 credits each). "
             "Use only the section_id values from Available Courses when suggesting sections. "
             "Rules: Option 1 and Option 2 must KEEP the existing classes (current schedule) and add new sections to reach 12-15 credits. "
@@ -302,6 +459,99 @@ class ScheduleAISuggestionService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="OpenAI response was missing required schedule suggestion fields.",
             ) from exc
+
+    def _filter_suggestions(
+        self,
+        suggestions: ScheduleSuggestionResponse,
+        available_courses: List[Dict[str, Any]],
+        blocked_prerequisites: List[Dict[str, Any]],
+    ) -> ScheduleSuggestionResponse:
+        """
+        Drop any AI-suggested sections that are not actually available for the term.
+        This prevents downstream errors when the UI attempts to add nonexistent sections
+        or courses where prerequisites are not met.
+        """
+        valid_section_ids: Set[str] = {
+            str(course["section_id"])
+            for course in available_courses
+            if course.get("section_id") is not None
+        }
+        available_map: Dict[str, Dict[str, Any]] = {
+            str(course["section_id"]): course
+            for course in available_courses
+            if course.get("section_id") is not None
+        }
+        blocked_map: Dict[str, Dict[str, Any]] = {
+            str(item["section_id"]): item
+            for item in blocked_prerequisites
+            if item.get("section_id") is not None
+        }
+        filtered_options: List[SuggestedScheduleOption] = []
+
+        for option in suggestions.schedules:
+            valid_courses: List[SuggestedCourse] = []
+            removed: List[str] = []
+            prereq_removed: List[str] = []
+
+            for course in option.courses:
+                section_id = course.section
+                section_key = str(section_id) if section_id is not None else None
+                if not section_key:
+                    label = course.course_code or course.course_name or "course"
+                    removed.append(label)
+                    continue
+
+                if section_key not in valid_section_ids:
+                    blocked_meta = blocked_map.get(section_key)
+                    if blocked_meta:
+                        missing = blocked_meta.get("missing_prerequisites") or ["prerequisite"]
+                        label = (
+                            blocked_meta.get("course_code")
+                            or course.course_code
+                            or course.course_name
+                            or section_key
+                        )
+                        prereq_removed.append(f"{label} (missing: {', '.join(missing)})")
+                    else:
+                        label = course.course_code or course.course_name or section_key or "course"
+                        removed.append(label)
+                    continue
+
+                section_meta = available_map.get(section_key)
+                if section_meta and section_meta.get("prerequisites_met") is False:
+                    missing = section_meta.get("missing_prerequisites") or ["prerequisite"]
+                    label = (
+                        section_meta.get("course_code")
+                        or course.course_code
+                        or course.course_name
+                        or section_key
+                    )
+                    prereq_removed.append(f"{label} (missing: {', '.join(missing)})")
+                    continue
+                valid_courses.append(course)
+
+            warnings = list(option.warnings)
+            if removed:
+                warnings.append(f"Removed unavailable sections: {', '.join(removed)}")
+            if prereq_removed:
+                warnings.append(
+                    f"Removed sections without prerequisites met: {', '.join(prereq_removed)}"
+                )
+
+            filtered_options.append(
+                SuggestedScheduleOption(
+                    option_number=option.option_number,
+                    courses=valid_courses,
+                    total_credits=sum(course.credits for course in valid_courses),
+                    rationale=option.rationale,
+                    warnings=warnings,
+                )
+            )
+
+        return ScheduleSuggestionResponse(
+            schedules=filtered_options,
+            general_recommendations=suggestions.general_recommendations,
+        )
 
     def _normalize_response(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         raw_options = payload.get("schedules") or payload.get("options") or payload.get("schedule_options") or []

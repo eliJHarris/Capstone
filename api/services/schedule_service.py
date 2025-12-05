@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 from datetime import datetime
 from fastapi import HTTPException, status
@@ -8,13 +9,16 @@ from models.schedule import (
     Class,
     Section,
     Course,
+    CoursePrerequisite,
     Term,
     ScheduleStatusEnum,
     ScheduleSourceEnum,
     SectionStatusEnum,
 )
+from models.enrollment import Enrollment, EnrollmentStatus
 from models.advisee import AdviseeProfile
 from models.user import User
+from services.notification_service import NotificationService
 from schemas.schedule import (
     ScheduleCreate,
     ScheduleUpdate,
@@ -34,11 +38,56 @@ class ScheduleService:
         return value.value if hasattr(value, "value") else str(value)
 
     @staticmethod
+    def _term_code(db: Session, term_id: int) -> str:
+        term_code = db.query(Term.code).filter(Term.termID == term_id).scalar()
+        return term_code or str(term_id)
+
+    @staticmethod
+    def _validate_prerequisites(db: Session, advisee_id: int, target_course_id: int) -> None:
+        """
+        Ensure an advisee has completed the prerequisites for a course.
+        Mirrors the database trigger logic by requiring completed enrollments with earned credit.
+        """
+        prereqs = (
+            db.query(CoursePrerequisite.prerequisiteCourseID, Course.courseName)
+            .join(Course, Course.courseID == CoursePrerequisite.prerequisiteCourseID)
+            .filter(CoursePrerequisite.courseID == target_course_id)
+            .all()
+        )
+        if not prereqs:
+            return
+
+        completed_course_ids = {
+            course_id
+            for (course_id,) in (
+                db.query(Enrollment.courseID)
+                .filter(
+                    Enrollment.adviseeID == advisee_id,
+                    Enrollment.status == EnrollmentStatus.COMPLETED,
+                    Enrollment.creditsEarned > 0,
+                )
+                .all()
+            )
+        }
+
+        missing = [
+            name or f"Course {prereq_id}"
+            for prereq_id, name in prereqs
+            if prereq_id not in completed_course_ids
+        ]
+
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing prerequisites: " + ", ".join(missing),
+            )
+
+    @staticmethod
     def list_sections_for_schedule(
         db: Session,
         schedule_id: int,
         search: Optional[str] = None,
-        limit: int = 20,
+        limit: Optional[int] = None,
     ) -> List[SectionSearchItem]:
         schedule = db.query(Schedule).filter(Schedule.scheduleID == schedule_id).first()
         if not schedule:
@@ -64,7 +113,10 @@ class ScheduleService:
                 | (Section.crn.ilike(like))
             )
 
-        query = query.order_by(Course.courseName.asc(), Section.crn.asc()).limit(limit)
+        query = query.order_by(Course.courseName.asc(), Section.crn.asc())
+
+        if limit:
+            query = query.limit(limit)
         sections = query.all()
 
         results: List[SectionSearchItem] = []
@@ -246,6 +298,16 @@ class ScheduleService:
         )
 
         db.add(new_schedule)
+        db.flush()
+
+        NotificationService.notify_advisee_and_advisor(
+            db,
+            advisee_id=schedule_data.adviseeID,
+            description=(
+                f"Schedule {new_schedule.scheduleID} created for term "
+                f"{term.code} with status {new_schedule.status.value}."
+            ),
+        )
         db.commit()
         db.refresh(new_schedule)
 
@@ -264,6 +326,7 @@ class ScheduleService:
                 detail=f"Schedule with ID {schedule_id} not found"
         )
 
+        status_changed = False
         # Update fields if provided
         if schedule_data.status is not None:
             if (
@@ -275,7 +338,10 @@ class ScheduleService:
                     detail="Cannot approve a schedule with no classes",
                 )
 
-            schedule.status = ScheduleStatusEnum(schedule_data.status.value)
+            new_status = ScheduleStatusEnum(schedule_data.status.value)
+            if schedule.status != new_status:
+                status_changed = True
+            schedule.status = new_status
 
             # Update timestamp based on status
             if schedule_data.status == ScheduleStatus.APPROVED:
@@ -290,6 +356,17 @@ class ScheduleService:
 
         if schedule_data.source is not None:
             schedule.source = ScheduleSourceEnum(schedule_data.source.value)
+
+        if status_changed:
+            term_code = ScheduleService._term_code(db, schedule.termID)
+            NotificationService.notify_advisee_and_advisor(
+                db,
+                advisee_id=schedule.adviseeID,
+                description=(
+                    f"Schedule {schedule_id} status updated to "
+                    f"{schedule.status.value} for term {term_code}."
+                ),
+            )
 
         db.commit()
         db.refresh(schedule)
@@ -372,16 +449,67 @@ class ScheduleService:
                 detail=f"Section {section_id} is already in schedule {schedule_id}"
             )
 
+        # Validate that the advisee has completed required prerequisites before scheduling
+        ScheduleService._validate_prerequisites(
+            db=db,
+            advisee_id=schedule.adviseeID,
+            target_course_id=section.courseID,
+        )
+
         # Create new class
         new_class = Class(
             sectionID=section_id,
             scheduleID=schedule_id,
+            termID=schedule.termID,
             createdDate=datetime.utcnow()
         )
 
         db.add(new_class)
         section.enrolled = min(section.capacity, section.enrolled + 1)
-        db.commit()
+
+        # Mirror the scheduled class into enrollments so the transcript view reflects in-progress courses
+        existing_enrollment = (
+            db.query(Enrollment)
+            .filter(
+                Enrollment.adviseeID == schedule.adviseeID,
+                Enrollment.sectionID == section_id,
+            )
+            .first()
+        )
+        if not existing_enrollment:
+            db.add(
+                Enrollment(
+                    adviseeID=schedule.adviseeID,
+                    sectionID=section_id,
+                    courseID=section.courseID,
+                    status=EnrollmentStatus.ENROLLED,
+                    grade=None,
+                    creditsEarned=0,
+                    attemptedNumber=1,
+                    createdWhen=datetime.utcnow(),
+                )
+            )
+
+        course_name = section.course.courseName if section.course else "Section"
+        term_code = ScheduleService._term_code(db, schedule.termID)
+        NotificationService.notify_advisee_and_advisor(
+            db,
+            advisee_id=schedule.adviseeID,
+            description=(
+                f"Added {course_name} ({section.crn}) to schedule "
+                f"{schedule_id} for term {term_code}."
+            ),
+        )
+
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            # Surface a clear message instead of a 500 when constraints are hit
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unable to add class due to a database constraint (likely duplicate section for this schedule)",
+            )
 
         return ScheduleService.get_schedule_by_id(db, schedule_id)
 
@@ -407,11 +535,36 @@ class ScheduleService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Only DRAFT schedules can be modified",
-            )
+        )
 
         # Keep capacity accounting accurate
         if cls.section and cls.section.enrolled > 0:
             cls.section.enrolled -= 1
+
+        # Remove the mirrored enrollment so the transcript no longer lists the course
+        enrollment = (
+            db.query(Enrollment)
+            .filter(
+                Enrollment.adviseeID == cls.schedule.adviseeID,
+                Enrollment.sectionID == cls.sectionID,
+                Enrollment.status == EnrollmentStatus.ENROLLED,
+            )
+            .first()
+        )
+        if enrollment:
+            db.delete(enrollment)
+
+        course_name = cls.section.course.courseName if cls.section and cls.section.course else "Section"
+        crn = cls.section.crn if cls.section else "class"
+        term_code = ScheduleService._term_code(db, cls.schedule.termID)
+        NotificationService.notify_advisee_and_advisor(
+            db,
+            advisee_id=cls.schedule.adviseeID,
+            description=(
+                f"Removed {course_name} ({crn}) from schedule "
+                f"{schedule_id} for term {term_code}."
+            ),
+        )
 
         db.delete(cls)
         db.commit()

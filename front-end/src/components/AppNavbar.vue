@@ -33,7 +33,7 @@
               style="width:100%; height:100%; object-fit:cover; border-radius:50%;"
             />
           </v-avatar>
-          <span>Jordan</span>
+          <span>{{ userLabel }}</span>
           <v-icon>mdi-menu-down</v-icon>
         </v-btn>
       </template>
@@ -53,10 +53,42 @@
 </template>
 
 <script setup>
+import { computed, onBeforeUnmount, onMounted } from "vue";
 import { useRouter } from "vue-router";
+import { AUTH_ROLE_EVENT } from "@/composables/useUserRole";
+import { useCurrentUser } from "@/composables/useCurrentUser";
 import { logout } from "@/services/auth.js";
 
 const router = useRouter();
+const { displayName, username, refreshIdentity } = useCurrentUser();
+const userLabel = computed(() => displayName.value || username.value || "User");
+
+const handleIdentityChange = (event) => {
+  if (
+    event?.type === "storage" &&
+    event?.key &&
+    event.key !== "auth_user" &&
+    event.key !== "auth_token"
+  ) {
+    return;
+  }
+  refreshIdentity();
+};
+
+onMounted(() => {
+  refreshIdentity();
+  if (typeof window !== "undefined") {
+    window.addEventListener("storage", handleIdentityChange);
+    window.addEventListener(AUTH_ROLE_EVENT, handleIdentityChange);
+  }
+});
+
+onBeforeUnmount(() => {
+  if (typeof window !== "undefined") {
+    window.removeEventListener("storage", handleIdentityChange);
+    window.removeEventListener(AUTH_ROLE_EVENT, handleIdentityChange);
+  }
+});
 
 function handleLogout() {
   logout(); // clear localStorage or JWT

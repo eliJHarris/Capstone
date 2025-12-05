@@ -27,6 +27,24 @@
       {{ scheduleError }}
     </v-alert>
 
+    <v-alert
+      v-if="userContextErrorMessage"
+      type="error"
+      class="mb-4"
+      closable
+    >
+      {{ userContextErrorMessage }}
+    </v-alert>
+
+    <v-alert
+      v-if="isStudent"
+      type="info"
+      variant="tonal"
+      class="mb-4"
+    >
+      You are viewing schedules for your account only.
+    </v-alert>
+
     <v-row dense>
       <v-col cols="12" md="4">
         <v-card rounded="xl" variant="flat" class="mb-4">
@@ -36,17 +54,18 @@
               <v-autocomplete
                 v-model="filterAdvisee"
                 v-model:search="filterAdviseeSearch"
-                :items="adviseeOptions"
-                :loading="adviseeLoading"
-                item-title="title"
-                item-value="value"
-                label="Advisee"
-                density="comfortable"
-                variant="outlined"
-                class="mb-3"
-                return-object
-                clearable
-                @update:search="handleFilterAdviseeSearch"
+              :items="adviseeOptions"
+              :loading="adviseeLoading"
+              :disabled="isStudent || userContextLoading"
+              item-title="title"
+              item-value="value"
+              label="Advisee"
+              density="comfortable"
+              variant="outlined"
+              class="mb-3"
+              return-object
+              :clearable="!isStudent"
+              @update:search="handleFilterAdviseeSearch"
               >
                 <template #item="{ props, item }">
                   <v-list-item v-bind="props">
@@ -117,6 +136,7 @@
                 v-model:search="adviseeSearch"
                 :items="adviseeOptions"
                 :loading="adviseeLoading"
+                :disabled="isStudent || userContextLoading"
                 item-title="title"
                 item-value="value"
                 label="Advisee"
@@ -124,7 +144,7 @@
                 variant="outlined"
                 class="mb-3"
                 return-object
-                clearable
+                :clearable="!isStudent"
                 @update:search="handleAdviseeSearch"
               >
                 <template #item="{ props, item }">
@@ -209,12 +229,16 @@
           :loading="loadingDetail"
           :mutation-loading="mutationLoading"
           :section-options="sectionOptions"
+          :section-results="sectionResults"
           :section-loading="sectionSearchLoading"
           :suggestions="suggestions"
           :suggestion-loading="suggestionLoading"
           :suggestion-error="suggestionError"
           :general-recommendations="suggestionRecommendations"
           :suggestion-note="suggestionNote"
+          :disable-status-change="isStudent"
+          :can-delete="!isStudent"
+          :status-change-hint="isStudent ? 'Students cannot change schedule status.' : ''"
           @update-status="handleStatusUpdate"
           @delete="handleDelete"
           @add-class="handleAddClass"
@@ -238,6 +262,106 @@
       </v-col>
     </v-row>
 
+    <v-dialog
+      v-model="prereqDialog"
+      max-width="720"
+      persistent
+    >
+      <v-card rounded="xl">
+        <v-card-title class="d-flex align-center">
+          <div>
+            <div class="text-h6">Prerequisite needed</div>
+            <div class="text-caption text-medium-emphasis">
+              Select an available prerequisite section for this term.
+            </div>
+          </div>
+          <v-spacer />
+          <v-btn icon="mdi-close" variant="text" @click="prereqDialog = false" />
+        </v-card-title>
+        <v-card-text>
+          <v-alert
+            v-if="prereqError"
+            type="error"
+            density="comfortable"
+            class="mb-3"
+          >
+            {{ prereqError }}
+          </v-alert>
+
+          <div class="mb-3">
+            <div class="text-subtitle-2 mb-1">Missing prerequisites</div>
+            <v-chip
+              v-for="item in missingPrereqs"
+              :key="item"
+              class="mr-2 mb-2"
+              color="primary"
+              variant="tonal"
+              label
+            >
+              {{ item }}
+            </v-chip>
+          </div>
+
+          <div v-if="prereqLoading" class="py-4 d-flex align-center">
+            <v-progress-circular indeterminate color="primary" class="mr-3" />
+            <div class="text-medium-emphasis">Searching available prerequisite sections…</div>
+          </div>
+
+          <div v-else>
+            <div
+              v-for="option in prereqOptions"
+              :key="option.name"
+              class="mb-4"
+            >
+              <div class="text-subtitle-2 mb-2">{{ option.name }}</div>
+              <v-alert
+                v-if="!option.sections || !option.sections.length"
+                type="info"
+                density="comfortable"
+                variant="tonal"
+                class="mb-2"
+              >
+                No open sections for this prerequisite in the selected term.
+              </v-alert>
+              <v-card
+                v-for="section in option.sections"
+                :key="section.sectionID"
+                class="mb-2"
+                variant="tonal"
+                rounded="lg"
+              >
+                <v-card-text class="d-flex align-center">
+                  <div>
+                    <div class="text-subtitle-2">{{ section.courseName }}</div>
+                    <div class="text-caption text-medium-emphasis">
+                      CRN {{ section.crn }} • {{ section.professorName || 'TBD' }} • {{ section.credits }} credits
+                    </div>
+                    <div class="text-caption text-medium-emphasis">
+                      {{ section.seatsRemaining }} seats remaining
+                    </div>
+                  </div>
+                  <v-spacer />
+                  <v-btn
+                    color="primary"
+                    :loading="prereqActionId === section.sectionID"
+                    :disabled="prereqActionId === section.sectionID"
+                    @click="addPrereqSection(section.sectionID)"
+                  >
+                    Add prerequisite
+                  </v-btn>
+                </v-card-text>
+              </v-card>
+            </div>
+          </div>
+        </v-card-text>
+        <v-card-actions class="justify-end">
+          <v-btn variant="text" color="secondary" @click="prereqDialog = false">
+            Dismiss
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <v-snackbar
       v-model="feedback.show"
       :color="feedback.color"
@@ -257,6 +381,9 @@ import ScheduleList from '@/components/schedules/ScheduleList.vue'
 import { useScheduleStore } from '@/stores/schedules'
 import { fetchAdvisees } from '@/services/advisees'
 import { fetchTerms } from '@/services/terms'
+import { useCurrentUser } from '@/composables/useCurrentUser'
+import { NORMALIZED_ROLES } from '@/utils/auth'
+import { apiFetch } from '@/services/apiClient'
 
 const scheduleStore = useScheduleStore()
 const {
@@ -268,6 +395,7 @@ const {
   mutationLoading,
   lastSyncedAt,
   sectionOptions,
+  sectionResults,
   sectionSearchLoading,
   error,
   suggestions,
@@ -275,6 +403,21 @@ const {
   suggestionLoading,
   suggestionError,
 } = storeToRefs(scheduleStore)
+
+const {
+  role: userRole,
+  advisee: currentAdvisee,
+  loadUserContext,
+  loading: userContextLoading,
+  error: userContextError,
+} = useCurrentUser()
+
+const isStudent = computed(() => userRole.value === NORMALIZED_ROLES.STUDENT)
+
+const studentScopeReady = computed(() => {
+  if (!isStudent.value) return true
+  return Boolean(studentAdviseeId.value) && !userContextError.value
+})
 
 const statusOptions = computed(() => scheduleStore.statusOptions)
 const sourceOptions = computed(() => scheduleStore.sourceOptions)
@@ -303,6 +446,23 @@ const filterTermSearch = ref('')
 const adviseeLoading = ref(false)
 const termLoading = ref(false)
 const suggestionNote = ref('')
+const initialStudentFetchApplied = ref(false)
+
+const studentAdviseeId = computed(() =>
+  currentAdvisee.value?.adviseeID ? Number(currentAdvisee.value.adviseeID) : null
+)
+
+const studentAdviseeOption = computed(() => {
+  if (!studentAdviseeId.value) return null
+  return {
+    value: studentAdviseeId.value,
+    title: currentAdvisee.value?.name || `Advisee #${studentAdviseeId.value}`,
+    subtitle: currentAdvisee.value?.email || '',
+    raw: currentAdvisee.value,
+    name: currentAdvisee.value?.name,
+    email: currentAdvisee.value?.email,
+  }
+})
 
 const feedback = reactive({
   show: false,
@@ -311,7 +471,13 @@ const feedback = reactive({
 })
 
 const scheduleError = computed(() => error.value)
-const createDisabled = computed(() => !createForm.advisee || !createForm.term)
+const userContextErrorMessage = computed(() => userContextError.value)
+const createDisabled = computed(() => {
+  if (isStudent.value) {
+    return !studentAdviseeId.value || !createForm.term
+  }
+  return !createForm.advisee || !createForm.term
+})
 
 const clearError = () => scheduleStore.clearError()
 
@@ -319,6 +485,33 @@ const showFeedback = (text, color = 'success') => {
   feedback.text = text
   feedback.color = color
   feedback.show = true
+}
+
+const scopedFetchSchedules = async (overrides = {}) => {
+  const scoped = { ...overrides }
+  if (!studentScopeReady.value) {
+    showFeedback('Unable to load your advisee profile. Please contact support.', 'error')
+    return
+  }
+  if (isStudent.value && studentAdviseeId.value) {
+    scoped.adviseeId = studentAdviseeId.value
+  }
+  await scheduleStore.fetchSchedules(scoped)
+}
+
+const syncStudentScope = () => {
+  if (!isStudent.value || !studentAdviseeOption.value) return
+  filterAdvisee.value = studentAdviseeOption.value
+  filters.adviseeName = studentAdviseeOption.value.name || studentAdviseeOption.value.title || ''
+  filters.adviseeId = studentAdviseeOption.value.value
+  if (!createForm.advisee) {
+    createForm.advisee = studentAdviseeOption.value
+  }
+  scheduleStore.setFilters({
+    ...scheduleStore.filters,
+    adviseeId: studentAdviseeOption.value.value,
+    adviseeName: studentAdviseeOption.value.name || studentAdviseeOption.value.title || '',
+  })
 }
 
 const formatTermRange = (term) => {
@@ -331,6 +524,11 @@ const formatTermRange = (term) => {
 const loadAdvisees = async (search = '') => {
   adviseeLoading.value = true
   try {
+    if (isStudent.value) {
+      adviseeOptions.value = studentAdviseeOption.value ? [studentAdviseeOption.value] : []
+      return
+    }
+
     const data = await fetchAdvisees({ search, limit: 10 })
     adviseeOptions.value = data.map((item) => ({
       value: Number(item.adviseeID),
@@ -365,6 +563,7 @@ const loadTerms = async (search = '') => {
 }
 
 const handleAdviseeSearch = (value) => {
+  if (isStudent.value) return
   adviseeSearch.value = value
 }
 
@@ -373,6 +572,7 @@ const handleTermSearch = (value) => {
 }
 
 const handleFilterAdviseeSearch = (value) => {
+  if (isStudent.value) return
   filterAdviseeSearch.value = value
   filters.adviseeName = value || ''
 }
@@ -383,6 +583,7 @@ const handleFilterTermSearch = (value) => {
 }
 
 watch(adviseeSearch, (value) => {
+  if (isStudent.value) return
   loadAdvisees(value)
 })
 
@@ -391,6 +592,7 @@ watch(termSearch, (value) => {
 })
 
 watch(filterAdvisee, (value) => {
+  if (isStudent.value) return
   filters.adviseeName = value?.name || value?.title || ''
 })
 
@@ -398,8 +600,18 @@ watch(filterTerm, (value) => {
   filters.termName = value?.raw?.code || value?.title || ''
 })
 
+watch(
+  () => currentAdvisee.value,
+  () => {
+    if (isStudent.value) {
+      syncStudentScope()
+      loadAdvisees()
+    }
+  }
+)
+
 const refreshList = async () => {
-  await scheduleStore.fetchSchedules()
+  await scopedFetchSchedules()
   if (selectedScheduleId.value) {
     await scheduleStore.fetchScheduleById(selectedScheduleId.value)
   }
@@ -408,30 +620,43 @@ const refreshList = async () => {
 const applyFilters = async () => {
   scheduleStore.setFilters({
     ...filters,
-    adviseeName: filterAdvisee.value?.name || filterAdviseeSearch.value || '',
+    adviseeId: isStudent.value ? studentAdviseeId.value : filters.adviseeId,
+    adviseeName: isStudent.value
+      ? studentAdviseeOption.value?.name || studentAdviseeOption.value?.title || ''
+      : filterAdvisee.value?.name || filterAdviseeSearch.value || '',
     termName: filterTerm.value?.raw?.code || filterTerm.value?.title || filterTermSearch.value || '',
   })
-  await scheduleStore.fetchSchedules()
+  await scopedFetchSchedules()
 }
 
 const resetFilters = async () => {
   scheduleStore.resetFilters()
   Object.assign(filters, { ...scheduleStore.filters })
-  filterAdvisee.value = null
+  filterAdvisee.value = isStudent.value ? studentAdviseeOption.value : null
   filterTerm.value = null
-  filterAdviseeSearch.value = ''
+  filterAdviseeSearch.value = isStudent.value
+    ? studentAdviseeOption.value?.name || ''
+    : ''
   filterTermSearch.value = ''
-  await scheduleStore.fetchSchedules()
+  if (isStudent.value) {
+    syncStudentScope()
+  }
+  await scopedFetchSchedules()
 }
 
 const handleCreate = async () => {
-  if (createDisabled.value) {
+  const adviseeId = isStudent.value ? studentAdviseeId.value : createForm.advisee?.value
+  if (!adviseeId || !createForm.term) {
     showFeedback('Advisee and Term are required', 'error')
     return
   }
 
+  createForm.advisee = isStudent.value && studentAdviseeOption.value
+    ? studentAdviseeOption.value
+    : createForm.advisee
+
   const payload = {
-    adviseeID: Number(createForm.advisee?.value),
+    adviseeID: Number(adviseeId),
     termID: Number(createForm.term?.value),
     source: createForm.source,
     status: createForm.status,
@@ -440,7 +665,7 @@ const handleCreate = async () => {
   try {
     await scheduleStore.createSchedule(payload)
     Object.assign(createForm, {
-      advisee: null,
+      advisee: isStudent.value ? studentAdviseeOption.value : null,
       term: null,
       source: sourceOptions.value[0],
       status: statusOptions.value[0],
@@ -455,6 +680,10 @@ const handleCreate = async () => {
 
 const handleStatusUpdate = async (newStatus) => {
   if (!selectedSchedule.value) return
+  if (isStudent.value) {
+    showFeedback('Students cannot change schedule status.', 'error')
+    return
+  }
   try {
     await scheduleStore.updateSchedule(selectedSchedule.value.scheduleID, { status: newStatus })
     showFeedback('Schedule status updated')
@@ -480,6 +709,10 @@ const handleAddClass = async (sectionId) => {
     showFeedback(`Section ${sectionId} added`)
     await scheduleStore.searchSections(selectedSchedule.value.scheduleID, '')
   } catch (err) {
+    if (isPrereqError(err)) {
+      await promptPrereqFallback(err, sectionId)
+      return
+    }
     showFeedback(err.message || 'Failed to add section', 'error')
   }
 }
@@ -568,11 +801,121 @@ watch(
   }
 )
 
-onMounted(() => {
-  if (!schedules.value.length) {
-    scheduleStore.fetchSchedules()
+const ensureInitialFetch = async () => {
+
+  handleBackToList()
+  await resetFilters()
+
+  if (isStudent.value) {
+    if (!studentScopeReady.value || initialStudentFetchApplied.value) return
+    await applyFilters()
+    initialStudentFetchApplied.value = true
+    return
   }
-  loadAdvisees()
-  loadTerms()
+
+  await applyFilters()
+}
+
+watch(
+  () => studentScopeReady.value,
+  async (ready) => {
+    if (!ready || !isStudent.value || initialStudentFetchApplied.value) return
+    await ensureInitialFetch()
+  }
+)
+
+onMounted(async () => {
+  try {
+    await loadUserContext()
+  } catch (err) {
+    console.error('Failed to load user context', err)
+  }
+
+  syncStudentScope()
+
+  await ensureInitialFetch()
+  await loadAdvisees()
+  await loadTerms()
 })
+
+// Prerequisite fallback UX
+const prereqDialog = ref(false)
+const prereqLoading = ref(false)
+const prereqError = ref('')
+const prereqOptions = ref([])
+const missingPrereqs = ref([])
+const prereqActionId = ref(null)
+
+const isPrereqError = (err) => {
+  const detail = err?.payload?.detail || err?.message || ''
+  return typeof detail === 'string' && detail.toLowerCase().includes('prereq')
+}
+
+const parseMissingPrereqs = (err) => {
+  const detail = err?.payload?.detail || err?.message || ''
+  const match = detail.match(/Missing prerequisites:\s*(.+)/i)
+  if (!match || !match[1]) return []
+  return match[1]
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+const loadPrereqSections = async (names = []) => {
+  if (!selectedScheduleId.value || !names.length) return []
+  const results = []
+  prereqLoading.value = true
+  prereqError.value = ''
+  try {
+    for (const name of names) {
+      const qs = encodeURIComponent(name)
+      const sections = await apiFetch(`/schedules/${selectedScheduleId.value}/sections?search=${qs}`)
+      const matching = sections.filter((item) =>
+        (item.courseName || '').toLowerCase().includes(name.toLowerCase())
+      )
+      if (matching.length) {
+        results.push({ name, sections: matching })
+      }
+    }
+  } catch (err) {
+    prereqError.value = err.message || 'Failed to load prerequisite options'
+  } finally {
+    prereqLoading.value = false
+  }
+  return results
+}
+
+const promptPrereqFallback = async (err, targetSectionId) => {
+  const missing = parseMissingPrereqs(err)
+  if (!missing.length) {
+    showFeedback(err.message || 'Prerequisite not met', 'error')
+    return
+  }
+
+  prereqTargetSection.value = targetSectionId
+  missingPrereqs.value = missing
+  const options = await loadPrereqSections(missing)
+
+  prereqOptions.value = options
+  if (!options.length) {
+    showFeedback('Prerequisite required but no available sections this term.', 'error')
+    return
+  }
+  prereqDialog.value = true
+}
+
+const addPrereqSection = async (sectionId) => {
+  if (!sectionId || !selectedSchedule.value) return
+  prereqActionId.value = sectionId
+  try {
+    await scheduleStore.addClassToSchedule(selectedSchedule.value.scheduleID, sectionId)
+    showFeedback('Prerequisite section added')
+    prereqDialog.value = false
+    await scheduleStore.searchSections(selectedSchedule.value.scheduleID, '')
+  } catch (err) {
+    showFeedback(err.message || 'Failed to add prerequisite section', 'error')
+  } finally {
+    prereqActionId.value = null
+  }
+}
 </script>

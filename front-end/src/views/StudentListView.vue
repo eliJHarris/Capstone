@@ -27,7 +27,7 @@
       {{ error }}
     </v-alert>
 
-    <v-row dense>
+    <v-row v-if="canViewRoster" dense>
       <v-col cols="12" md="4">
         <v-card rounded="xl" class="mb-4">
           <v-card-title>Filters</v-card-title>
@@ -172,17 +172,19 @@
                   v-model="advisorSelection"
                   :items="advisorSelectItems"
                   :loading="advisorsLoading || updatingAdvisor"
+                  :disabled="!canManageAssignments"
                   item-title="title"
                   item-value="value"
                   density="comfortable"
                   variant="outlined"
                   clearable
+                  :messages="!canManageAssignments ? ['Only admins can change advisor assignments'] : []"
                 />
               </div>
               <v-btn
                 color="primary"
                 :loading="updatingAdvisor"
-                :disabled="!selectedAdvisee || updatingAdvisor"
+                :disabled="!selectedAdvisee || updatingAdvisor || !canManageAssignments"
                 @click="handleAdvisorUpdate"
               >
                 Update Assignment
@@ -262,7 +264,17 @@
       </v-col>
     </v-row>
 
+    <v-alert
+      v-else
+      type="info"
+      class="mb-4"
+      variant="tonal"
+    >
+      Student directory is limited to advisors and admins.
+    </v-alert>
+
     <v-snackbar
+      v-if="canViewRoster"
       v-model="snackbar.show"
       :color="snackbar.color"
       timeout="3000"
@@ -278,6 +290,8 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { fetchAdvisees, updateAdviseeAdvisor } from '@/services/advisees'
 import { fetchAdvisors } from '@/services/advisors'
 import { useStudentProfileStore } from '@/stores/studentProfile'
+import { useUserRole } from '@/composables/useUserRole'
+import { NORMALIZED_ROLES } from '@/utils/auth'
 
 const UNASSIGNED_FILTER_VALUE = '__UNASSIGNED__'
 
@@ -297,6 +311,13 @@ const snackbar = reactive({
   text: '',
   color: 'success',
 })
+
+const { role } = useUserRole()
+const isAdmin = computed(() => role.value === NORMALIZED_ROLES.ADMIN)
+const canViewRoster = computed(
+  () => role.value === NORMALIZED_ROLES.ADMIN || role.value === NORMALIZED_ROLES.ADVISOR
+)
+const canManageAssignments = computed(() => isAdmin.value)
 
 const filters = reactive({
   search: '',
@@ -435,6 +456,10 @@ const normalizeAdvisee = (item) => ({
 })
 
 const loadAdvisors = async () => {
+  if (!canViewRoster.value) {
+    advisors.value = []
+    return
+  }
   advisorsLoading.value = true
   try {
     advisors.value = await fetchAdvisors({ limit: 200 })
@@ -447,6 +472,13 @@ const loadAdvisors = async () => {
 }
 
 const loadAdvisees = async () => {
+  if (!canViewRoster.value) {
+    advisees.value = []
+    selectedAdviseeId.value = null
+    advisorSelection.value = null
+    loading.value = false
+    return
+  }
   loading.value = true
   error.value = null
   const isUnassignedAdvisorFilter = filters.advisorId === UNASSIGNED_FILTER_VALUE
@@ -479,6 +511,7 @@ const loadAdvisees = async () => {
 }
 
 const applyFilters = () => {
+  if (!canViewRoster.value) return
   loadAdvisees()
 }
 
@@ -512,6 +545,10 @@ const rowClass = (item) => {
 
 const handleAdvisorUpdate = async () => {
   if (!selectedAdvisee.value) return
+  if (!canManageAssignments.value) {
+    showFeedback('Only admins can update advisor assignments', 'error')
+    return
+  }
   updatingAdvisor.value = true
   try {
     const advisorId = advisorSelection.value ?? null
@@ -554,6 +591,7 @@ watch(selectedAdvisee, (value) => {
 })
 
 onMounted(() => {
+  if (!canViewRoster.value) return
   loadAdvisors()
   loadAdvisees()
 })

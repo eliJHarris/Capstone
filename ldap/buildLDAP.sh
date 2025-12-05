@@ -20,13 +20,13 @@ PEOPLE_OU="ou=People,${OU_BASE}"
 GROUPS_OU="ou=Groups,${OU_BASE}"
 SERVICE_OU="ou=Service,${OU_BASE}"
 
-ALICE_DN="cn=Alice Advisor,${PEOPLE_OU}"
-ALICE_UID="a"
-ALICE_PASS="123"
+ADVISOR_DN="cn=Dr. Johnson,${PEOPLE_OU}"
+ADVISOR_UID="advisor_johnson"
+ADVISOR_PASS="123"
 
-BOB_DN="cn=Bob Advisee,${PEOPLE_OU}"
-BOB_UID="badvisee"
-BOB_PASS="AdviseePass123!"
+ADVISEE_DN="cn=Student 01,${PEOPLE_OU}"
+ADVISEE_UID="student_01"
+ADVISEE_PASS="123"
 
 APP_DN="cn=adviseme-app,${SERVICE_OU}"
 APP_PASS="AppBindPass123!"
@@ -175,24 +175,24 @@ ldap_search -b "$GROUPS_OU" "(cn=*)" dn cn member
 ########################################
 
 {
-ldap_add_ldif "Create people (Alice, Bob) and service account" <<LDIF
-dn: ${ALICE_DN}
+ldap_add_ldif "Create people (advisor_johnson, student_01) and service account" <<LDIF
+dn: ${ADVISOR_DN}
 objectClass: inetOrgPerson
-cn: Alice Advisor
-sn: Advisor
-givenName: Alice
-uid: ${ALICE_UID}
-mail: alice.advisor@adviseme.local
-userPassword: ${ALICE_PASS}
+cn: Dr. Johnson
+sn: Johnson
+givenName: Dr.
+uid: ${ADVISOR_UID}
+mail: johnson@college.edu
+userPassword: ${ADVISOR_PASS}
 
-dn: ${BOB_DN}
+dn: ${ADVISEE_DN}
 objectClass: inetOrgPerson
-cn: Bob Advisee
-sn: Advisee
-givenName: Bob
-uid: ${BOB_UID}
-mail: bob.advisee@adviseme.local
-userPassword: ${BOB_PASS}
+cn: Student 01
+sn: Student
+givenName: Student
+uid: ${ADVISEE_UID}
+mail: s01@college.edu
+userPassword: ${ADVISEE_PASS}
 
 dn: ${APP_DN}
 objectClass: simpleSecurityObject
@@ -214,16 +214,16 @@ ldap_search -b "$SERVICE_OU" "(cn=adviseme-app)" dn cn
 ########################################
 
 {
-ldap_modify_ldif "Add Alice to advisors; Bob to advisees" <<LDIF
+ldap_modify_ldif "Add advisor_johnson to advisors; student_01 to advisees" <<LDIF
 dn: ${ADVISORS_DN}
 changetype: modify
 add: member
-member: ${ALICE_DN}
+member: ${ADVISOR_DN}
 
 dn: ${ADVISEES_DN}
 changetype: modify
 add: member
-member: ${BOB_DN}
+member: ${ADVISEE_DN}
 LDIF
 } || warn "Group membership may already exist, continuing."
 
@@ -234,17 +234,17 @@ ldap_search -b "$GROUPS_OU" "(objectClass=groupOfNames)" dn cn member
 # ===== 5. Test simple binds       ==== #
 ########################################
 
-log "Test bind for Alice"
+log "Test bind for advisor_johnson"
 sudo docker exec "$LDAP_CONTAINER" ldapwhoami -x \
   -H "$LDAP_URL" \
-  -D "$ALICE_DN" \
-  -w "$ALICE_PASS" >/dev/null && ok "Alice bind OK" || warn "Alice bind FAILED"
+  -D "$ADVISOR_DN" \
+  -w "$ADVISOR_PASS" >/dev/null && ok "advisor_johnson bind OK" || warn "advisor_johnson bind FAILED"
 
-log "Test bind for Bob"
+log "Test bind for student_01"
 sudo docker exec "$LDAP_CONTAINER" ldapwhoami -x \
   -H "$LDAP_URL" \
-  -D "$BOB_DN" \
-  -w "$BOB_PASS" >/dev/null && ok "Bob bind OK" || warn "Bob bind FAILED"
+  -D "$ADVISEE_DN" \
+  -w "$ADVISEE_PASS" >/dev/null && ok "student_01 bind OK" || warn "student_01 bind FAILED"
 
 ########################################
 # ===== 6. Snapshot tree           ==== #
