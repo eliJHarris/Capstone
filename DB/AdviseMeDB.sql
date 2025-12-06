@@ -312,6 +312,27 @@ INSERT INTO courses (courseID, courseName, description, credits) VALUES
 (20, 'Biology I', 'Cell biology and genetics with lab', 4),
 (21, 'Calculus II', 'Integration techniques and series', 4);
 
+-- Business core courses for BBA advisees
+INSERT INTO courses (courseID, courseName, description, credits) VALUES
+(9001, 'Foundations of Business', 'MGMT 1203 – Foundations of Business', 3),
+(9002, 'Introduction to Speech Communication', 'SPCH 1203 – Introduction to Speech Communication', 3),
+(9003, 'Introduction to International Business', 'MGMT 2203 – Introduction to International Business', 3),
+(9004, 'Principles of Macroeconomics', 'ECON 2803 – Principles of Macroeconomics', 3),
+(9005, 'Legal Environment of Business', 'LAW 2003 – Legal Environment of Business', 3),
+(9006, 'Business Information Systems', 'MGMT 2303 – Business Information Systems', 3),
+(9007, 'Principles of Microeconomics', 'ECON 2813 – Principles of Microeconomics', 3),
+(9008, 'Principles of Financial Accounting', 'ACCT 2803 – Principles of Financial Accounting', 3),
+(9009, 'Principles of Marketing Management', 'MKTG 3013 – Principles of Marketing Management', 3),
+(9010, 'Social Responsibility and Ethics in Business', 'MGMT 3133 – Social Responsibility and Ethics in Business', 3),
+(9011, 'Organizational Behavior', 'MGMT 3153 – Organizational Behavior', 3),
+(9012, 'Business Finance', 'FIN 3713 – Business Finance', 3),
+(9013, 'Business Analytics', 'MGMT 3513 – Business Analytics', 3),
+(9014, 'Operations Management', 'MGMT 3523 – Operations Management', 3)
+ON DUPLICATE KEY UPDATE
+  courseName = VALUES(courseName),
+  description = VALUES(description),
+  credits = VALUES(credits);
+
 -- Correct table name here: sections (not section)
 INSERT INTO sections (sectionID, courseID, termID, crn, capacity, enrolled, professorName, status, description) VALUES
 (1, 1, 2, 'CS101-SP', 30, 25, 'Dr. Alan Turing', 'OPEN', 'Introductory CS course'),
@@ -378,6 +399,23 @@ INSERT INTO sections (sectionID, courseID, termID, crn, capacity, enrolled, prof
 (50, 18,6, 'BUSL201-SP23', 35, 28, 'Dr. Oliver Wendell Holmes', 'CLOSED', 'Business Law'),
 (51, 21,6, 'MATH201-SP23', 35, 30, 'Dr. Emmy Noether', 'CLOSED', 'Calculus II'),
 (52, 11,6, 'CS301-SP23', 30, 24, 'Dr. Donald Knuth', 'CLOSED', 'Algorithms');
+
+-- Dedicated sections for student 08's business requirements (Fall 2023 term)
+INSERT INTO sections (sectionID, courseID, termID, crn, capacity, enrolled, professorName, status, description) VALUES
+(9050, 9001, 5, 'MGMT1203-FA23', 30, 25, 'Prof. Business Core', 'CLOSED', 'Foundations of Business (BBA core)'),
+(9051, 9002, 5, 'SPCH1203-FA23', 30, 25, 'Prof. Business Core', 'CLOSED', 'Speech Communication for business majors'),
+(9052, 9003, 5, 'MGMT2203-FA23', 30, 25, 'Prof. Business Core', 'CLOSED', 'International Business overview'),
+(9053, 9004, 5, 'ECON2803-FA23', 40, 30, 'Prof. Business Core', 'CLOSED', 'Macroeconomics principles'),
+(9054, 9005, 5, 'LAW2003-FA23', 40, 30, 'Prof. Business Core', 'CLOSED', 'Legal Environment of Business'),
+(9055, 9006, 5, 'MGMT2303-FA23', 35, 28, 'Prof. Business Core', 'CLOSED', 'Business Information Systems'),
+(9056, 9007, 5, 'ECON2813-FA23', 40, 30, 'Prof. Business Core', 'CLOSED', 'Microeconomics principles'),
+(9057, 9008, 5, 'ACCT2803-FA23', 35, 28, 'Prof. Business Core', 'CLOSED', 'Financial Accounting'),
+(9058, 9009, 5, 'MKTG3013-FA23', 35, 28, 'Prof. Business Core', 'CLOSED', 'Marketing Management'),
+(9059, 9010, 5, 'MGMT3133-FA23', 30, 24, 'Prof. Business Core', 'CLOSED', 'Social Responsibility and Ethics'),
+(9060, 9011, 5, 'MGMT3153-FA23', 30, 24, 'Prof. Business Core', 'CLOSED', 'Organizational Behavior'),
+(9061, 9012, 5, 'FIN3713-FA23', 35, 26, 'Prof. Business Core', 'CLOSED', 'Business Finance'),
+(9062, 9013, 5, 'MGMT3513-FA23', 30, 24, 'Prof. Business Core', 'CLOSED', 'Business Analytics'),
+(9063, 9014, 5, 'MGMT3523-FA23', 30, 24, 'Prof. Business Core', 'CLOSED', 'Operations Management');
 
 -- Fall 2022 sections (termID 7)
 INSERT INTO sections (sectionID, courseID, termID, crn, capacity, enrolled, professorName, status, description) VALUES
@@ -546,6 +584,23 @@ INSERT INTO enrollments (enrollmentID, adviseeID, sectionID, courseID, status, g
 (104,25, 41,20,'COMPLETED', 'A', 4, 1, '2023-09-20 09:10:00'),
 (105,25, 37,6, 'COMPLETED', 'B+',4, 1, '2023-09-21 09:12:00'),
 (106,25, 40,15,'COMPLETED', 'B', 3, 1, '2023-09-22 09:15:00');
+
+-- Additional BBA core history for advisee 8
+INSERT INTO enrollments (enrollmentID, adviseeID, sectionID, courseID, status, grade, creditsEarned, attemptedNumber, createdWhen) VALUES
+(107, 8, 9050, 9001, 'COMPLETED', 'A', 3, 1, '2023-09-01 08:00:00'),
+(108, 8, 9051, 9002, 'COMPLETED', 'A', 3, 1, '2023-09-03 08:05:00'),
+(109, 8, 9052, 9003, 'COMPLETED', 'A-', 3, 1, '2023-09-05 08:10:00'),
+(110, 8, 9053, 9004, 'COMPLETED', 'B+', 3, 1, '2023-09-07 08:15:00'),
+(111, 8, 9054, 9005, 'COMPLETED', 'A', 3, 1, '2023-09-09 08:20:00'),
+(112, 8, 9055, 9006, 'COMPLETED', 'A-', 3, 1, '2023-09-11 08:25:00'),
+(113, 8, 9056, 9007, 'COMPLETED', 'B+', 3, 1, '2023-09-13 08:30:00'),
+(114, 8, 9057, 9008, 'COMPLETED', 'A', 3, 1, '2023-09-15 08:35:00'),
+(115, 8, 9058, 9009, 'COMPLETED', 'A-', 3, 1, '2023-09-17 08:40:00'),
+(116, 8, 9059, 9010, 'COMPLETED', 'B+', 3, 1, '2023-09-19 08:45:00'),
+(117, 8, 9060, 9011, 'COMPLETED', 'A', 3, 1, '2023-09-21 08:50:00'),
+(118, 8, 9061, 9012, 'COMPLETED', 'A-', 3, 1, '2023-09-23 08:55:00'),
+(119, 8, 9062, 9013, 'COMPLETED', 'B+', 3, 1, '2023-09-25 09:00:00'),
+(120, 8, 9063, 9014, 'COMPLETED', 'A', 3, 1, '2023-09-27 09:05:00');
 
 -- Use correct enum casing for status ('Active')
 INSERT INTO degreePlan (degreePlanID, adviseeID, name, catalog, status, createdWhen, updatedWhen) VALUES

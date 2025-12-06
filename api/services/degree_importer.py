@@ -77,13 +77,15 @@ def _normalize_completed_courses(raw_courses):
             credits_value = 0.0
         if credits_value <= 0:
             credits_value = 3.0
+        status = (course.get("status") or "COMPLETED").upper()
         normalized.append(
             {
                 "code": course.get("code") or f"COURSE-{idx+1}",
                 "title": course.get("title"),
                 "credits": credits_value,
                 "term": course.get("term"),
-                "status": course.get("status") or "COMPLETED",
+                "status": status,
+                "source": course.get("source") or "PDF_IMPORT",
             }
         )
     return normalized
@@ -112,6 +114,38 @@ def _build_requirement_groups(program_name: str, courses):
     ]
 
 
+def _create_validation_record(
+    db: Session,
+    advisee_id: int,
+    context: AdviseeDegreeContext,
+    requirement_set: DegreeRequirementSet,
+) -> DegreePlanValidation:
+    """
+    Create a validation entry and immediately run the validator so completion %
+    reflects real data instead of a placeholder 100% result.
+    """
+    now = datetime.utcnow()
+    validation = DegreePlanValidation(
+        adviseeID=advisee_id,
+        contextID=context.contextID,
+        requirementSetID=requirement_set.requirementSetID,
+        status=ValidationStatus.PENDING,
+        runType=ValidationRunType.MANUAL,
+        createdAt=now,
+        updatedAt=now,
+    )
+    db.add(validation)
+    db.commit()
+    db.refresh(validation)
+
+    # Import locally to avoid circular import at module load time.
+    from services.degree_plan_service import process_validation_job
+
+    process_validation_job(validation.validationID)
+    db.refresh(validation)
+    return validation
+
+
 def import_degree_plan_from_pdf_url(
     db: Session,
     advisee_id: int,
@@ -123,6 +157,8 @@ def import_degree_plan_from_pdf_url(
     if not normalized:
         raise Exception("Missing pdfUrl")
 
+    source_scope = f"advisee:{advisee_id}"
+    note_text = f"Imported from PDF: {normalized}"
     lower = normalized.lower()
     if lower.endswith(".pdf"):
         try:
@@ -136,7 +172,9 @@ def import_degree_plan_from_pdf_url(
             advisee_id,
             resp.content,
             source_label=normalized,
-            note_prefix=f"Imported from PDF: {normalized}",
+            note_prefix=note_text,
+            source_scope=source_scope,
+            create_validation=create_validation,
         )
 
     # 1. SCRAPE PDF
@@ -159,16 +197,22 @@ def import_degree_plan_from_pdf_url(
     program_code = (programName or "UNKNOWN").replace(" ", "-").upper()
     _ensure_major_exists(db, program_code, programName)
     _update_advisee_program(db, advisee_id, program_code, programName)
+    base_catalog_year = catalogYear or "UNSPECIFIED"
+    scoped_catalog_year = f"{base_catalog_year}::ADV-{advisee_id}"
+    note_text = f"{note_text} (Catalog {base_catalog_year})"
+    note_text = f"Imported from PDF: {normalized} (Catalog {base_catalog_year})"
 
     # 3. PARSE COMPLETED COURSES
     completed = _normalize_completed_courses(extract_courses(text))
+    source_scope = f"advisee:{advisee_id}"
 
     # 4. FIND OR CREATE REQUIREMENT SET
     requirement_set = (
         db.query(DegreeRequirementSet)
         .filter(
             DegreeRequirementSet.programCode == program_code,
-            DegreeRequirementSet.catalogYear == catalogYear
+            DegreeRequirementSet.catalogYear == scoped_catalog_year,
+            DegreeRequirementSet.sourceDocument == source_scope,
         )
         .first()
     )
@@ -177,11 +221,11 @@ def import_degree_plan_from_pdf_url(
         now = datetime.utcnow()
         requirement_set = DegreeRequirementSet(
             programCode=program_code,
-            catalogYear=catalogYear,
+            catalogYear=scoped_catalog_year,
             programName=programName,
             totalCredits=_calculate_total_requirement(completed) or 1,
             requirementData=_build_requirement_groups(programName, completed),
-            sourceDocument=normalized,
+            sourceDocument=source_scope,
             createdAt=now,
             updatedAt=now,
         )
@@ -195,7 +239,8 @@ def import_degree_plan_from_pdf_url(
                 db.query(DegreeRequirementSet)
                 .filter(
                     DegreeRequirementSet.programCode == program_code,
-                    DegreeRequirementSet.catalogYear == catalogYear
+                    DegreeRequirementSet.catalogYear == scoped_catalog_year,
+                    DegreeRequirementSet.sourceDocument == source_scope,
                 )
                 .first()
             )
@@ -213,45 +258,22 @@ def import_degree_plan_from_pdf_url(
         context = AdviseeDegreeContext(
             adviseeID=advisee_id,
             requirementSetID=requirement_set.requirementSetID,
-            completedCourses=completed,
-            notes=f"Imported from PDF: {normalized}",
+            completedCourses=[],
+            notes=note_text,
             createdAt=datetime.now()
         )
         db.add(context)
     else:
-        context.completedCourses = completed
         context.requirementSetID = requirement_set.requirementSetID
         context.updatedAt = datetime.now()
+        context.notes = note_text
 
     db.commit()
     db.refresh(context)
 
     validation = None
     if create_validation:
-        # 6. CREATE VALIDATION ENTRY (RUN IMMEDIATELY)
-        now = datetime.utcnow()
-        validation = DegreePlanValidation(
-            adviseeID=advisee_id,
-            contextID=context.contextID,
-            requirementSetID=requirement_set.requirementSetID,
-            status=ValidationStatus.RUNNING,
-            runType=ValidationRunType.MANUAL,
-            startedAt=datetime.now(),
-            createdAt=now,
-            updatedAt=now,
-        )
-        db.add(validation)
-        db.commit()
-        db.refresh(validation)
-
-        # Placeholder validation record for the import; actual validations run separately.
-        validation.issues = []
-        validation.status = ValidationStatus.PASSED
-        validation.completionPercent = 100.0
-        validation.finishedAt = datetime.now()
-
-        db.commit()
-        db.refresh(validation)
+        validation = _create_validation_record(db, advisee_id, context, requirement_set)
 
     return {
         "requirementSet": requirement_set,
@@ -265,6 +287,7 @@ def import_degree_plan_from_pdf_bytes(
     pdf_bytes: bytes,
     source_label: str = "uploaded-pdf",
     note_prefix: Optional[str] = "Imported from uploaded PDF",
+    source_scope: Optional[str] = None,
     create_validation: bool = True,
 ):
     if not pdf_bytes:
@@ -286,16 +309,31 @@ def import_degree_plan_from_pdf_bytes(
     program_code = (programName or "UNKNOWN").replace(" ", "-").upper()
     _ensure_major_exists(db, program_code, programName)
     _update_advisee_program(db, advisee_id, program_code, programName)
+    base_catalog_year = catalogYear or "UNSPECIFIED"
+    scoped_catalog_year = f"{base_catalog_year}::ADV-{advisee_id}"
+
+    base_note = (note_prefix or "").strip()
+    if not base_note:
+        base_note = "Imported from uploaded PDF"
+    elif (
+        base_note == "Imported from uploaded PDF"
+        and source_label
+        and source_label not in base_note
+    ):
+        base_note = f"{base_note}: {source_label}"
+    note_text = f"{base_note} (Catalog {base_catalog_year})"
 
     # --- 3. Parse Completed Courses ---
     completed = _normalize_completed_courses(extract_courses(text))
+    source_scope = source_scope or f"advisee:{advisee_id}"
 
     # --- 4. Find or Create Requirement Set ---
     requirement_set = (
         db.query(DegreeRequirementSet)
         .filter(
             DegreeRequirementSet.programCode == program_code,
-            DegreeRequirementSet.catalogYear == catalogYear
+            DegreeRequirementSet.catalogYear == scoped_catalog_year,
+            DegreeRequirementSet.sourceDocument == source_scope,
         )
         .first()
     )
@@ -304,11 +342,11 @@ def import_degree_plan_from_pdf_bytes(
         now = datetime.utcnow()
         requirement_set = DegreeRequirementSet(
             programCode=program_code,
-            catalogYear=catalogYear,
+            catalogYear=scoped_catalog_year,
             programName=programName,
             totalCredits=_calculate_total_requirement(completed) or 1,
             requirementData=_build_requirement_groups(programName, completed),
-            sourceDocument=source_label,
+            sourceDocument=source_scope,
             createdAt=now,
             updatedAt=now,
         )
@@ -322,7 +360,8 @@ def import_degree_plan_from_pdf_bytes(
                 db.query(DegreeRequirementSet)
                 .filter(
                     DegreeRequirementSet.programCode == program_code,
-                    DegreeRequirementSet.catalogYear == catalogYear
+                    DegreeRequirementSet.catalogYear == scoped_catalog_year,
+                    DegreeRequirementSet.sourceDocument == source_scope,
                 )
                 .first()
             )
@@ -340,45 +379,22 @@ def import_degree_plan_from_pdf_bytes(
         context = AdviseeDegreeContext(
             adviseeID=advisee_id,
             requirementSetID=requirement_set.requirementSetID,
-            completedCourses=completed,
-            notes=note_prefix,
-            createdAt=datetime.now()
+            completedCourses=[],
+            notes=note_text,
+            createdAt=datetime.now(),
         )
         db.add(context)
     else:
-        context.completedCourses = completed
         context.requirementSetID = requirement_set.requirementSetID
         context.updatedAt = datetime.now()
+        context.notes = note_text
 
     db.commit()
     db.refresh(context)
 
     validation = None
     if create_validation:
-        # --- 6. Create Validation Entry ---
-        now = datetime.utcnow()
-        validation = DegreePlanValidation(
-            adviseeID=advisee_id,
-            contextID=context.contextID,
-            requirementSetID=requirement_set.requirementSetID,
-            status=ValidationStatus.RUNNING,
-            runType=ValidationRunType.MANUAL,
-            startedAt=now,
-            createdAt=now,
-            updatedAt=now,
-        )
-        db.add(validation)
-        db.commit()
-        db.refresh(validation)
-
-        # Placeholder validation record for the import; actual validations run separately.
-        validation.issues = []
-        validation.status = ValidationStatus.PASSED
-        validation.completionPercent = 100.0
-        validation.finishedAt = datetime.now()
-
-        db.commit()
-        db.refresh(validation)
+        validation = _create_validation_record(db, advisee_id, context, requirement_set)
 
     return {
         "requirementSet": requirement_set,

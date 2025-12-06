@@ -1,8 +1,9 @@
 import logging
+import math
 import os
 import re
 from datetime import datetime
-from typing import List, Optional, Set, Tuple
+from typing import List, Optional
 from urllib.parse import quote_plus
 
 from fastapi import BackgroundTasks, HTTPException
@@ -30,268 +31,160 @@ from schemas.degree_plan import (
     AdviseeContextUpsert,
     DegreeRequirementSetCreate,
     DegreeRequirementSetResponse,
-    ValidationIssue,
+)
+from services.category_rules import (
+    CATEGORY_RULES,
+    detect_category_from_group,
+    detect_category_from_courses,
+    completed_satisfies_category,
+)
+from services.course_matching import (
+    extract_codes_from_text,
+    expand_requirement_codes,
+    merge_completed_sources,
+    serialize_courses,
 )
 from services.degree_importer import import_degree_plan_from_pdf_url
 from services.transcript_service import TranscriptService
+
 
 CATALOG_SEARCH_URL = os.environ.get(
     "DEGREE_PLAN_CATALOG_SEARCH_URL",
     "https://uafs.edu/search?q={query}",
 )
 DEFAULT_CATALOG_YEAR = os.environ.get("DEGREE_PLAN_DEFAULT_CATALOG_YEAR", "2024-2025")
+
 CATALOG_YEAR_PATTERN = re.compile(r"(20\d{2})(?:[-/](20\d{2}))?")
-COURSE_CODE_PATTERN = re.compile(r"\b([A-Z]{2,4})\s*-?\s*(\d{3,4}[A-Z]?)\b")
-
-LAB_SCIENCE_PREFIXES = {
-    "ASTR",
-    "BIOL",
-    "CHEM",
-    "GEOG",
-    "GEOL",
-    "GEOS",
-    "PHSC",
-    "PHYS",
-}
-FINE_ARTS_PREFIXES = {
-    "ART",
-    "ARTH",
-    "DANC",
-    "FILM",
-    "MUS",
-    "THEA",
-}
-
-REQUIREMENT_CATEGORY_RULES = {
-    "lab_science": {
-        "label": "Lab Science Requirement",
-        "requirement_keywords": {
-            "LAB SCIENCE",
-            "SCIENCE LAB",
-            "LABORATORY SCIENCE",
-            "SCIENCE W/LAB",
-            "SCIENCE W-LAB",
-        },
-        "course_prefixes": LAB_SCIENCE_PREFIXES,
-        "course_keywords": {
-            "BIOLOGY",
-            "CHEMISTRY",
-            "PHYSICS",
-            "GEOLOGY",
-            "ASTRONOMY",
-            "LAB SCIENCE",
-        },
-    },
-    "fine_arts": {
-        "label": "Fine Arts Requirement",
-        "requirement_keywords": {
-            "FINE ART",
-            "FINE-ART",
-            "FINE ARTS",
-            "ARTS REQUIREMENT",
-            "CREATIVE ARTS",
-            "ART/MUSIC",
-            "ART OR MUSIC",
-            "ART OR THEATRE",
-        },
-        "course_prefixes": FINE_ARTS_PREFIXES,
-        "course_keywords": {
-            "FINE ART",
-            "MUSIC",
-            "THEATRE",
-            "THEATER",
-            "DANCE",
-            "ART HISTORY",
-            "ART APPRECIATION",
-        },
-    },
-}
 
 
-def _serialize_completed_courses(courses: List[dict]) -> List[dict]:
-    serialized = []
-    for course in courses or []:
-        serialized.append(
-            {
-                "code": course.get("code", "").upper(),
-                "title": course.get("title"),
-                "credits": float(course.get("credits", 0)),
-                "term": course.get("term"),
-                "status": course.get("status", "COMPLETED"),
-            }
-        )
-    return serialized
+# ------------------------------
+# UTILITIES
+# ------------------------------
 
-
-def _normalize_validation(validation: Optional[DegreePlanValidation]):
-    if validation and validation.issues is None:
-        validation.issues = []
-    return validation
-
-def _extract_codes_from_text(value: Optional[str]) -> Set[str]:
+def normalize_catalog_display(value: Optional[str]) -> Optional[str]:
     if not value:
-        return set()
-    matches = COURSE_CODE_PATTERN.findall(value.upper())
-    normalized = set()
-    for prefix, number in matches:
-        if not prefix or not number:
-            continue
-        normalized.add(f"{prefix} {number}")
-    return normalized
+        return value
+    marker = "::ADV-"
+    return value.split(marker, 1)[0].strip() if marker in value else value
 
 
-def _normalize_text_blob(*values: Optional[str]) -> str:
-    parts = [value.strip() for value in values if isinstance(value, str) and value.strip()]
-    if not parts:
-        return ""
-    return " ".join(parts).upper()
+def _normalize_catalog_year_display(value: Optional[str]) -> Optional[str]:
+    """
+    Backwards-compatible alias used in existing unit tests.
+    """
+    return normalize_catalog_display(value)
 
+
+def _merge_completed_course_sources(*sources: Optional[List[dict]]):
+    """
+    Backwards-compatible alias that points to the shared merge helper.
+    """
+    return merge_completed_sources(*sources)
+
+
+def load_context(db: Session, advisee_id: int) -> Optional[AdviseeDegreeContext]:
+    return (
+        db.query(AdviseeDegreeContext)
+        .filter(AdviseeDegreeContext.adviseeID == advisee_id)
+        .first()
+    )
+
+
+# ------------------------------
+# DEGREE PLAN SERVICE
+# ------------------------------
 
 class DegreePlanService:
+
+    # ----------------------------------------
+    # CONTEXT LOADING & BOOTSTRAP
+    # ----------------------------------------
+    @staticmethod
+    def _normalize_validation_record(record: Optional[DegreePlanValidation]):
+        if record:
+            record.issues = record.issues or []
+            if record.completionPercent is None:
+                record.completionPercent = 0.0
+        return record
+
+    @staticmethod
+    def _is_manual_requirement(requirement: Optional[DegreeRequirementSet], advisee_id: int) -> bool:
+        if not requirement:
+            return False
+        scope = f"advisee:{advisee_id}"
+        suffix = f"::ADV-{advisee_id}"
+        source = (requirement.sourceDocument or "").strip()
+        catalog = (requirement.catalogYear or "").strip()
+        return bool(source == scope or catalog.endswith(suffix))
+
+    @classmethod
+    def _load_manual_requirement(cls, db: Session, advisee_id: int) -> Optional[DegreeRequirementSet]:
+        scope = f"advisee:{advisee_id}"
+        suffix = f"::ADV-{advisee_id}"
+        requirement = (
+            db.query(DegreeRequirementSet)
+            .filter(DegreeRequirementSet.sourceDocument == scope)
+            .order_by(DegreeRequirementSet.updatedAt.desc())
+            .first()
+        )
+        if requirement:
+            return requirement
+        return (
+            db.query(DegreeRequirementSet)
+            .filter(DegreeRequirementSet.catalogYear.ilike(f"%{suffix}"))
+            .order_by(DegreeRequirementSet.updatedAt.desc())
+            .first()
+        )
+
     @staticmethod
     def _normalize_program_code(value: Optional[str]) -> Optional[str]:
         if not value:
             return None
-        normalized = value.strip()
-        if not normalized:
-            return None
-        return normalized.replace(" ", "-").upper()
-
-    @staticmethod
-    def _detect_requirement_category(course: Optional[dict], group_description: Optional[str]) -> Optional[str]:
-        course = course or {}
-        text = _normalize_text_blob(
-            course.get("title"),
-            course.get("code"),
-            course.get("description"),
-            group_description,
-        )
-        if not text:
-            return None
-
-        for category, rule in REQUIREMENT_CATEGORY_RULES.items():
-            keywords = rule.get("requirement_keywords") or set()
-            if any(keyword in text for keyword in keywords):
-                return category
-        return None
-
-    @staticmethod
-    def _completed_satisfies_category(category: str, completed_courses: List[dict]) -> bool:
-        rule = REQUIREMENT_CATEGORY_RULES.get(category)
-        if not rule:
-            return False
-
-        prefixes = rule.get("course_prefixes") or set()
-        keywords = rule.get("course_keywords") or set()
-        for completed in completed_courses or []:
-            code = (completed.get("code") or "").upper().strip()
-            title = (completed.get("title") or "").upper().strip()
-            combined = _normalize_text_blob(code, title)
-
-            if code and any(code.startswith(prefix) for prefix in prefixes):
-                return True
-            if combined and any(keyword in combined for keyword in keywords):
-                return True
-        return False
-
-    @classmethod
-    def _ensure_context_alignment(
-        cls, db: Session, advisee_id: int
-    ) -> Tuple[Optional[AdviseeProfile], Optional[AdviseeDegreeContext], Optional[DegreeRequirementSet]]:
-        profile = (
-            db.query(AdviseeProfile)
-            .filter(AdviseeProfile.adviseeID == advisee_id)
-            .first()
-        )
-        context = cls._load_context(db, advisee_id)
-        requirement = None
-        if context:
-            requirement = (
-                db.query(DegreeRequirementSet)
-                .filter(DegreeRequirementSet.requirementSetID == context.requirementSetID)
-                .first()
-            )
-
-        desired_code = cls._normalize_program_code(
-            (profile.degree_plan or profile.major) if profile else None
-        )
-        requirement_code = cls._normalize_program_code(
-            requirement.programCode if requirement else None
-        )
-
-        if not context or not requirement or (desired_code and requirement_code != desired_code):
-            bootstrapped = cls._bootstrap_context_from_scraper(db, advisee_id)
-            if bootstrapped:
-                context = cls._load_context(db, advisee_id)
-                if context:
-                    requirement = (
-                        db.query(DegreeRequirementSet)
-                        .filter(DegreeRequirementSet.requirementSetID == context.requirementSetID)
-                        .first()
-                    )
-
-        return profile, context, requirement
-
-    @staticmethod
-    def _load_context(db: Session, advisee_id: int) -> Optional[AdviseeDegreeContext]:
-        return (
-            db.query(AdviseeDegreeContext)
-            .filter(AdviseeDegreeContext.adviseeID == advisee_id)
-            .first()
-        )
+        v = value.replace(" ", "-").strip().upper()
+        return v or None
 
     @staticmethod
     def _infer_catalog_year(profile: AdviseeProfile) -> str:
-        raw_value = (profile.degree_plan or "").strip()
-        if not raw_value:
+        raw = (profile.degree_plan or "").strip()
+        if not raw:
             return DEFAULT_CATALOG_YEAR
 
-        match = CATALOG_YEAR_PATTERN.search(raw_value)
-        if match:
-            start_year = match.group(1)
-            end_year = match.group(2)
-            if end_year:
-                return f"{start_year}-{end_year}"
-            return start_year
+        m = CATALOG_YEAR_PATTERN.search(raw)
+        if m:
+            start, end = m.group(1), m.group(2)
+            return f"{start}-{end}" if end else start
 
-        upper_value = raw_value.upper()
-        if upper_value.startswith("CAT"):
-            return upper_value
+        up = raw.upper()
+        if up.startswith("CAT"):
+            return up
 
         return DEFAULT_CATALOG_YEAR
 
     @staticmethod
-    def _build_keyword_list(*terms: Optional[str]) -> List[str]:
-        keywords: List[str] = []
-        for term in terms:
-            if not term:
+    def _build_keywords(*terms: Optional[str]) -> List[str]:
+        keywords = []
+        for t in terms:
+            if not t:
                 continue
-            tokens = re.split(r"[\s,/._-]+", term)
-            keywords.extend(token for token in tokens if token)
+            tokens = re.split(r"[\s,/._-]+", t)
+            keywords.extend(tok for tok in tokens if tok)
         return keywords
 
     @staticmethod
-    def _build_catalog_seed_url(program_code: Optional[str], catalog_year: Optional[str]) -> str:
+    def _build_catalog_seed_url(program_code: Optional[str], catalog_year: Optional[str]):
         terms = [program_code or "", catalog_year or "", "degree plan pdf"]
-        query = "+".join(
-            quote_plus(term.strip())
-            for term in terms
-            if isinstance(term, str) and term.strip()
-        )
-        if not query:
-            query = "degree+plan"
+        query = "+".join(quote_plus(t.strip()) for t in terms if t and t.strip())
 
         if "{query}" in CATALOG_SEARCH_URL:
-            return CATALOG_SEARCH_URL.format(query=query)
+            return CATALOG_SEARCH_URL.format(query=query or "degree+plan")
 
-        suffix = ""
-        if not CATALOG_SEARCH_URL.endswith(("?", "&")):
-            suffix = "&" if "?" in CATALOG_SEARCH_URL else "?"
-
+        suffix = "" if CATALOG_SEARCH_URL.endswith(("?", "&")) else (
+            "&" if "?" in CATALOG_SEARCH_URL else "?"
+        )
         return f"{CATALOG_SEARCH_URL}{suffix}{query}"
 
     @classmethod
-    def _bootstrap_context_from_scraper(cls, db: Session, advisee_id: int) -> bool:
+    def _bootstrap_context(cls, db: Session, advisee_id: int):
         profile = (
             db.query(AdviseeProfile)
             .filter(AdviseeProfile.adviseeID == advisee_id)
@@ -306,10 +199,8 @@ class DegreePlanService:
             return False
 
         catalog_year = cls._infer_catalog_year(profile)
-        keywords = cls._build_keyword_list(program_hint, major_code, catalog_year)
-        seed_url = cls._build_catalog_seed_url(
-            program_hint or major_code, catalog_year
-        )
+        keywords = cls._build_keywords(program_hint, major_code, catalog_year)
+        seed_url = cls._build_catalog_seed_url(program_hint or major_code, catalog_year)
 
         try:
             import_degree_plan_from_pdf_url(
@@ -320,19 +211,84 @@ class DegreePlanService:
                 create_validation=False,
             )
             return True
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logging.warning(
-                "Auto degree plan bootstrap failed for advisee %s (program=%s, catalog=%s): %s",
+                "Degree plan bootstrap failed for advisee %s: %s",
                 advisee_id,
-                program_hint or major_code,
-                catalog_year,
                 exc,
             )
             return False
 
+    @classmethod
+    def _ensure_context(cls, db: Session, advisee_id: int):
+        profile = (
+            db.query(AdviseeProfile)
+            .filter(AdviseeProfile.adviseeID == advisee_id)
+            .first()
+        )
+        context = load_context(db, advisee_id)
+
+        requirement = (
+            db.query(DegreeRequirementSet)
+            .filter(
+                DegreeRequirementSet.requirementSetID == context.requirementSetID
+            )
+            .first()
+            if context else None
+        )
+
+        desired_code = cls._normalize_program_code(
+            (profile.degree_plan or profile.major) if profile else None
+        )
+        requirement_code = cls._normalize_program_code(
+            requirement.programCode if requirement else None
+        )
+        manual_requirement = requirement if cls._is_manual_requirement(requirement, advisee_id) else None
+        if not manual_requirement:
+            manual_requirement = cls._load_manual_requirement(db, advisee_id)
+
+        if not context and manual_requirement:
+            context = AdviseeDegreeContext(
+                adviseeID=advisee_id,
+                requirementSetID=manual_requirement.requirementSetID,
+                completedCourses=[],
+            )
+            db.add(context)
+            db.commit()
+            db.refresh(context)
+            requirement = manual_requirement
+            requirement_code = cls._normalize_program_code(manual_requirement.programCode)
+
+        needs_bootstrap = (
+            not manual_requirement
+            and (
+                not context
+                or not requirement
+                or (desired_code and requirement_code and desired_code != requirement_code)
+            )
+        )
+
+        if needs_bootstrap:
+            if cls._bootstrap_context(db, advisee_id):
+                context = load_context(db, advisee_id)
+                if context:
+                    requirement = (
+                        db.query(DegreeRequirementSet)
+                        .filter(
+                            DegreeRequirementSet.requirementSetID == context.requirementSetID
+                        )
+                        .first()
+                    )
+                    if cls._is_manual_requirement(requirement, advisee_id):
+                        manual_requirement = requirement
+
+        return profile, context, requirement
+
+    # ----------------------------------------
+    # COURSE COLLECTION
+    # ----------------------------------------
     @staticmethod
-    def _collect_courses_from_schedules(db: Session, advisee_id: int) -> List[dict]:
-        """Build a de-duplicated list of courses pulled from the advisee's schedules."""
+    def _collect_courses_from_schedules(db: Session, advisee_id: int):
         schedules = (
             db.query(Schedule)
             .options(
@@ -343,40 +299,38 @@ class DegreePlanService:
             )
             .filter(Schedule.adviseeID == advisee_id)
             .order_by(
-                case((Schedule.status == ScheduleStatusEnum.APPROVED, 0), else_=1),
+                case(
+                    (Schedule.status == ScheduleStatusEnum.APPROVED, 0),
+                    else_=1
+                ),
                 Schedule.createdWhen.desc(),
             )
             .all()
         )
 
-        if not schedules:
-            return []
+        result = []
+        seen_sections = set()
 
-        seen_sections: Set[int] = set()
-        raw_courses: List[dict] = []
-        for schedule in schedules:
-            term_label = schedule.term.code if schedule.term else None
-            schedule_status = (
-                schedule.status.value
-                if hasattr(schedule.status, "value")
-                else str(schedule.status)
+        for sched in schedules:
+            term_label = sched.term.code if sched.term else None
+            is_completed = (
+                sched.status.value == ScheduleStatusEnum.APPROVED.value
             )
-            course_status = (
-                "COMPLETED"
-                if schedule_status == ScheduleStatusEnum.APPROVED.value
-                else "PLANNED"
-            )
+            status = "COMPLETED" if is_completed else "PLANNED"
 
-            for cls in schedule.classes:
+            for cls in sched.classes:
                 if cls.sectionID in seen_sections:
                     continue
                 seen_sections.add(cls.sectionID)
 
                 section = cls.section
-                course: Optional[Course] = section.course if section else None
-                code = (course.courseName or "").strip() if course and course.courseName else ""
-                if not code and section and section.crn:
-                    code = section.crn
+                course = section.course if section else None
+
+                code = ""
+                if course and course.courseName:
+                    code = course.courseName.strip()
+                elif section and section.crn:
+                    code = str(section.crn)
 
                 title = course.courseName if course else None
                 if course and course.description:
@@ -384,73 +338,72 @@ class DegreePlanService:
                 elif not title and section and section.description:
                     title = section.description
 
-                credits = 0.0
+                credits = 0
                 if course and course.credits:
                     try:
                         credits = float(course.credits)
-                    except (TypeError, ValueError):
-                        credits = 0.0
+                    except:
+                        credits = 0
                 if credits <= 0:
                     credits = 3.0
 
-                raw_courses.append(
-                    {
-                        "code": code or f"CLASS-{cls.classID}",
-                        "title": title,
-                        "credits": credits,
-                        "term": term_label,
-                        "status": course_status,
-                    }
-                )
+                result.append({
+                    "code": code or f"CLASS-{cls.classID}",
+                    "title": title,
+                    "credits": credits,
+                    "term": term_label,
+                    "status": status,
+                })
 
-        return _serialize_completed_courses(raw_courses)
+        return serialize_courses(result)
 
     @staticmethod
-    def _collect_courses_from_transcript(db: Session, advisee_id: int) -> List[dict]:
+    def _collect_courses_from_transcript(db: Session, advisee_id: int):
         enrollments = TranscriptService._load_enrollments(db, advisee_id)
         if not enrollments:
             return []
 
         terms = TranscriptService._build_terms(enrollments)
-        completed: List[dict] = []
+        completed = []
+
         for term in terms:
-            for course in term.courses:
-                status = (course.status or "").lower()
-                if status != "completed":
+            for c in term.courses:
+                if (c.status or "").lower() != "completed":
                     continue
-                completed.append(
-                    {
-                        "code": (course.courseCode or "").upper(),
-                        "title": course.courseTitle,
-                        "credits": float(course.credits or 0),
-                        "term": term.term,
-                        "status": "COMPLETED",
-                    }
+
+                code_candidates = extract_codes_from_text(
+                    " ".join(x for x in [
+                        getattr(c, "courseCode", None),
+                        getattr(c, "courseTitle", None),
+                    ] if x)
                 )
+
+                normalized = next(iter(sorted(code_candidates)), None)
+                if not normalized:
+                    normalized = (getattr(c, "courseCode", "") or "").upper()
+
+                completed.append({
+                    "code": normalized,
+                    "title": getattr(c, "courseTitle", None),
+                    "credits": float(c.credits or 0),
+                    "term": term.term,
+                    "status": "COMPLETED",
+                })
 
         return completed
 
+    # ----------------------------------------
+    # CONTEXT / REQUIREMENT SET API
+    # ----------------------------------------
     @staticmethod
-    def _expand_requirement_codes(course: dict, group_description: Optional[str]) -> Set[str]:
-        codes = set()
-        codes.update(_extract_codes_from_text(course.get("code")))
-        codes.update(_extract_codes_from_text(course.get("title")))
-        codes.update(_extract_codes_from_text(course.get("description")))
-        if not codes and group_description:
-            codes.update(_extract_codes_from_text(group_description))
-        return codes
-
-    @staticmethod
-    def create_requirement_set(
-        db: Session, payload: DegreeRequirementSetCreate
-    ) -> DegreeRequirementSet:
-        requirement_groups = [group.dict() for group in payload.requirementGroups]
+    def create_requirement_set(db: Session, payload: DegreeRequirementSetCreate):
+        groups = [g.dict() for g in payload.requirementGroups]
         record = DegreeRequirementSet(
             programCode=payload.programCode,
             catalogYear=payload.catalogYear,
             programName=payload.programName,
             totalCredits=payload.totalCredits,
-            requirementData=requirement_groups,
+            requirementData=groups,
             sourceDocument=payload.sourceDocument,
         )
         db.add(record)
@@ -477,35 +430,32 @@ class DegreePlanService:
     def list_requirement_sets(db: Session, program_code: Optional[str] = None):
         query = db.query(DegreeRequirementSet)
         if program_code:
-            query = query.filter(DegreeRequirementSet.programCode == program_code)
+            normalized = DegreePlanService._normalize_program_code(program_code)
+            if normalized:
+                query = query.filter(DegreeRequirementSet.programCode == normalized)
         return query.order_by(DegreeRequirementSet.updatedAt.desc()).all()
 
     @staticmethod
-    def upsert_context(
-        db: Session, advisee_id: int, payload: AdviseeContextUpsert
-    ) -> AdviseeDegreeContext:
+    def upsert_context(db: Session, advisee_id: int, payload: AdviseeContextUpsert):
         requirement = (
             db.query(DegreeRequirementSet)
             .filter(DegreeRequirementSet.requirementSetID == payload.requirementSetID)
             .first()
         )
         if not requirement:
-            raise HTTPException(status_code=404, detail="Requirement set not found")
+            raise HTTPException(404, "Requirement set not found")
 
-        context = (
-            db.query(AdviseeDegreeContext)
-            .filter(AdviseeDegreeContext.adviseeID == advisee_id)
-            .first()
-        )
-        if context is None:
+        context = load_context(db, advisee_id)
+        if not context:
             context = AdviseeDegreeContext(
-                adviseeID=advisee_id, requirementSetID=requirement.requirementSetID
+                adviseeID=advisee_id,
+                requirementSetID=requirement.requirementSetID,
             )
             db.add(context)
 
         context.requirementSetID = requirement.requirementSetID
-        context.completedCourses = _serialize_completed_courses(
-            [course.dict() for course in payload.completedCourses]
+        context.completedCourses = serialize_courses(
+            [c.dict() for c in payload.completedCourses]
         )
         context.overrides = payload.overrides
         context.notes = payload.notes
@@ -514,9 +464,29 @@ class DegreePlanService:
         db.refresh(context)
         return context
 
+    # ----------------------------------------
+    # SUMMARY
+    # ----------------------------------------
     @staticmethod
     def get_advisee_summary(db: Session, advisee_id: int):
-        profile, context, requirement = DegreePlanService._ensure_context_alignment(db, advisee_id)
+        profile, context, requirement = DegreePlanService._ensure_context(db, advisee_id)
+        student_payload = profile
+        transcript_payload = None
+
+        if profile:
+            try:
+                transcript_payload = TranscriptService.get_transcript_for_advisee(
+                    db,
+                    advisee_id,
+                    {"role": "advisor"},
+                )
+            except HTTPException as exc:
+                if exc.status_code != 404:
+                    logging.warning(
+                        "Failed to load transcript for advisee %s: %s",
+                        advisee_id,
+                        exc.detail if hasattr(exc, "detail") else exc,
+                    )
 
         latest_validation = (
             db.query(DegreePlanValidation)
@@ -524,16 +494,16 @@ class DegreePlanService:
             .order_by(DegreePlanValidation.createdAt.desc())
             .first()
         )
+        latest_validation = DegreePlanService._normalize_validation_record(latest_validation)
 
-        completed_courses = DegreePlanService._collect_courses_from_transcript(
-            db, advisee_id
+        transcript_courses = DegreePlanService._collect_courses_from_transcript(db, advisee_id)
+        schedule_courses = DegreePlanService._collect_courses_from_schedules(db, advisee_id)
+
+        completed_courses = (
+            transcript_courses if transcript_courses else schedule_courses
         )
-        if not completed_courses:
-            completed_courses = DegreePlanService._collect_courses_from_schedules(
-                db, advisee_id
-            )
+
         if context and completed_courses:
-            # Surface live data in the summary without mutating the DB record permanently.
             context.completedCourses = completed_courses
 
         requirement_payload = None
@@ -541,7 +511,7 @@ class DegreePlanService:
             requirement_payload = DegreeRequirementSetResponse(
                 requirementSetID=requirement.requirementSetID,
                 programCode=(profile.major if profile else None) or requirement.programCode,
-                catalogYear=requirement.catalogYear,
+                catalogYear=normalize_catalog_display(requirement.catalogYear),
                 programName=(
                     profile.degree_plan
                     if profile and profile.degree_plan
@@ -553,62 +523,73 @@ class DegreePlanService:
                 createdAt=requirement.createdAt,
                 updatedAt=requirement.updatedAt,
             )
-        elif profile:
-            requirement_payload = DegreeRequirementSetResponse(
-                requirementSetID=0,
-                programCode=profile.major or "",
-                catalogYear=DEFAULT_CATALOG_YEAR,
-                programName=profile.degree_plan or profile.major or "Program",
-                totalCredits=float(profile.credits_completed or 0),
-                requirementGroups=[],
-                sourceDocument=None,
-                createdAt=profile.dateCreated or datetime.utcnow(),
-                updatedAt=profile.lastUpdated or datetime.utcnow(),
-            )
 
         return {
             "context": context,
             "requirementSet": requirement_payload,
-            "latestValidation": _normalize_validation(latest_validation),
+            "latestValidation": latest_validation,
+            "student": student_payload,
+            "transcript": transcript_payload,
         }
 
+    # ----------------------------------------
+    # VALIDATION MANAGEMENT
+    # ----------------------------------------
     @staticmethod
-    def enqueue_validation(
-        db: Session,
-        advisee_id: int,
-        run_type: ValidationRunType,
-        background_tasks: BackgroundTasks,
-        triggered_by: Optional[int] = None,
-    ) -> DegreePlanValidation:
-        _, context, _ = DegreePlanService._ensure_context_alignment(db, advisee_id)
-        if not context:
-            raise HTTPException(status_code=404, detail="Degree context not found")
-
-        validation = DegreePlanValidation(
-            adviseeID=advisee_id,
-            contextID=context.contextID,
-            requirementSetID=context.requirementSetID,
-            status=ValidationStatus.PENDING,
-            runType=run_type,
-            triggeredBy=triggered_by,
-        )
-        db.add(validation)
-        db.commit()
-        db.refresh(validation)
-
-        background_tasks.add_task(process_validation_job, validation.validationID)
-        return _normalize_validation(validation)
-
-    @staticmethod
-    def list_validations(db: Session, advisee_id: int) -> List[DegreePlanValidation]:
-        results = (
+    def list_validations(db: Session, advisee_id: int):
+        records = (
             db.query(DegreePlanValidation)
             .filter(DegreePlanValidation.adviseeID == advisee_id)
             .order_by(DegreePlanValidation.createdAt.desc())
             .all()
         )
-        return [_normalize_validation(item) for item in results]
+        return [
+            DegreePlanService._normalize_validation_record(record)
+            for record in records
+        ]
 
+    @classmethod
+    def enqueue_validation(
+        cls,
+        db: Session,
+        advisee_id: int,
+        run_type: ValidationRunType = ValidationRunType.MANUAL,
+        triggered_by: Optional[int] = None,
+        background_tasks: Optional[BackgroundTasks] = None,
+    ):
+        _, context, requirement = cls._ensure_context(db, advisee_id)
+
+        if not context or not requirement:
+            raise HTTPException(404, "No degree plan context is linked to this advisee")
+
+        normalized_run_type = (
+            run_type if isinstance(run_type, ValidationRunType) else ValidationRunType(run_type)
+        )
+
+        validation = DegreePlanValidation(
+            adviseeID=advisee_id,
+            contextID=context.contextID,
+            requirementSetID=requirement.requirementSetID,
+            status=ValidationStatus.PENDING,
+            runType=normalized_run_type,
+            triggeredBy=triggered_by,
+        )
+
+        db.add(validation)
+        db.commit()
+        db.refresh(validation)
+        validation = cls._normalize_validation_record(validation)
+
+        if background_tasks:
+            background_tasks.add_task(process_validation_job, validation.validationID)
+        else:
+            process_validation_job(validation.validationID)
+
+        return validation
+
+    # ----------------------------------------
+    # VALIDATION CORE
+    # ----------------------------------------
     @staticmethod
     def _process_validation(db: Session, validation_id: int):
         validation = (
@@ -619,16 +600,14 @@ class DegreePlanService:
         if not validation:
             return
 
-        # Mark running
         validation.status = ValidationStatus.RUNNING
         validation.startedAt = datetime.utcnow()
         db.commit()
-        db.refresh(validation)
 
         context = validation.context
         requirement = validation.requirementSet
 
-        if context is None or requirement is None:
+        if not context or not requirement:
             validation.status = ValidationStatus.ERROR
             validation.message = "Missing requirement data"
             validation.finishedAt = datetime.utcnow()
@@ -636,110 +615,156 @@ class DegreePlanService:
             db.commit()
             return
 
-        # === 1. Collect completed courses (schedule or transcript)
-        completed_courses = DegreePlanService._collect_courses_from_transcript(
-            db, validation.adviseeID
-        )
-        if not completed_courses:
-            completed_courses = context.completedCourses or []
-        else:
-            context.completedCourses = completed_courses
+        # --- Collect completed courses ---
+        transcript = DegreePlanService._collect_courses_from_transcript(db, validation.adviseeID)
+        context_courses = context.completedCourses or []
+        completed_courses = merge_completed_sources(transcript, context_courses)
+        context.completedCourses = completed_courses
 
         completed_codes = {
-            (course.get("code") or "").upper().strip()
-            for course in completed_courses
+            (c.get("code") or "").upper().strip()
+            for c in completed_courses
         }
 
-        requirement_groups = requirement.requirementData or []
+        groups = requirement.requirementData or []
         issues = []
-        total_required_credits = float(requirement.totalCredits or 0)
-        completed_credits = sum(float(c.get("credits", 0)) for c in completed_courses)
+        total_items = 0
+        satisfied_items = 0
 
         # ----------------------------------------
-        # CATEGORY DETECTION HELPER (Local)
+        # Validate each requirement group
         # ----------------------------------------
-        def detect_category_group(group, courses):
+        for group in groups:
+            title = group.get("title", "")
             description = group.get("description", "")
-            for course in courses:
-                category = DegreePlanService._detect_requirement_category(course, description)
-                if category:
-                    return category
-            return None
-
-        # === 3. Validate each requirement group
-        for group in requirement_groups:
-            group_id = group.get("id") or group.get("title")
-            group_title = group.get("title", "Requirement Group")
             group_courses = group.get("courses", [])
-            group_description = group.get("description", "")
+            group_id = group.get("id") or title
 
-            missing_list = []
+            # DETECT CATEGORY REQUIREMENT
+            category = detect_category_from_group(title, description)
+            if not category:
+                category = detect_category_from_courses(group_courses, category)
 
-            # ---------------------------------------------
-            # NEW — CATEGORY GROUP HANDLING
-            # ---------------------------------------------
-            detected_category = detect_category_group(group, group_courses)
+            # ----------------------------------------
+            # CATEGORY MODE
+            # ----------------------------------------
+            if category:
+                total_items += 1
+                satisfied = completed_satisfies_category(category, completed_courses)
 
-            if detected_category:
-                # If student already satisfied category → OK
-                if DegreePlanService._completed_satisfies_category(
-                    detected_category, completed_courses
-                ):
+                # If any of the explicitly listed courses satisfy it
+                if not satisfied:
+                    acceptable_codes = set()
+                    for c in group_courses:
+                        acceptable_codes |= expand_requirement_codes(c or {}, description)
+                    if acceptable_codes & completed_codes:
+                        satisfied = True
+
+                if satisfied:
+                    satisfied_items += 1
                     continue
 
-                # Otherwise → ONE missing requirement entry
-                issues.append(
-                    {
-                        "requirementId": group_id,
-                        "message": f"Missing requirement: {REQUIREMENT_CATEGORY_RULES[detected_category]['label']}",
-                        "missingCourses": [
-                            REQUIREMENT_CATEGORY_RULES[detected_category]["label"]
-                        ],
-                    }
-                )
-                continue  # Skip standard course-by-course checking
+                label = CATEGORY_RULES[category]["label"]
+                issues.append({
+                    "requirementId": group_id,
+                    "message": f"Missing: {label}",
+                    "missingCourses": [label],
+                })
+                continue
 
-            # ------------------------------------------------
-            # NORMAL SPECIFIC COURSE VALIDATION
-            # ------------------------------------------------
+            # ----------------------------------------
+            # SPECIFIC COURSE MODE
+            # ----------------------------------------
+            required_credits = 0.0
+            try:
+                required_credits = float(group.get("requiredCredits") or 0)
+            except:
+                required_credits = 0.0
+
+            missing_entries = []
+            group_total_credits = 0.0
+            satisfied_credits = 0.0
+            entries_count = 0
+            satisfied_count = 0
+            used_codes = set()
+
+            # Collect requirement entries
             for course in group_courses:
-                course = course or {}
-                expanded_codes = DegreePlanService._expand_requirement_codes(
-                    course, group_description
-                )
+                expanded = expand_requirement_codes(course, description)
+                if not expanded:
+                    continue  # optional descriptor-only course
 
-                # ------------------------------------------------
-                # NEW LOGIC — If no specific course numbers found,
-                # DO NOT treat optional choice items as required.
-                # ------------------------------------------------
-                if not expanded_codes:
-                    continue  # skip optional “choose from these” items
+                entries_count += 1
 
-                # If ANY acceptable code matches → satisfied
-                if not any(code in completed_codes for code in expanded_codes):
-                    missing_list.append("/".join(sorted(expanded_codes)))
+                credit = 0.0
+                try:
+                    credit = float(course.get("credits") or 0)
+                except:
+                    credit = 0.0
+                if credit <= 0:
+                    credit = 3.0
 
-            # Report missing items for this requirement group
-            if missing_list:
-                issues.append(
-                    {
-                        "requirementId": group_id,
-                        "message": f"Missing {len(missing_list)} requirement(s) in {group_title}",
-                        "missingCourses": missing_list,
-                    }
-                )
+                group_total_credits += credit
 
-        # === 4. Compute completion percent
-        if total_required_credits > 0:
-            completion_percent = min(
-                100.0,
-                round((completed_credits / total_required_credits) * 100, 2)
+                matched = next((code for code in expanded if code in completed_codes), None)
+
+                if matched:
+                    if matched not in used_codes:
+                        used_codes.add(matched)
+                        satisfied_credits += credit
+                        satisfied_count += 1
+                    continue
+
+                missing_entries.append("/".join(sorted(expanded)))
+
+            # Determine if credit-based choice group
+            is_choice = (
+                required_credits > 0
+                and group_total_credits > required_credits + 0.01
             )
-        else:
-            completion_percent = 0.0
 
-        # === 5. Save validation result
-        validation.completionPercent = completion_percent
+            if is_choice:
+                avg_credit = group_total_credits / entries_count if entries_count else 0
+                if avg_credit <= 0:
+                    avg_credit = 3.0
+
+                needed = max(1, math.ceil(required_credits / avg_credit))
+                needed = min(needed, entries_count)
+
+                total_items += needed
+                satisfied_items += min(satisfied_count, needed)
+
+                if satisfied_credits < required_credits:
+                    remain = max(0, round(required_credits - satisfied_credits, 2))
+                    issues.append({
+                        "requirementId": group_id,
+                        "message": f"Need {remain:g} more credit(s) from {title}",
+                        "missingCourses": [
+                            f"{title}: additional {remain:g} credit(s) needed"
+                        ],
+                    })
+                continue
+
+            # Normal required-course list mode
+            total_items += entries_count
+            satisfied_items += satisfied_count
+
+            if missing_entries:
+                issues.append({
+                    "requirementId": group_id,
+                    "message": f"Missing {len(missing_entries)} requirement(s) in {title}",
+                    "missingCourses": missing_entries,
+                })
+
+        # ----------------------------------------
+        # COMPLETION %
+        # ----------------------------------------
+        if total_items > 0:
+            completion = round((satisfied_items / total_items) * 100, 2)
+        else:
+            completion = 0.0
+
+        validation.completionPercent = completion
         validation.issues = issues
         validation.status = ValidationStatus.PASSED if not issues else ValidationStatus.FAILED
         validation.message = (
@@ -751,8 +776,9 @@ class DegreePlanService:
         db.refresh(validation)
 
 
-
-
+# ----------------------------------------
+# JOB WRAPPER
+# ----------------------------------------
 def process_validation_job(validation_id: int):
     db = SessionLocal()
     try:

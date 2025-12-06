@@ -3,6 +3,9 @@ from enum import Enum
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
+from schemas.advisee import AdviseeResponse
+from schemas.transcript import TranscriptResponse
+
 
 class RequirementCourse(BaseModel):
     code: str = Field(..., description="Course code such as ENG 1013")
@@ -116,3 +119,5 @@ class AdviseePlanSummary(BaseModel):
     context: Optional[AdviseeContextResponse]
     requirementSet: Optional[DegreeRequirementSetResponse]
     latestValidation: Optional[DegreePlanValidationResponse]
+    student: Optional[AdviseeResponse] = None
+    transcript: Optional[TranscriptResponse] = None
