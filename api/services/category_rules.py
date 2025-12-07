@@ -1,5 +1,6 @@
 # category_rules.py
 import re
+from typing import Optional
 
 # Category rule definitions
 CATEGORY_RULES = {
@@ -69,30 +70,32 @@ def detect_category_from_group(title: str, description: str):
     return None
 
 
-def detect_category_from_courses(courses: list, group_category: str):
+def detect_category_from_courses(courses: list, group_category: Optional[str] = None):
     """
-    Secondary detection: looks at course titles/codes when the group itself did not contain category keywords.
+    Secondary detection: inspects course titles/codes when the group itself did not contain category keywords.
     """
-    if not group_category:
-        return None
+    candidate_categories = (
+        [group_category] if group_category else list(CATEGORY_RULES.keys())
+    )
 
-    rule = CATEGORY_RULES.get(group_category)
-    if not rule:
-        return None
+    for category in candidate_categories:
+        rule = CATEGORY_RULES.get(category)
+        if not rule:
+            continue
 
-    prefixes = rule["course_prefixes"]
-    keywords = rule["course_keywords"]
+        prefixes = rule["course_prefixes"]
+        keywords = rule["course_keywords"]
 
-    for course in courses:
-        title = (course.get("title") or "").upper()
-        code = (course.get("code") or "").upper()
+        for course in courses:
+            title = (course.get("title") or "").upper()
+            code = (course.get("code") or "").upper()
 
-        if any(code.startswith(prefix) for prefix in prefixes):
-            return group_category
+            if any(code.startswith(prefix) for prefix in prefixes):
+                return category
 
-        combined = f"{title} {code}"
-        if any(kw in combined for kw in keywords):
-            return group_category
+            combined = f"{title} {code}"
+            if any(kw in combined for kw in keywords):
+                return category
 
     return None
 

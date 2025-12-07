@@ -17,8 +17,20 @@ COMPLETED_STATUSES = {
 def extract_codes_from_text(value: Optional[str]) -> Set[str]:
     if not value:
         return set()
-    matches = COURSE_CODE_PATTERN.findall(value.upper())
-    return {f"{p} {n}" for p, n in matches if p and n}
+    text = value.upper()
+    matches = set()
+
+    for match in COURSE_CODE_PATTERN.finditer(text):
+        prefix, number = match.groups()
+        if not prefix or not number:
+            continue
+
+        if prefix in {"OF", "ACT"}:
+            continue
+
+        matches.add(f"{prefix} {number}")
+
+    return matches
 
 
 def expand_requirement_codes(course: dict, group_description: Optional[str]) -> Set[str]:

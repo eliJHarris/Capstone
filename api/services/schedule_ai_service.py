@@ -161,6 +161,28 @@ class ScheduleAISuggestionService:
 
         return context, requirement, validation
 
+    @staticmethod
+    def _collect_program_prerequisites(requirement: Optional[DegreeRequirementSet]) -> List[Dict[str, Any]]:
+        if not requirement:
+            return []
+        mapping: List[Dict[str, Any]] = []
+        for group in requirement.requirementData or []:
+            courses = group.get("courses") or []
+            for course in courses:
+                clauses = course.get("prerequisites") or []
+                if not clauses:
+                    continue
+                for clause in clauses:
+                    mapping.append({
+                        "course": course.get("code"),
+                        "title": course.get("title"),
+                        "group": group.get("title"),
+                        "type": clause.get("type"),
+                        "options": clause.get("options"),
+                        "text": clause.get("text"),
+                    })
+        return mapping
+
     def _load_available_sections(self, term_id: int, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         sections = (
             self.db.query(Section)
@@ -323,7 +345,7 @@ class ScheduleAISuggestionService:
             "requirement_metadata": requirement_metadata,
             "validation_summary": validation_summary,
             "available_courses": available_courses,
-            "prerequisites": [],
+            "prerequisites": self._collect_program_prerequisites(requirement),
             "preference_note": note or "",
         }
 
@@ -345,7 +367,7 @@ class ScheduleAISuggestionService:
             f"Remaining Requirements : {json.dumps(payload['remaining_requirements'], default=str)}\n"
             f"Validation Summary : {json.dumps(payload['validation_summary'], default=str)}\n"
             f"Available Courses : {json.dumps(payload['available_courses'], default=str)}\n"
-            "Prerequisites : []\n"
+            f"Prerequisites : {json.dumps(payload['prerequisites'], default=str)}\n"
             f"Preference Note : {payload['preference_note']}\n"
             "Primary goal: pick classes that satisfy remaining degree requirements and keep the student on track "
             "for timely graduation. Avoid random electives unrelated to the program unless explicitly requested.\n"

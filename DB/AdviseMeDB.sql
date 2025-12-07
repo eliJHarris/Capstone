@@ -702,20 +702,23 @@ INSERT INTO degree_requirement_sets
   (requirementSetID, programCode, catalogYear, programName, totalCredits, requirementData, sourceDocument, createdAt, updatedAt)
 VALUES
   (101, 'BS-CS', 'CAT2024', 'B.S. Computer Science', 120,
-    '[{"id":"core","title":"Core Curriculum","requiredCredits":36,"courses":[{"code":"ENG 1013","title":"Composition I","credits":3},{"code":"MATH 2804","title":"Calculus I","credits":4},{"code":"CS 1013","title":"Intro to Programming","credits":3},{"code":"CS 2023","title":"Data Structures","credits":3}]},{"id":"advanced","title":"Advanced Major Requirements","requiredCredits":24,"courses":[{"code":"CS 3013","title":"Algorithms","credits":3},{"code":"CS 3223","title":"Operating Systems","credits":3},{"code":"CS 3413","title":"Database Systems","credits":3},{"code":"CS 4XX3","title":"Upper-Level Elective","credits":3}]}]'
+    '[{"id":"core","title":"Core Curriculum","requiredCredits":36,"courses":[{"code":"ENG 1013","title":"Composition I","credits":3},{"code":"MATH 2804","title":"Calculus I","credits":4},{"code":"CS 1013","title":"Intro to Programming","credits":3},{"code":"CS 2023","title":"Data Structures","credits":3}]},{"id":"advanced","title":"Advanced Major Requirements","requiredCredits":24,"courses":[{"code":"CS 3013","title":"Algorithms","credits":3},{"code":"CS 3223","title":"Operating Systems","credits":3},{"code":"CS 3413","title":"Database Systems","credits":3},{"code":"CS 4XX3","title":"Upper-Level Elective","credits":3}]},{"id":"cs_concentrations","title":"CS Concentrations","activeConcentrations":["DATA ANALYTICS","MATHEMATICS MINOR"],"concentrations":[{"name":"Data Analytics","choose_any":[{"code":"CS 3333","title":"Big Data","credits":3},{"code":"CS 4323","title":"Data Analytics","credits":3},{"code":"CS 4333","title":"Machine Learning","credits":3}],"hours_needed":9,"selected":true},{"name":"Cybersecurity","choose_any":[{"code":"CS 3513","title":"Applied Cryptography","credits":3},{"code":"CS 3523","title":"Computer Forensics","credits":3},{"code":"CS 4503","title":"CyberOps","credits":3}],"hours_needed":9},{"name":"Mathematics Minor","choose_any":[{"code":"MATH 3303","title":"Discrete Mathematics II","credits":3},{"code":"MATH 3403","title":"Real Analysis","credits":3},{"code":"STAT 2503","title":"Statistics","credits":3}],"hours_needed":6}]}]'
   , 'https://adviseme.example.edu/bs-cs', '2025-03-20 09:00:00', '2025-03-20 09:00:00'),
   (102, 'BS-MATH', 'CAT2023', 'B.S. Mathematics', 120,
     '[{"id":"foundation","title":"Foundational Math","requiredCredits":30,"courses":[{"code":"MATH 1603","title":"Trig","credits":3},{"code":"MATH 2004","title":"Calculus II","credits":4},{"code":"STAT 2503","title":"Statistics","credits":3}]},{"id":"major","title":"Upper-Level Math","requiredCredits":24,"courses":[{"code":"MATH 3103","title":"Linear Algebra","credits":3},{"code":"MATH 3303","title":"Abstract Algebra","credits":3},{"code":"MATH 3403","title":"Real Analysis","credits":3}]}]'
   , 'https://adviseme.example.edu/bs-math', '2025-03-20 09:10:00', '2025-03-20 09:10:00'),
   (103, 'BS-IS', 'CAT2022', 'B.S. Information Systems', 120,
     '[{"id":"core","title":"Business Core","requiredCredits":30,"courses":[{"code":"ACCT 2003","title":"Accounting","credits":3},{"code":"ECON 2103","title":"Economics","credits":3}]},{"id":"technology","title":"Technology Core","requiredCredits":30,"courses":[{"code":"IS 2003","title":"Systems Analysis","credits":3},{"code":"IS 3203","title":"Enterprise Architecture","credits":3}]}]'
-  , 'https://adviseme.example.edu/bs-is', '2025-03-20 09:20:00', '2025-03-20 09:20:00');
+  , 'https://adviseme.example.edu/bs-is', '2025-03-20 09:20:00', '2025-03-20 09:20:00'),
+  (104, 'BBA-Business Administration', 'CAT2024::ADV-8', 'B.B.A. Business Administration (Advisee 8)', 120,
+    '[{"id":"business_core","title":"Business Core","requiredCredits":36,"courses":[{"code":"MGMT 1203","title":"Foundations of Business","credits":3},{"code":"SPCH 1203","title":"Introduction to Speech Communication","credits":3},{"code":"ECON 2803","title":"Principles of Macroeconomics","credits":3},{"code":"ECON 2813","title":"Principles of Microeconomics","credits":3}]},{"id":"bba_concentrations","title":"BBA Concentrations","activeConcentrations":["MANAGEMENT"],"concentrations":[{"name":"Management","choose_any":[{"code":"MGMT 3613","title":"Leadership","credits":3},{"code":"MGMT 4133","title":"Project Management","credits":3},{"code":"MGMT 4153","title":"Strategic Compensation","credits":3}],"hours_needed":9,"selected":true},{"name":"Marketing","choose_any":[{"code":"MKTG 3003","title":"Introduction to Professional Selling","credits":3},{"code":"MKTG 3123","title":"Consumer Behavior","credits":3},{"code":"MKTG 3133","title":"Marketing Research","credits":3}],"hours_needed":9}]},{"id":"minor_requirement","title":"Minor Requirement","activeConcentrations":["ECONOMICS MINOR"],"concentrations":[{"name":"Economics Minor","choose_any":[{"code":"ECON 3313","title":"Microeconomic Analysis","credits":3},{"code":"ECON 3353","title":"Macroeconomic Analysis","credits":3},{"code":"ECON 4343","title":"Managerial Economics","credits":3}],"hours_needed":6,"selected":true},{"name":"Finance Minor","choose_any":[{"code":"FIN 3723","title":"Investments","credits":3},{"code":"FIN 3733","title":"Financial Statement Analysis","credits":3},{"code":"FIN 4743","title":"Advanced Financial Management","credits":3}],"hours_needed":6}]}]'
+  , 'advisee:8', '2025-03-21 09:30:00', '2025-03-21 09:30:00');
 
 INSERT INTO advisee_degree_context
   (contextID, adviseeID, requirementSetID, completedCourses, overrides, notes, createdAt, updatedAt)
 VALUES
   (201, 1, 101,
-    '[{"code":"ENG 1013","title":"Composition I","credits":3,"term":"Fall 2023","status":"COMPLETED"},{"code":"MATH 2804","title":"Calculus I","credits":4,"term":"Fall 2023","status":"COMPLETED"},{"code":"CS 1013","title":"Intro to Programming","credits":3,"term":"Fall 2023","status":"COMPLETED"}]',
+    '[{"code":"ENG 1013","title":"Composition I","credits":3,"term":"Fall 2023","status":"COMPLETED"},{"code":"MATH 2804","title":"Calculus I","credits":4,"term":"Fall 2023","status":"COMPLETED"},{"code":"CS 1013","title":"Intro to Programming","credits":3,"term":"Fall 2023","status":"COMPLETED"},{"code":"CS 3333","title":"Big Data","credits":3,"term":"Spring 2024","status":"COMPLETED"},{"code":"CS 4323","title":"Data Analytics","credits":3,"term":"Fall 2024","status":"COMPLETED"},{"code":"CS 4333","title":"Machine Learning","credits":3,"term":"Spring 2025","status":"IN_PROGRESS"},{"code":"MATH 3303","title":"Discrete Mathematics II","credits":3,"term":"Fall 2024","status":"COMPLETED"},{"code":"STAT 2503","title":"Statistics","credits":3,"term":"Spring 2024","status":"COMPLETED"}]',
     NULL,
     'Seeded from degree audit import.',
     '2025-03-21 08:30:00', '2025-03-21 08:30:00'),
@@ -728,7 +731,12 @@ VALUES
     '[{"code":"ACCT 2003","title":"Accounting","credits":3,"term":"Fall 2023","status":"COMPLETED"},{"code":"ECON 2103","title":"Economics","credits":3,"term":"Fall 2023","status":"COMPLETED"},{"code":"IS 2003","title":"Systems Analysis","credits":3,"term":"Spring 2024","status":"COMPLETED"}]',
     NULL,
     'Imported from PDF scrape demo.',
-    '2025-03-21 09:00:00', '2025-03-21 09:00:00');
+    '2025-03-21 09:00:00', '2025-03-21 09:00:00'),
+  (204, 8, 104,
+    '[{"code":"MGMT 1203","title":"Foundations of Business","credits":3,"term":"Fall 2023","status":"COMPLETED"},{"code":"SPCH 1203","title":"Introduction to Speech Communication","credits":3,"term":"Fall 2023","status":"COMPLETED"},{"code":"ECON 2803","title":"Principles of Macroeconomics","credits":3,"term":"Spring 2024","status":"COMPLETED"},{"code":"ECON 2813","title":"Principles of Microeconomics","credits":3,"term":"Spring 2024","status":"COMPLETED"},{"code":"MGMT 3613","title":"Leadership","credits":3,"term":"Fall 2024","status":"COMPLETED"},{"code":"MGMT 4133","title":"Project Management","credits":3,"term":"Spring 2025","status":"IN_PROGRESS"},{"code":"MGMT 4153","title":"Strategic Compensation","credits":3,"term":"Spring 2025","status":"COMPLETED"},{"code":"ECON 3313","title":"Microeconomic Analysis","credits":3,"term":"Fall 2024","status":"COMPLETED"},{"code":"ECON 3353","title":"Macroeconomic Analysis","credits":3,"term":"Spring 2025","status":"COMPLETED"}]',
+    NULL,
+    'Manual degree audit context for advisee 8 concentration/minor demo.',
+    '2025-03-21 09:35:00', '2025-03-21 09:35:00');
 
 INSERT INTO degree_plan_validations
   (validationID, adviseeID, contextID, requirementSetID, status, runType, completionPercent, issues, message, triggeredBy, startedAt, finishedAt, createdAt, updatedAt)
@@ -747,12 +755,18 @@ VALUES
     '[]',
     'Manual validation currently running.',
     8,
-    '2025-03-21 09:01:00', NULL, '2025-03-21 09:01:00', '2025-03-21 09:01:00');
+    '2025-03-21 09:01:00', NULL, '2025-03-21 09:01:00', '2025-03-21 09:01:00'),
+  (304, 8, 204, 104, 'PASSED', 'MANUAL', 78.0,
+    '[]',
+    'Manual validation shows Management concentration + Economics minor selections.',
+    6,
+    '2025-03-21 09:36:00', '2025-03-21 09:36:40', '2025-03-21 09:36:00', '2025-03-21 09:36:40');
 
 INSERT INTO advisee_requirements (adviseeID, requirementSetID) VALUES
   (1, 101),
   (2, 102),
-  (3, 103)
+  (3, 103),
+  (8, 104)
 ON DUPLICATE KEY UPDATE requirementSetID = VALUES(requirementSetID);
 
 

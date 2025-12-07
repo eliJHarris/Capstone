@@ -1,16 +1,26 @@
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
 
 from schemas.advisee import AdviseeResponse
 from schemas.transcript import TranscriptResponse
 
 
+class PrerequisiteClause(BaseModel):
+    type: Literal["PREREQUISITE", "COREQUISITE", "PREREQ_OR_CONCURRENT"] = "PREREQUISITE"
+    options: List[List[str]] = Field(
+        default_factory=list,
+        description="Each nested list represents a set of course codes that must all be satisfied; collections are treated as OR options.",
+    )
+    text: Optional[str] = Field(None, description="Original catalog snippet for reference.")
+
+
 class RequirementCourse(BaseModel):
     code: str = Field(..., description="Course code such as ENG 1013")
     title: Optional[str] = Field(None, description="Human-readable course title")
     credits: float = Field(..., description="Credit hours for the course")
+    prerequisites: List[PrerequisiteClause] = Field(default_factory=list)
 
 
 class RequirementGroup(BaseModel):
@@ -90,6 +100,37 @@ class ValidationIssue(BaseModel):
     requirementId: Optional[str] = None
     message: str
     missingCourses: List[str] = Field(default_factory=list)
+    severity: Optional[str] = Field("ERROR", description="ERROR or WARNING")
+    category: Optional[str] = Field(None, description="Optional classifier such as PREREQUISITE")
+
+
+class ConcentrationOption(BaseModel):
+    name: str
+    requiredHours: float
+    completedHours: float
+    remainingHours: float
+    satisfied: bool
+    takenCourses: List[str] = Field(default_factory=list)
+    missingCourses: List[str] = Field(default_factory=list)
+
+
+class ConcentrationSummary(BaseModel):
+    groupId: Optional[str] = None
+    title: Optional[str] = None
+    requiredSelections: int
+    satisfiedSelections: int
+    options: List[ConcentrationOption] = Field(default_factory=list)
+
+
+class GeneralEducationSummary(BaseModel):
+    groupId: Optional[str] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    requiredSelections: int
+    satisfiedSelections: int
+    remainingSelections: int
+    takenCourses: List[str] = Field(default_factory=list)
+    remainingCourses: List[str] = Field(default_factory=list)
 
 
 class DegreePlanValidationResponse(BaseModel):
@@ -106,6 +147,24 @@ class DegreePlanValidationResponse(BaseModel):
     updatedAt: datetime
     startedAt: Optional[datetime] = None
     finishedAt: Optional[datetime] = None
+    warnings: List[ValidationIssue] = Field(default_factory=list)
+    concentrations: List[ConcentrationSummary] = Field(default_factory=list)
+    minors: List[ConcentrationSummary] = Field(default_factory=list)
+    concentrationIssues: List[ValidationIssue] = Field(default_factory=list)
+    minorIssues: List[ValidationIssue] = Field(default_factory=list)
+    concentrationRequirementCount: int = 0
+    concentrationSatisfiedCount: int = 0
+    concentrationCompletionPercent: float = 0.0
+    minorRequirementCount: int = 0
+    minorSatisfiedCount: int = 0
+    minorCompletionPercent: float = 0.0
+    generalEducation: List[GeneralEducationSummary] = Field(default_factory=list)
+    generalEducationRequirementCount: int = 0
+    generalEducationSatisfiedCount: int = 0
+    generalEducationCompletionPercent: float = 0.0
+    majorRequirementCount: int = 0
+    majorSatisfiedCount: int = 0
+    majorCompletionPercent: float = 0.0
 
     class Config:
         orm_mode = True

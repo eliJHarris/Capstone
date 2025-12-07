@@ -15,7 +15,7 @@ from models.degree_plan import (
     ValidationRunType,
 )
 from pdf_scraper.scrape_pdfs import run_pdf_scraper
-from services.pdf_parser import extract_courses, extract_program_info
+from services.pdf_parser import extract_courses, extract_program_info, extract_prerequisites
 
 
 def _ensure_major_exists(db: Session, program_code: str, program_name: str) -> None:
@@ -114,6 +114,21 @@ def _build_requirement_groups(program_name: str, courses):
     ]
 
 
+def _apply_prerequisites_to_courses(courses, prereq_map):
+    if not prereq_map:
+        return courses
+    normalized = {}
+    for code, clauses in prereq_map.items():
+        normalized[code.upper()] = clauses
+
+    for course in courses or []:
+        code = (course.get("code") or "").upper()
+        if code in normalized:
+            course["prerequisites"] = normalized[code]
+
+    return courses
+
+
 def _create_validation_record(
     db: Session,
     advisee_id: int,
@@ -204,6 +219,10 @@ def import_degree_plan_from_pdf_url(
 
     # 3. PARSE COMPLETED COURSES
     completed = _normalize_completed_courses(extract_courses(text))
+    prereq_map = extract_prerequisites(text)
+    _apply_prerequisites_to_courses(completed, prereq_map)
+    prereq_map = extract_prerequisites(text)
+    _apply_prerequisites_to_courses(completed, prereq_map)
     source_scope = f"advisee:{advisee_id}"
 
     # 4. FIND OR CREATE REQUIREMENT SET

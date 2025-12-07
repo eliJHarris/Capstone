@@ -26,6 +26,18 @@ export const useDegreePlanStore = defineStore('degreePlan', {
     validationStatus() {
       return this.latestValidation?.status || 'PENDING'
     },
+    concentrations(state) {
+      return state.summary?.latestValidation?.concentrations || []
+    },
+    concentrationCompletionPercent() {
+      return this.latestValidation?.concentrationCompletionPercent ?? 0
+    },
+    generalEducation(state) {
+      return state.summary?.latestValidation?.generalEducation || []
+    },
+    generalEducationCompletionPercent() {
+      return this.latestValidation?.generalEducationCompletionPercent ?? 0
+    },
     requirementSet() {
       return this.summary?.requirementSet || null
     },
@@ -94,9 +106,8 @@ export const useDegreePlanStore = defineStore('degreePlan', {
       try {
         await importDegreePlanPdf(adviseeId, pdfUrl)
 
-        // Refresh summary after ingestion + auto-validation
+        // Refresh summary after importer attaches requirement + validation
         await this.loadSummary(adviseeId)
-        await this.triggerValidation(adviseeId)
 
       } catch (error) {
         this.error = error.message || 'PDF import failed'
