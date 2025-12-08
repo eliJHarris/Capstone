@@ -9,3 +9,4 @@ openai>=1.52.0
 pydantic-settings>=2.0.0
 python-multipart
 python-jose[cryptography]==3.3.0
+json5

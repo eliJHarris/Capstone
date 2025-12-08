@@ -5,49 +5,77 @@ import {
   upsertAdviseeContext,
   saveRequirementSet,
   importDegreePlanPdf,
+  fetchDegreeContext,       // <-- NEW SERVICE
 } from '@/services/degreePlans'
 
 export const useDegreePlanStore = defineStore('degreePlan', {
   state: () => ({
     summary: null,
+    context: null,          // <-- NEW (stores advisee snapshot like Transcript page)
+    requirementSet: null,   // <-- NEW
+    completedCourses: [],   // <-- NEW
+    latestValidation: null, // <-- NEW cached validation
+
     loading: false,
     validationLoading: false,
-    importing: false,     // <-- NEW
+    importing: false,
     error: null,
   }),
 
   getters: {
-    latestValidation(state) {
-      return state.summary?.latestValidation || null
+    completionPercent(state) {
+      return state.latestValidation?.completionPercent ?? 0
     },
-    completionPercent() {
-      return this.latestValidation?.completionPercent ?? 0
-    },
-    validationStatus() {
-      return this.latestValidation?.status || 'PENDING'
-    },
-    concentrations(state) {
-      return state.summary?.latestValidation?.concentrations || []
-    },
-    concentrationCompletionPercent() {
-      return this.latestValidation?.concentrationCompletionPercent ?? 0
+    validationStatus(state) {
+      return state.latestValidation?.status || 'PENDING'
     },
     generalEducation(state) {
-      return state.summary?.latestValidation?.generalEducation || []
+      return state.latestValidation?.generalEducation || []
     },
-    generalEducationCompletionPercent() {
-      return this.latestValidation?.generalEducationCompletionPercent ?? 0
+    generalEducationCompletionPercent(state) {
+      return state.latestValidation?.generalEducationCompletionPercent ?? 0
     },
-    requirementSet() {
-      return this.summary?.requirementSet || null
+    concentrations(state) {
+      return state.latestValidation?.concentrations || []
     },
-    context() {
-      return this.summary?.context || null
-    },
+    concentrationCompletionPercent(state) {
+      return state.latestValidation?.concentrationCompletionPercent ?? 0
+    }
   },
 
   actions: {
-    // LOAD SUMMARY
+    // --------------------------------------------------
+    // NEW — Fetch the full degree plan context
+    // Mirrors Transcript behavior
+    // --------------------------------------------------
+    async fetchContext(adviseeId) {
+      if (!adviseeId) {
+        this.error = "Missing advisee ID"
+        throw new Error("Missing advisee ID")
+      }
+
+      this.loading = true
+      this.error = null
+
+      try {
+        const ctx = await fetchDegreeContext(adviseeId)
+
+        this.context = ctx
+        this.requirementSet = ctx.requirementSet
+        this.completedCourses = ctx.completedCourses || []
+        this.latestValidation = ctx.validation || null
+
+      } catch (err) {
+        this.error = err.message || "Failed to load degree context"
+        throw err
+      } finally {
+        this.loading = false
+      }
+    },
+
+    // --------------------------------------------------
+    // LOAD SUMMARY (still needed for validation results)
+    // --------------------------------------------------
     async loadSummary(adviseeId) {
       if (!adviseeId) {
         this.error = 'Missing advisee ID'
@@ -55,8 +83,15 @@ export const useDegreePlanStore = defineStore('degreePlan', {
       }
       this.loading = true
       this.error = null
+
       try {
-        this.summary = await fetchAdviseeSummary(adviseeId)
+        const summary = await fetchAdviseeSummary(adviseeId)
+        this.summary = summary
+
+        // Keep synced with context
+        this.latestValidation = summary.latestValidation ?? this.latestValidation
+        this.requirementSet = summary.requirementSet ?? this.requirementSet
+
       } catch (error) {
         this.error = error.message || 'Failed to load degree plan summary'
         throw error
@@ -65,28 +100,41 @@ export const useDegreePlanStore = defineStore('degreePlan', {
       }
     },
 
-    // CONTEXT SYNC
+    // --------------------------------------------------
+    // CONTEXT UPSERT
+    // --------------------------------------------------
     async syncContext(adviseeId, payload, options = {}) {
       this.error = null
       try {
         await upsertAdviseeContext(adviseeId, payload, options)
+
+        // Always refresh context afterwards
+        await this.fetchContext(adviseeId)
         await this.loadSummary(adviseeId)
+
       } catch (error) {
         this.error = error.message || 'Failed to sync degree context'
         throw error
       }
     },
 
-    // MANUAL VALIDATION
+    // --------------------------------------------------
+    // TRIGGER VALIDATION
+    // --------------------------------------------------
     async triggerValidation(adviseeId, triggeredBy) {
       if (!adviseeId) return
       this.validationLoading = true
       this.error = null
+
       try {
         await requestPlanValidation(adviseeId, { triggeredBy })
 
-        // allow background validator a moment to run
-        setTimeout(() => this.loadSummary(adviseeId), 1500)
+        // Refresh after validator finishes
+        setTimeout(() => {
+          this.loadSummary(adviseeId)
+          this.fetchContext(adviseeId)
+        }, 1500)
+
       } catch (error) {
         this.error = error.message || 'Failed to trigger validation'
         throw error
@@ -95,9 +143,29 @@ export const useDegreePlanStore = defineStore('degreePlan', {
       }
     },
 
-    // -------------------------
-    // NEW: Degree Audit PDF Import
-    // -------------------------
+    async runLlmValidation(adviseeId) {
+      if (!adviseeId) {
+        this.error = 'Missing advisee ID'
+        throw new Error('Missing advisee ID')
+      }
+      this.error = null
+
+      try {
+        await requestPlanValidation(adviseeId)
+        setTimeout(() => {
+          this.loadSummary(adviseeId)
+          this.fetchContext(adviseeId)
+        }, 1500)
+
+      } catch (error) {
+        this.error = error.message || 'LLM validation failed'
+        throw error
+      }
+    },
+
+    // --------------------------------------------------
+    // IMPORT PDF → attaches requirementSet → triggers validation
+    // --------------------------------------------------
     async importDegreePlan(adviseeId, pdfUrl) {
       if (!adviseeId) return
       this.importing = true
@@ -106,7 +174,8 @@ export const useDegreePlanStore = defineStore('degreePlan', {
       try {
         await importDegreePlanPdf(adviseeId, pdfUrl)
 
-        // Refresh summary after importer attaches requirement + validation
+        // Reload everything
+        await this.fetchContext(adviseeId)
         await this.loadSummary(adviseeId)
 
       } catch (error) {

@@ -45,6 +45,7 @@ from services.course_matching import (
     serialize_courses,
 )
 from services.degree_importer import import_degree_plan_from_pdf_url
+from services.degree_plan.llm_course_breakdown import classify_course_breakdown
 from services.transcript_service import TranscriptService
 
 
@@ -1368,6 +1369,7 @@ class DegreePlanService:
     @staticmethod
     def get_advisee_summary(db: Session, advisee_id: int):
         profile, context, requirement = DegreePlanService._ensure_context(db, advisee_id)
+        student = profile
         student_payload = profile
         transcript_payload = None
 
@@ -1406,21 +1408,18 @@ class DegreePlanService:
 
         requirement_payload = None
         if requirement:
-            requirement_payload = DegreeRequirementSetResponse(
-                requirementSetID=requirement.requirementSetID,
-                programCode=(profile.major if profile else None) or requirement.programCode,
-                catalogYear=normalize_catalog_display(requirement.catalogYear),
-                programName=(
-                    profile.degree_plan
-                    if profile and profile.degree_plan
-                    else requirement.programName
-                ),
-                totalCredits=requirement.totalCredits,
-                requirementGroups=requirement.requirementData or [],
-                sourceDocument=requirement.sourceDocument,
-                createdAt=requirement.createdAt,
-                updatedAt=requirement.updatedAt,
-            )
+            requirement_payload = {
+                "requirementSetID": requirement.requirementSetID,
+                "programCode": (student.major if student else None) or requirement.programCode,
+                "catalogYear": normalize_catalog_display(requirement.catalogYear),
+                "programName": student.degree_plan or requirement.programName,
+                "totalCredits": requirement.totalCredits,
+                "requirementGroups": requirement.requirementData or [],
+                "sourceDocument": requirement.sourceDocument,
+                "createdAt": requirement.createdAt,
+                "updatedAt": requirement.updatedAt,
+            }
+
 
         return {
             "context": context,
@@ -1528,6 +1527,7 @@ class DegreePlanService:
         completed_course_hours = DegreePlanService._build_completed_course_credit_map(completed_courses)
 
         groups = requirement.requirementData or []
+        group_results = []
         core_issues = []
         prereq_warnings = []
         total_items = 0
@@ -1558,6 +1558,13 @@ class DegreePlanService:
             group_courses = group.get("courses", [])
             group_id = group.get("id") or title
             group_scope = DegreePlanService._determine_requirement_scope(group)
+            group_entry = {
+                "id": group_id,
+                "title": title,
+                "missing": False,
+                "suggestions": [],
+                "satisfied": True,
+            }
 
             if DegreePlanService._is_general_program_note(title, description):
                 continue
@@ -1571,6 +1578,15 @@ class DegreePlanService:
                 general_ed_summaries.append(summary_entry)
                 general_ed_required_total += required_slots
                 general_ed_satisfied_total += satisfied_slots
+                missing_slots = max(0, required_slots - satisfied_slots)
+                group_entry["missing"] = missing_slots > 0
+                group_entry["satisfied"] = missing_slots == 0
+                group_entry["suggestions"] = (
+                    [f"Need {missing_slots:g} more selection(s) from {title}"]
+                    if missing_slots
+                    else []
+                )
+                group_results.append(group_entry)
                 continue
 
             concentration_result = DegreePlanService._handle_concentration_group(
@@ -1593,6 +1609,16 @@ class DegreePlanService:
                     concentration_satisfied_total += satisfied_slots
                     if concentration_messages:
                         concentration_issues.extend(concentration_messages)
+                missing = satisfied_slots < required_slots
+                group_entry["missing"] = missing
+                group_entry["satisfied"] = not missing
+                suggestions = [
+                    msg.get("message")
+                    for msg in (concentration_messages or [])
+                    if isinstance(msg, dict) and msg.get("message")
+                ]
+                group_entry["suggestions"] = suggestions
+                group_results.append(group_entry)
                 continue
 
             # DETECT CATEGORY REQUIREMENT
@@ -1620,6 +1646,10 @@ class DegreePlanService:
                 if satisfied:
                     satisfied_items += 1
                     scope_tracker["satisfied"] += 1
+                    group_entry["missing"] = False
+                    group_entry["satisfied"] = True
+                    group_entry["suggestions"] = []
+                    group_results.append(group_entry)
                     continue
 
                 label = CATEGORY_RULES[category_rule]["label"]
@@ -1629,6 +1659,10 @@ class DegreePlanService:
                     "missingCourses": [label],
                     "category": group_scope,
                 })
+                group_entry["missing"] = True
+                group_entry["satisfied"] = False
+                group_entry["suggestions"] = [f"Missing: {label}"]
+                group_results.append(group_entry)
                 continue
 
             # ----------------------------------------
@@ -1703,16 +1737,22 @@ class DegreePlanService:
                 scope_tracker["total"] += needed
                 scope_tracker["satisfied"] += satisfied_match
 
+                gap_message = None
                 if satisfied_credits < required_credits:
                     remain = max(0, round(required_credits - satisfied_credits, 2))
+                    gap_message = f"Need {remain:g} more credit(s) from {title}"
                     core_issues.append({
                         "requirementId": group_id,
-                        "message": f"Need {remain:g} more credit(s) from {title}",
+                        "message": gap_message,
                         "missingCourses": [
                             f"{title}: additional {remain:g} credit(s) needed"
                         ],
                         "category": group_scope,
                     })
+                group_entry["missing"] = gap_message is not None
+                group_entry["satisfied"] = gap_message is None
+                group_entry["suggestions"] = [gap_message] if gap_message else []
+                group_results.append(group_entry)
                 continue
 
             # Normal required-course list mode
@@ -1722,6 +1762,10 @@ class DegreePlanService:
             scope_tracker["total"] += entries_count
             scope_tracker["satisfied"] += satisfied_count
 
+            missing = bool(missing_entries)
+            group_entry["missing"] = missing
+            group_entry["satisfied"] = not missing
+            group_entry["suggestions"] = missing_entries if missing_entries else []
             if missing_entries:
                 core_issues.append({
                     "requirementId": group_id,
@@ -1729,6 +1773,7 @@ class DegreePlanService:
                     "missingCourses": missing_entries,
                     "category": group_scope,
                 })
+            group_results.append(group_entry)
 
         # ----------------------------------------
         # COMPLETION %
@@ -1745,6 +1790,28 @@ class DegreePlanService:
             )
         else:
             concentration_completion = 0.0
+
+        validation_result_payload = {
+            "completionPercent": completion,
+            "issues": core_issues + prereq_warnings,
+            "groupResults": group_results,
+        }
+
+        llm_breakdown = None
+        if requirement and context:
+            try:
+                llm_breakdown = classify_course_breakdown(
+                    requirement,
+                    completed_courses,
+                    validation_result_payload,
+                )
+            except Exception as exc:  # pragma: no cover - best-effort logging
+                logging.warning(
+                    "LLM course breakdown failed for advisee %s: %s",
+                    validation.adviseeID,
+                    exc,
+                )
+        validation.llmCourseBreakdown = llm_breakdown
 
 
         validation.completionPercent = completion

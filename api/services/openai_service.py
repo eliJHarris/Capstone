@@ -25,17 +25,10 @@ class OpenAIService:
         self.default_model = default_model or settings.openai_default_model
         self.embedding_model = embedding_model or settings.openai_embedding_model
 
-    def chat_completion(
-        self,
-        *,
-        messages: Sequence[Mapping[str, Any]],
-        model: Optional[str] = None,
-        **kwargs: Any,
-    ) -> Any:
-        """Create a chat completion with sensible defaults."""
-        return self.client.chat.completions.create(
+    def chat_completion(self, *, messages, model=None, **kwargs):
+        return self.client.responses.create(
             model=model or self.default_model,
-            messages=list(messages),
+            input=messages,
             **kwargs,
         )
 

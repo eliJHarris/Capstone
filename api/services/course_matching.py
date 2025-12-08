@@ -85,10 +85,6 @@ def merge_completed_sources(*sources: Optional[List[dict]]) -> List[dict]:
             term = (c.get("term") or "").upper().strip()
             title = (c.get("title") or "").upper().strip()
             status = (c.get("status") or "").upper().strip()
-            source_label = (c.get("source") or "").upper().strip()
-
-            if source_label == "PDF_IMPORT":
-                continue
             if status not in COMPLETED_STATUSES:
                 continue
 

@@ -232,3 +232,13 @@ def run_pdf_scraper(
             results[url] = {"url": url, "title": None, "text": "", "error": str(exc)}
 
     return results
+
+
+def scrape_pdf_text(pdf_url: str) -> str:
+    """
+    Convenience helper used by the API layer to fetch the raw text from a single PDF.
+    """
+    session = requests.Session()
+    session.headers.update(DEFAULT_HEADERS)
+    result = extract_pdf_content(pdf_url, session)
+    return result.get("text") or ""

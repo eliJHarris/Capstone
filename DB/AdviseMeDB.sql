@@ -674,6 +674,7 @@ CREATE TABLE IF NOT EXISTS degree_plan_validations (
   runType           ENUM('MANUAL','AUTOMATIC') NOT NULL DEFAULT 'MANUAL',
   completionPercent DECIMAL(5,2) NOT NULL DEFAULT 0,
   issues            JSON NULL,
+  llmCourseBreakdown JSON NULL,
   message           VARCHAR(255),
   triggeredBy       INT NULL,
   startedAt         DATETIME NULL,

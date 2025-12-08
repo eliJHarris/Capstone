@@ -51,8 +51,8 @@ class DegreeRequirementSetResponse(DegreeRequirementSetBase):
     updatedAt: datetime
 
     class Config:
-        orm_mode = True
-        allow_population_by_field_name = True
+        from_attributes = True
+        validate_by_name = True
 
 
 class CompletedCourse(BaseModel):
@@ -80,7 +80,7 @@ class AdviseeContextResponse(BaseModel):
     updatedAt: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class ValidationStatusEnum(str, Enum):
@@ -102,6 +102,11 @@ class ValidationIssue(BaseModel):
     missingCourses: List[str] = Field(default_factory=list)
     severity: Optional[str] = Field("ERROR", description="ERROR or WARNING")
     category: Optional[str] = Field(None, description="Optional classifier such as PREREQUISITE")
+
+
+class LLMCourseBreakdown(BaseModel):
+    takenCourses: List[str] = Field(default_factory=list)
+    neededCourses: List[str] = Field(default_factory=list)
 
 
 class ConcentrationOption(BaseModel):
@@ -165,9 +170,11 @@ class DegreePlanValidationResponse(BaseModel):
     majorRequirementCount: int = 0
     majorSatisfiedCount: int = 0
     majorCompletionPercent: float = 0.0
+    llmCourseBreakdown: Optional[LLMCourseBreakdown] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
+        validate_by_name = True
 
 
 class ValidationRequest(BaseModel):
