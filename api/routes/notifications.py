@@ -9,8 +9,13 @@ from schemas.notification import (
     notificationResponse,
     NotificationUpdate
 )
-from services.notification_service import NotificationService
 
+from services.email_service import send_email, EmailData
+from fastapi import BackgroundTasks
+
+from services.notification_service import NotificationService
+from routes.users import get_user
+from routes.emails import notify_user
 router = APIRouter(
     prefix="/notifications",
     tags=["notifications"]
@@ -61,6 +66,7 @@ def get_notification(
 @router.post("/", response_model=notificationResponse, status_code=201)
 def create_notification(
     notification: notificationCreate,
+    background: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
@@ -71,6 +77,15 @@ def create_notification(
     - **source**: Source of the schedule (USER, ADVISOR, SYSTEM) - defaults to USER
     - **status**: Status of the schedule (DRAFT, APPROVED, REJECTED) - defaults to DRAFT
     """
+    user = get_user(notification.userID, db)
+    email_data = EmailData(
+        subject="New Notification",
+        recipient=user.email,
+        body=f"Hi {user.username}, you have a new notification."
+    )
+
+    background.add_task(send_email, email_data)
+
     return NotificationService.create_notification(db=db, notification_data=notification)
 
 
