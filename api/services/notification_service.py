@@ -9,10 +9,34 @@ from schemas.notification import (
     notificationResponse
 )
 from models.advisee import AdviseeProfile
+from models.user import User  # <-- Make sure this import matches your project
+from services.email_service import send_email, EmailData
 
 
 class NotificationService:
     """Service layer for notification CRUD operations"""
+
+    # ----------------------------------------
+    # INTERNAL HELPER — send email for a notification
+    # ----------------------------------------
+    @staticmethod
+    def _send_email_for_notification(db: Session, user_id: int, description: str):
+        """Send an email to the user tied to this notification."""
+        user = db.query(User).filter(User.userID == user_id).first()
+        if not user or not user.email:
+            return  # No email to send
+
+        email_data = EmailData(
+            subject="New Notification",
+            recipient=user.email,
+            body=description
+        )
+
+        send_email(email_data)
+
+    # ----------------------------------------
+    # Called when staging a notification
+    # ----------------------------------------
     @staticmethod
     def queue_notification(db: Session, user_id: Optional[int], description: str) -> Optional[Notification]:
         """
@@ -28,8 +52,15 @@ class NotificationService:
             createdAt=datetime.utcnow()
         )
         db.add(notification)
+
+        # Send email immediately (non-committed notifications are still valid triggers)
+        NotificationService._send_email_for_notification(db, user_id, description)
+
         return notification
 
+    # ----------------------------------------
+    # Called when notifying both advisee + advisor
+    # ----------------------------------------
     @staticmethod
     def notify_advisee_and_advisor(
         db: Session,
@@ -39,7 +70,7 @@ class NotificationService:
         include_advisor: bool = True
     ) -> None:
         """
-        Convenience helper to notify the advisee's user account and their advisor (if assigned).
+        Notify the advisee and/or their advisor.
         """
         mapping = (
             db.query(AdviseeProfile.userID, AdviseeProfile.advisorID)
@@ -59,6 +90,9 @@ class NotificationService:
         for recipient_id in set(recipients):
             NotificationService.queue_notification(db, recipient_id, description)
 
+    # ----------------------------------------
+    # GET all
+    # ----------------------------------------
     @staticmethod
     def get_all_notifications(
         db: Session,
@@ -81,7 +115,6 @@ class NotificationService:
         if is_read is not None:
             query = query.filter(Notification.isRead == is_read)
 
-        # Show newest notifications first so clients get a consistent order
         notifications = (
             query.order_by(Notification.createdAt.desc())
             .offset(skip)
@@ -89,7 +122,6 @@ class NotificationService:
             .all()
         )
 
-        # Build response with class count
         result = []
         for notification in notifications:
             result.append(notificationResponse(
@@ -102,11 +134,11 @@ class NotificationService:
 
         return result
 
+    # ----------------------------------------
+    # GET by ID
+    # ----------------------------------------
     @staticmethod
     def get_notification_by_id(db: Session, notification_id: int) -> notificationResponse:
-        """
-        Get a specific schedule by ID with all classes
-        """
         notification = db.query(Notification).filter(Notification.notificationID == notification_id).first()
 
         if not notification:
@@ -123,13 +155,15 @@ class NotificationService:
             createdAt=notification.createdAt
         )
 
+    # ----------------------------------------
+    # CREATE (also triggers email)
+    # ----------------------------------------
     @staticmethod
     def create_notification(db: Session, notification_data: notificationCreate) -> notificationResponse:
         """
-        Create a new schedule
+        Create a new notification
         """
 
-        # Create new schedule
         new_notification = Notification(
             userID=notification_data.userID,
             description=notification_data.description,
@@ -141,13 +175,20 @@ class NotificationService:
         db.commit()
         db.refresh(new_notification)
 
+        # Send email when a new notification is created
+        NotificationService._send_email_for_notification(
+            db,
+            new_notification.userID,
+            new_notification.description
+        )
+
         return NotificationService.get_notification_by_id(db, new_notification.notificationID)
 
+    # ----------------------------------------
+    # UPDATE (no email)
+    # ----------------------------------------
     @staticmethod
     def update_notification(db: Session, notification_id: int, is_read: bool) -> notificationResponse:
-        """
-        Update read status for a notification
-        """
         notification = db.query(Notification).filter(Notification.notificationID == notification_id).first()
 
         if not notification:
@@ -168,11 +209,11 @@ class NotificationService:
             createdAt=notification.createdAt
         )
 
+    # ----------------------------------------
+    # DELETE (no email)
+    # ----------------------------------------
     @staticmethod
     def delete_notification(db: Session, notification_id: int) -> dict:
-        """
-        Delete a schedule
-        """
         notification = db.query(Notification).filter(Notification.notificationID == notification_id).first()
 
         if not notification:
