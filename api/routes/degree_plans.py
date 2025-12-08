@@ -79,9 +79,10 @@ def upsert_advisee_context(
 @router.get("/advisees/{advisee_id}/summary")
 def get_advisee_summary(
     advisee_id: int,
+    allow_bootstrap: bool = Query(True),
     db: Session = Depends(get_db),
 ):
-    return DegreePlanService.get_advisee_summary(db, advisee_id)
+    return DegreePlanService.get_advisee_summary(db, advisee_id, allow_bootstrap=allow_bootstrap)
 
 
 # ------------------------------
@@ -125,9 +126,14 @@ def list_validations(
 @router.get("/advisees/{advisee_id}/context")
 def get_degree_plan_context(
     advisee_id: int,
+    allow_bootstrap: bool = Query(True),
     db: Session = Depends(get_db),
 ):
-    profile, context, requirement = DegreePlanService._ensure_context(db, advisee_id)
+    profile, context, requirement = DegreePlanService._ensure_context(
+        db,
+        advisee_id,
+        allow_bootstrap=allow_bootstrap,
+    )
 
     if not profile:
         raise HTTPException(status_code=404, detail="Advisee profile not found")
@@ -164,7 +170,15 @@ def get_degree_plan_context(
 
     validation_payload = None
     if latest_validation:
-        normalized = DegreePlanService._normalize_validation_record(latest_validation)
+        computed = None
+        try:
+            computed = DegreePlanService.validate_degree_plan(db, advisee_id)
+        except HTTPException:
+            computed = None
+        normalized = DegreePlanService._normalize_validation_record(
+            latest_validation,
+            extras=computed,
+        )
         validation_payload = DegreePlanValidationResponse.from_orm(normalized)
 
     return {

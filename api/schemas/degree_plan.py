@@ -63,6 +63,14 @@ class CompletedCourse(BaseModel):
     status: Optional[str] = Field("COMPLETED", description="Status flag, default COMPLETED")
 
 
+class CourseDetail(BaseModel):
+    code: str
+    title: Optional[str] = None
+    display: Optional[str] = None
+    yearBucket: Optional[str] = None
+    credits: Optional[float] = None
+
+
 class AdviseeContextUpsert(BaseModel):
     requirementSetID: int
     completedCourses: List[CompletedCourse] = Field(default_factory=list)
@@ -117,6 +125,8 @@ class ConcentrationOption(BaseModel):
     satisfied: bool
     takenCourses: List[str] = Field(default_factory=list)
     missingCourses: List[str] = Field(default_factory=list)
+    takenCourseDetails: List[CourseDetail] = Field(default_factory=list)
+    missingCourseDetails: List[CourseDetail] = Field(default_factory=list)
 
 
 class ConcentrationSummary(BaseModel):
@@ -125,6 +135,15 @@ class ConcentrationSummary(BaseModel):
     requiredSelections: int
     satisfiedSelections: int
     options: List[ConcentrationOption] = Field(default_factory=list)
+    requiredHours: Optional[float] = None
+    completedHours: Optional[float] = None
+    remainingHours: Optional[float] = None
+    requiredCoursesCount: Optional[int] = None
+    completedCoursesCount: Optional[int] = None
+    missingCourses: List[str] = Field(default_factory=list)
+    takenCourses: List[str] = Field(default_factory=list)
+    missingCourseDetails: List[CourseDetail] = Field(default_factory=list)
+    takenCourseDetails: List[CourseDetail] = Field(default_factory=list)
 
 
 class GeneralEducationSummary(BaseModel):
@@ -136,6 +155,19 @@ class GeneralEducationSummary(BaseModel):
     remainingSelections: int
     takenCourses: List[str] = Field(default_factory=list)
     remainingCourses: List[str] = Field(default_factory=list)
+    takenCourseDetails: List[CourseDetail] = Field(default_factory=list)
+    remainingCourseDetails: List[CourseDetail] = Field(default_factory=list)
+
+
+class RequirementProgress(BaseModel):
+    groupId: Optional[str] = None
+    title: Optional[str] = None
+    requiredCount: int = 0
+    satisfiedCount: int = 0
+    missingCourses: List[str] = Field(default_factory=list)
+    takenCourses: List[str] = Field(default_factory=list)
+    missingCourseDetails: List[CourseDetail] = Field(default_factory=list)
+    takenCourseDetails: List[CourseDetail] = Field(default_factory=list)
 
 
 class DegreePlanValidationResponse(BaseModel):
@@ -170,7 +202,12 @@ class DegreePlanValidationResponse(BaseModel):
     majorRequirementCount: int = 0
     majorSatisfiedCount: int = 0
     majorCompletionPercent: float = 0.0
+    majorRequirements: List[RequirementProgress] = Field(default_factory=list)
+    minorRequirements: List[RequirementProgress] = Field(default_factory=list)
+    majorNeededCourses: List[str] = Field(default_factory=list)
+    minorNeededCourses: List[str] = Field(default_factory=list)
     llmCourseBreakdown: Optional[LLMCourseBreakdown] = None
+    outstandingRequirements: List["OutstandingRequirement"] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
@@ -187,3 +224,17 @@ class AdviseePlanSummary(BaseModel):
     latestValidation: Optional[DegreePlanValidationResponse]
     student: Optional[AdviseeResponse] = None
     transcript: Optional[TranscriptResponse] = None
+
+
+class OutstandingRequirement(BaseModel):
+    requirementId: Optional[str] = None
+    title: Optional[str] = None
+    category: Optional[str] = Field(None, description="generalEducation | major | concentration | minor | issue")
+    message: Optional[str] = None
+    requiredCount: int = 0
+    satisfiedCount: int = 0
+    completionPercent: float = 0.0
+    missingCourses: List[CourseDetail] = Field(default_factory=list)
+
+
+DegreePlanValidationResponse.model_rebuild()

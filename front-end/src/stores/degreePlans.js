@@ -8,6 +8,15 @@ import {
   fetchDegreeContext,       // <-- NEW SERVICE
 } from '@/services/degreePlans'
 
+// Normalize requirement set payload so we always have requirementGroups
+// regardless of whether the API returns requirementData (Pydantic alias)
+// or the context snapshot uses requirementGroups directly.
+const normalizeRequirementSet = (rs) => {
+  if (!rs) return null
+  const groups = rs.requirementGroups || rs.requirementData || []
+  return { ...rs, requirementGroups: groups }
+}
+
 export const useDegreePlanStore = defineStore('degreePlan', {
   state: () => ({
     summary: null,
@@ -48,20 +57,21 @@ export const useDegreePlanStore = defineStore('degreePlan', {
     // NEW — Fetch the full degree plan context
     // Mirrors Transcript behavior
     // --------------------------------------------------
-    async fetchContext(adviseeId) {
+    async fetchContext(adviseeId, options = {}) {
       if (!adviseeId) {
         this.error = "Missing advisee ID"
         throw new Error("Missing advisee ID")
       }
+      const { allowBootstrap } = options
 
       this.loading = true
       this.error = null
 
       try {
-        const ctx = await fetchDegreeContext(adviseeId)
+        const ctx = await fetchDegreeContext(adviseeId, { allowBootstrap })
 
         this.context = ctx
-        this.requirementSet = ctx.requirementSet
+        this.requirementSet = normalizeRequirementSet(ctx.requirementSet)
         this.completedCourses = ctx.completedCourses || []
         this.latestValidation = ctx.validation || null
 
@@ -76,21 +86,22 @@ export const useDegreePlanStore = defineStore('degreePlan', {
     // --------------------------------------------------
     // LOAD SUMMARY (still needed for validation results)
     // --------------------------------------------------
-    async loadSummary(adviseeId) {
+    async loadSummary(adviseeId, options = {}) {
       if (!adviseeId) {
         this.error = 'Missing advisee ID'
         return
       }
+      const { allowBootstrap } = options
       this.loading = true
       this.error = null
 
       try {
-        const summary = await fetchAdviseeSummary(adviseeId)
+        const summary = await fetchAdviseeSummary(adviseeId, { allowBootstrap })
         this.summary = summary
 
         // Keep synced with context
         this.latestValidation = summary.latestValidation ?? this.latestValidation
-        this.requirementSet = summary.requirementSet ?? this.requirementSet
+        this.requirementSet = normalizeRequirementSet(summary.requirementSet) ?? this.requirementSet
 
       } catch (error) {
         this.error = error.message || 'Failed to load degree plan summary'

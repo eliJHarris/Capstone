@@ -28,9 +28,11 @@ const adviseePath = (adviseeId, suffix) =>
 /* -------------------------------------------------------
    FETCH SUMMARY (old behavior, used by validator results)
 -------------------------------------------------------- */
-export async function fetchAdviseeSummary(adviseeId) {
+export async function fetchAdviseeSummary(adviseeId, options = {}) {
   requireAdviseeId(adviseeId)
-  return apiFetch(adviseePath(adviseeId, '/summary'))
+  const { allowBootstrap } = options
+  const query = buildQuery({ allow_bootstrap: allowBootstrap })
+  return apiFetch(`${adviseePath(adviseeId, '/summary')}${query}`)
 }
 
 /* -------------------------------------------------------
@@ -106,7 +108,9 @@ export async function importDegreePlanPdf(adviseeId, pdfUrl) {
      validation
    }
 -------------------------------------------------------- */
-export async function fetchDegreeContext(adviseeId) {
+export async function fetchDegreeContext(adviseeId, options = {}) {
   requireAdviseeId(adviseeId)
-  return apiFetch(`${adviseePath(adviseeId, '/context')}`)
+  const { allowBootstrap } = options
+  const query = buildQuery({ allow_bootstrap: allowBootstrap })
+  return apiFetch(`${adviseePath(adviseeId, '/context')}${query}`)
 }

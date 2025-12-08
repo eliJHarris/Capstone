@@ -60,13 +60,16 @@
     <v-card rounded="xl" class="mb-4">
       <v-card-text>
         <div class="d-flex flex-column flex-md-row align-start" style="gap: 24px;">
-
           <!-- ADVISEE SELECT -->
           <div class="flex-grow-1" style="min-width: 260px;">
             <div class="text-subtitle-2 text-medium-emphasis mb-2">Select Advisee</div>
 
             <template v-if="isStudent">
-              <v-alert density="compact" color="primary" variant="tonal">
+              <v-alert
+                density="compact"
+                color="primary"
+                variant="tonal"
+              >
                 You are viewing your own degree plan.
               </v-alert>
             </template>
@@ -111,7 +114,6 @@
           <div v-else class="flex-grow-1 text-medium-emphasis">
             Select an advisee to load their degree plan.
           </div>
-
         </div>
       </v-card-text>
     </v-card>
@@ -143,8 +145,10 @@
     <!-- MAIN CONTENT -->
     <v-row dense v-if="context && latestValidation">
 
-      <!-- LEFT COLUMN: COMPLETION WHEEL -->
+      <!-- LEFT COLUMN -->
       <v-col cols="12" md="4">
+
+        <!-- COMPLETION CARD -->
         <v-card rounded="xl" class="mb-4">
           <v-card-text class="text-center">
             <div class="text-subtitle-2 text-medium-emphasis mb-2">Completion</div>
@@ -172,22 +176,18 @@
             </div>
           </v-card-text>
 
-          <!-- PROGRAM INFO -->
           <v-divider />
 
+          <!-- PROGRAM INFO -->
           <v-list density="comfortable">
             <v-list-item>
               <v-list-item-title>Program</v-list-item-title>
-              <v-list-item-subtitle>
-                {{ context.major }}
-              </v-list-item-subtitle>
+              <v-list-item-subtitle>{{ context.major }}</v-list-item-subtitle>
             </v-list-item>
 
             <v-list-item>
               <v-list-item-title>Catalog Year</v-list-item-title>
-              <v-list-item-subtitle>
-                {{ context.catalogYear || '—' }}
-              </v-list-item-subtitle>
+              <v-list-item-subtitle>{{ context.catalogYear || '—' }}</v-list-item-subtitle>
             </v-list-item>
 
             <v-list-item>
@@ -198,11 +198,24 @@
             </v-list-item>
           </v-list>
 
-          <!-- CATEGORY COMPLETION -->
           <v-divider />
 
+          <!-- CATEGORY COMPLETION -->
           <v-card-text class="pt-4">
             <div class="text-subtitle-2 text-medium-emphasis mb-3">Category Completion</div>
+
+            <div class="mb-4">
+              <div class="text-body-2 font-weight-medium mb-1">Degree</div>
+              <v-progress-linear
+                :model-value="degreeCompletion"
+                height="6"
+                rounded
+                color="primary"
+              />
+              <div class="text-caption text-medium-emphasis">
+                {{ degreeCompletion.toFixed(1) }}% complete
+              </div>
+            </div>
 
             <div class="mb-4">
               <div class="text-body-2 font-weight-medium mb-1">Major</div>
@@ -214,6 +227,19 @@
               />
               <div class="text-caption text-medium-emphasis">
                 {{ majorPercent.toFixed(1) }}% complete
+              </div>
+            </div>
+
+            <div v-if="concentrationPercent > 0" class="mb-4">
+              <div class="text-body-2 font-weight-medium mb-1">Concentration</div>
+              <v-progress-linear
+                :model-value="concentrationPercent"
+                height="6"
+                rounded
+                color="secondary"
+              />
+              <div class="text-caption text-medium-emphasis">
+                {{ concentrationPercent.toFixed(1) }}% complete
               </div>
             </div>
 
@@ -236,208 +262,84 @@
       <!-- RIGHT COLUMN -->
       <v-col cols="12" md="8">
 
-        <!-- GENERAL EDUCATION -->
-        <v-card v-if="generalEd.length" rounded="xl" class="mb-4">
+        <!-- YEAR-BY-YEAR DEGREE PLAN BREAKDOWN -->
+        <v-card rounded="xl" class="mb-4">
           <v-card-title class="d-flex align-center">
-            General Education Progress
+            Year-by-Year Degree Plan Breakdown
             <v-spacer />
-            <v-chip size="small" color="secondary" variant="tonal">
-              {{ degreePlanStore.generalEducationCompletionPercent.toFixed(1) }}%
+
+            <v-chip size="small" color="primary" variant="tonal">
+              {{ totalCompleted }} / {{ totalPlanned }} courses completed
             </v-chip>
           </v-card-title>
 
           <v-card-text>
-            <div v-for="group in generalEd" :key="group.title" class="mb-6">
-              <div class="d-flex align-center justify-space-between mb-2">
-                <div>
-                  <div class="text-subtitle-1">{{ group.title }}</div>
-                  <div class="text-caption text-medium-emphasis">
-                    Complete {{ group.requiredSelections }} selection(s)
-                  </div>
-                </div>
 
-                <v-chip size="small" :color="group.satisfiedSelections >= group.requiredSelections ? 'success' : 'warning'">
-                  {{ group.satisfiedSelections }} / {{ group.requiredSelections }}
-                </v-chip>
-              </div>
+            <!-- YEAR TABS -->
+            <v-tabs v-model="yearTab" grow density="compact" class="mb-6">
+              <v-tab v-for="y in yearTabs" :key="y" :value="y">
+                {{ y }}
+              </v-tab>
+            </v-tabs>
 
+            <!-- YEAR PROGRESS BAR -->
+            <div class="mb-4">
               <v-progress-linear
-                :model-value="generalEdProgress(group)"
-                height="6"
+                :model-value="yearProgress(yearTab)"
+                :color="yearColor(yearTab)"
+                height="12"
                 rounded
-                class="mb-3"
               />
-            </div>
-          </v-card-text>
-        </v-card>
-
-        <!-- CONCENTRATION & MINOR SECTION -->
-        <v-card v-if="hasFocusAreas" rounded="xl" class="mb-4">
-          <v-card-title class="d-flex align-center">
-            Focus Areas
-            <v-spacer />
-
-            <v-chip size="small" color="primary" variant="tonal" v-if="concentrationPercent > 0">
-              Concentrations {{ concentrationPercent.toFixed(1) }}%
-            </v-chip>
-
-            <v-chip size="small" color="secondary" variant="tonal" v-if="minorPercent > 0">
-              Minors {{ minorPercent.toFixed(1) }}%
-            </v-chip>
-
-          </v-card-title>
-
-          <v-card-text>
-            <div v-for="section in focusSections" :key="section.key" class="mb-6">
-              <div class="d-flex align-center justify-space-between mb-2">
-                <div>
-                  <div class="text-subtitle-2">{{ section.title }}</div>
-                </div>
-
-                <v-chip size="small" :color="section.completion >= 100 ? 'success' : 'warning'" variant="tonal">
-                  {{ section.completion.toFixed(1) }}%
-                </v-chip>
+              <div class="text-caption text-medium-emphasis mt-1">
+                {{ yearProgress(yearTab).toFixed(1) }}% complete
               </div>
-
-              <v-row dense>
-                <v-col
-                  cols="12"
-                  md="6"
-                  v-for="area in section.groups"
-                  :key="area.title"
-                >
-                  <v-sheet class="pa-3 requirement-option" rounded="lg">
-                    <div class="d-flex align-center justify-space-between mb-1">
-                      <div class="text-subtitle-2">{{ area.title }}</div>
-
-                      <v-chip size="x-small" color="primary" variant="tonal">
-                        {{ area.completedHours }} / {{ area.requiredHours }} hrs
-                      </v-chip>
-                    </div>
-
-                    <v-progress-linear
-                      :model-value="concentrationProgress(area)"
-                      height="6"
-                      rounded
-                      class="mb-2"
-                    />
-
-                    <div class="text-caption text-medium-emphasis mb-1">Outstanding Courses</div>
-                    <div>
-                      <v-chip
-                        v-for="c in area.missingCourses"
-                        :key="c"
-                        size="x-small"
-                        class="ma-1"
-                        color="primary"
-                        variant="outlined"
-                      >
-                        {{ c }}
-                      </v-chip>
-                    </div>
-                  </v-sheet>
-                </v-col>
-              </v-row>
-
             </div>
-          </v-card-text>
-        </v-card>
 
-        <!-- LLM BREAKDOWN -->
-        <v-card v-if="llmNeeded.length || llmTaken.length" rounded="xl" class="mb-4">
-          <v-card-title class="d-flex align-center">
-            LLM Course Breakdown
-            <v-spacer />
-            <v-chip size="small" :color="llmNeeded.length ? 'error' : 'success'" variant="tonal">
-              {{ llmNeeded.length ? 'Outstanding Work' : 'No Outstanding Courses' }}
-            </v-chip>
-          </v-card-title>
-
-          <v-card-text>
-            <div class="text-subtitle-2 text-medium-emphasis mb-2">Needed Courses</div>
-            <div v-if="llmNeeded.length">
-              <v-chip
-                v-for="n in llmNeeded"
-                :key="n"
-                size="small"
-                class="ma-1"
-                color="warning"
-                variant="tonal"
+            <!-- YEAR COURSE LIST -->
+            <v-list density="comfortable" v-if="degreePlanYearBuckets[yearTab].length">
+              <v-list-item
+                v-for="c in degreePlanYearBuckets[yearTab]"
+                :key="c.code"
               >
-                {{ n }}
-              </v-chip>
+                <v-list-item-title>
+                  <strong>{{ c.code }}</strong> — {{ c.title }}
+                  <span class="text-medium-emphasis">
+                    ({{ c.credits }} hrs)
+                  </span>
+                </v-list-item-title>
+
+                <v-list-item-subtitle class="text-caption text-medium-emphasis">
+                  {{ c.category }}
+                </v-list-item-subtitle>
+
+                <template #append>
+                  <v-chip
+                    v-if="c.taken"
+                    color="success"
+                    size="small"
+                    variant="tonal"
+                  >
+                    ✓ Taken
+                  </v-chip>
+
+                  <v-chip
+                    v-else
+                    color="warning"
+                    size="small"
+                    variant="tonal"
+                  >
+                    ⚠ Not Taken
+                  </v-chip>
+                </template>
+              </v-list-item>
+            </v-list>
+
+            <div v-else class="text-body-2 text-medium-emphasis">
+              No courses assigned to {{ yearTab }} year.
             </div>
-
-            <div class="text-subtitle-2 text-medium-emphasis mt-4 mb-1">
-              Completed Courses (LLM)
-            </div>
-            <div>
-              <v-chip
-                v-for="t in llmTaken"
-                :key="t"
-                size="small"
-                class="ma-1"
-                color="success"
-                variant="tonal"
-              >
-                {{ t }}
-              </v-chip>
-            </div>
-          </v-card-text>
-        </v-card>
-
-        <!-- OUTSTANDING REQUIREMENTS -->
-        <v-card rounded="xl">
-          <v-card-title class="d-flex align-center">
-            Outstanding Requirements
-
-            <v-chip v-if="issues.length" size="small" class="ml-2" color="warning">
-              {{ issues.length }} issue(s)
-            </v-chip>
-
-            <v-spacer />
-            <span class="text-caption text-medium-emphasis">
-              Auto validations run whenever the plan changes
-            </span>
-          </v-card-title>
-
-          <v-card-text>
-
-            <v-alert v-if="!issues.length" type="success" variant="tonal">
-              All tracked requirements are satisfied.
-            </v-alert>
-
-            <template v-else>
-              <div v-for="issue in issues" :key="issue.requirementId" class="mb-6">
-                <v-timeline density="compact">
-                  <v-timeline-item dot-color="warning">
-                    <v-card color="warning" variant="tonal">
-                      <v-card-title>{{ issue.requirementId }}</v-card-title>
-
-                      <v-card-text>
-                        <p class="mb-2">{{ issue.message }}</p>
-
-                        <div class="text-body-2">
-                          Missing:
-                          <v-chip
-                            v-for="c in issue.missingCourses"
-                            :key="c"
-                            size="small"
-                            class="ma-1"
-                          >
-                            {{ c }}
-                          </v-chip>
-                        </div>
-                      </v-card-text>
-                    </v-card>
-                  </v-timeline-item>
-                </v-timeline>
-              </div>
-            </template>
 
           </v-card-text>
         </v-card>
-
       </v-col>
     </v-row>
 
@@ -445,10 +347,8 @@
     <v-alert v-else type="info" variant="tonal" class="mt-4">
       Select an advisee to load degree plan data.
     </v-alert>
-
   </div>
 </template>
-
 <script setup>
 /* ------------------------------------------
    IMPORTS
@@ -475,6 +375,12 @@ const showImportDialog = ref(false)
 const pdfURL = ref("")
 const seeding = ref(false)
 
+// year tab state
+const yearTab = ref("All")
+
+/* ------------------------------------------
+   CURRENT USER INFO
+------------------------------------------ */
 const {
   role: userRole,
   advisee: currentAdvisee,
@@ -485,20 +391,17 @@ const {
 const isStudent = computed(() => userRole.value === NORMALIZED_ROLES.STUDENT)
 
 /* ------------------------------------------
-   CONTEXT BINDINGS
+   CONTEXT & VALIDATION BINDINGS
 ------------------------------------------ */
 const context = computed(() => degreePlanStore.context)
+const requirementSet = computed(() => degreePlanStore.requirementSet)
 const latestValidation = computed(() => degreePlanStore.latestValidation || {})
 
-const generalEd = computed(() => latestValidation.value.generalEducation || [])
-const issues = computed(() => latestValidation.value.issues || [])
-
+/* Category progress */
+const degreeCompletion = computed(() => latestValidation.value.completionPercent ?? degreePlanStore.completionPercent ?? 0)
 const majorPercent = computed(() => latestValidation.value.majorCompletionPercent ?? 0)
 const minorPercent = computed(() => latestValidation.value.minorCompletionPercent ?? 0)
 const concentrationPercent = computed(() => latestValidation.value.concentrationCompletionPercent ?? 0)
-
-const llmNeeded = computed(() => latestValidation.value.llmCourseBreakdown?.neededCourses || [])
-const llmTaken = computed(() => latestValidation.value.llmCourseBreakdown?.takenCourses || [])
 
 /* ------------------------------------------
    FORMATTING
@@ -519,48 +422,180 @@ const statusColor = computed(() => {
 })
 
 /* ------------------------------------------
-   GENERAL ED PROGRESS
+   UTILS: Infer year bucket from course code
 ------------------------------------------ */
-function generalEdProgress(group) {
-  const req = Math.max(group.requiredSelections || 1, 1)
-  const got = Math.min(group.satisfiedSelections || 0, req)
-  return (got / req) * 100
+function inferYearBucket(code = "") {
+  if (!code) return "Other"
+  const digits = code.replace(/\s+/g, "").match(/\d+/)
+  if (!digits || !digits[0]) return "Other"
+  const first = digits[0][0]
+  if (first === "1") return "Freshman"
+  if (first === "2") return "Sophomore"
+  if (first === "3") return "Junior"
+  if (first === "4" || first === "5") return "Senior"
+  return "Other"
 }
 
 /* ------------------------------------------
-   FOCUS AREAS
+   1. Extract completed course codes
 ------------------------------------------ */
-const focusSections = computed(() => {
-  const sections = []
+function normalizeCourseCode(entry) {
+  if (!entry) return ""
+  const raw = typeof entry === "string" ? entry : entry.code
+  return (raw || "").replace(/\s+/g, "").toUpperCase()
+}
 
-  if (latestValidation.value.concentrations?.length) {
-    sections.push({
-      key: "CONCENTRATION",
-      title: "Concentrations",
-      completion: concentrationPercent.value,
-      groups: latestValidation.value.concentrations
-    })
-  }
+const completedCodes = computed(() => {
+  const all = [
+    ...(degreePlanStore.completedCourses || []),
+    ...(latestValidation.value.completedCourses || []),
+    ...(latestValidation.value.completed || []),
+    ...(latestValidation.value.takenCourses || []),
+    ...(latestValidation.value.llmCourseBreakdown?.takenCourses || [])
+  ]
 
-  if (latestValidation.value.minors?.length) {
-    sections.push({
-      key: "MINOR",
-      title: "Minors",
-      completion: minorPercent.value,
-      groups: latestValidation.value.minors
-    })
-  }
-
-  return sections
+  return new Set(all.map((c) => normalizeCourseCode(c)).filter(Boolean))
 })
 
-const hasFocusAreas = computed(() => focusSections.value.length > 0)
+/* ------------------------------------------
+   2. Extract planned courses from requirement sets
+------------------------------------------ */
+function extractPlannedCourses() {
+  const items = []
 
-function concentrationProgress(area) {
-  const req = Math.max(area.requiredHours || 1, 1)
-  const got = area.completedHours || 0
-  return (got / req) * 100
+  const groups = requirementSet.value?.requirementGroups || requirementSet.value?.requirementData || []
+
+  const labelForGroup = (group = {}) => {
+    const type = (group.type || "").toLowerCase()
+    const baseTitle = group.title || group.id || "Requirement"
+
+    if (type === "concentration") return `Concentration — ${baseTitle}`
+    if (type === "minor") return `Minor — ${baseTitle}`
+    if (
+      type === "category" ||
+      type === "choose_one" ||
+      type === "paired_group" ||
+      type === "credit_minimum" ||
+      (group.category || "").toLowerCase() === "general_education"
+    ) {
+      return `General Education — ${baseTitle}`
+    }
+    return baseTitle
+  }
+
+  const normalizeCourseEntry = (course) => {
+    const code = normalizeCourseCode(course)
+    if (!code) return null
+    const title =
+      typeof course === "string"
+        ? code
+        : course.title || course.display || code
+    const credits = Number(
+      (typeof course === "string" ? null : course.credits) ?? 3
+    )
+    return { code, title, credits: Number.isFinite(credits) ? credits : 3 }
+  }
+
+  if (groups.length) {
+    groups.forEach((group) => {
+      const categoryLabel = labelForGroup(group)
+      const courseEntries = (group.courses && group.courses.length)
+        ? group.courses
+        : [...(group.requiredCourses || []), ...(group.chooseCourses || [])]
+
+      courseEntries.forEach((course) => {
+        const normalized = normalizeCourseEntry(course)
+        if (!normalized) return
+        items.push({ ...normalized, category: categoryLabel })
+      })
+    })
+    return items
+  }
+
+  // Fallback to validation payload if requirement set is unavailable
+  const raw = latestValidation.value
+
+  const pushGroup = (group, categoryLabel) => {
+    if (!group?.courses) return
+    group.courses.forEach((course) => {
+      const normalized = normalizeCourseEntry(course)
+      if (!normalized) return
+      items.push({ ...normalized, category: categoryLabel })
+    })
+  }
+
+  ;(raw.majorRequirements || []).forEach((g) => pushGroup(g, "Major Requirement"))
+  ;(raw.minorRequirements || []).forEach((g) => pushGroup(g, "Minor Requirement"))
+  ;(raw.generalEducation || []).forEach((g) => pushGroup(g, `General Education — ${g.title}`))
+  ;(raw.concentrations || []).forEach((g) => pushGroup(g, `Concentration — ${g.title}`))
+
+  return items
 }
+
+const plannedCourses = computed(() => extractPlannedCourses())
+
+/* ------------------------------------------
+   3. Bucket planned courses by year + taken flag
+------------------------------------------ */
+function bucketPlannedCourses() {
+  const buckets = {
+    All: [],
+    Freshman: [],
+    Sophomore: [],
+    Junior: [],
+    Senior: [],
+    Other: [],
+  }
+
+  plannedCourses.value.forEach((c) => {
+    const year = inferYearBucket(c.code)
+    const entry = {
+      ...c,
+      taken: completedCodes.value.has(c.code)
+    }
+    buckets[year].push(entry)
+    buckets["All"].push(entry)
+  })
+
+  return buckets
+}
+
+const degreePlanYearBuckets = computed(() => bucketPlannedCourses())
+
+/* ------------------------------------------
+   4. Year Tabs
+------------------------------------------ */
+const yearTabs = ["All", "Freshman", "Sophomore", "Junior", "Senior", "Other"]
+
+/* ------------------------------------------
+   5. Year Progress Calculations
+------------------------------------------ */
+function yearProgress(year) {
+  const list = degreePlanYearBuckets.value[year] || []
+  if (list.length === 0) return 0
+  const taken = list.filter((c) => c.taken).length
+  return (taken / list.length) * 100
+}
+
+function yearColor(year) {
+  switch (year) {
+    case "Freshman": return "primary"
+    case "Sophomore": return "secondary"
+    case "Junior": return "info"
+    case "Senior": return "success"
+    case "Other": return "warning"
+    default: return "primary"
+  }
+}
+
+/* Totals */
+const allPlannedCourses = computed(() => degreePlanYearBuckets.value.All || [])
+
+const totalCompleted = computed(() =>
+  allPlannedCourses.value.filter((c) => c.taken).length
+)
+
+const totalPlanned = computed(() => allPlannedCourses.value.length)
 
 /* ------------------------------------------
    ADVISEE SELECT ITEMS
@@ -574,7 +609,7 @@ const adviseeSelectItems = computed(() =>
 )
 
 /* ------------------------------------------
-   LOAD ADVISEES (advisor mode)
+   LOAD ADVISEES
 ------------------------------------------ */
 async function loadAdvisees() {
   adviseeListLoading.value = true
@@ -592,8 +627,9 @@ async function loadAdvisees() {
 watch(selectedAdviseeId, async (id) => {
   if (!id) return
 
-  await degreePlanStore.fetchContext(id)
-  await degreePlanStore.loadSummary(id)
+  const allowBootstrap = !isStudent.value
+  await degreePlanStore.fetchContext(id, { allowBootstrap })
+  await degreePlanStore.loadSummary(id, { allowBootstrap })
 })
 
 /* ------------------------------------------
@@ -614,14 +650,13 @@ onMounted(async () => {
 
   if (isStudent.value) {
     selectedAdviseeId.value = currentAdvisee.value?.adviseeID
-    await degreePlanStore.fetchContext(selectedAdviseeId.value)
-    await degreePlanStore.loadSummary(selectedAdviseeId.value)
+    await degreePlanStore.fetchContext(selectedAdviseeId.value, { allowBootstrap: false })
+    await degreePlanStore.loadSummary(selectedAdviseeId.value, { allowBootstrap: false })
   } else {
     await loadAdvisees()
   }
 })
 </script>
-
 <style scoped>
 .degree-plan-page .requirement-option {
   background-color: rgb(var(--v-theme-surface));
@@ -629,8 +664,100 @@ onMounted(async () => {
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.04);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
+
 .degree-plan-page .requirement-option:hover {
   transform: translateY(-2px);
   box-shadow: 0 12px 26px rgba(0, 0, 0, 0.1);
 }
+
+/* ----------------------------------------------
+   Year-by-Year Breakdown Styling
+---------------------------------------------- */
+
+.year-header {
+  font-weight: 600;
+  margin-bottom: 8px;
+  font-size: 1.1rem;
+}
+
+.year-section {
+  background-color: rgba(var(--v-theme-surface), 1);
+  border-radius: 16px;
+  padding: 16px;
+  border: 1px solid rgba(var(--v-theme-primary), 0.12);
+}
+
+.course-entry {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(var(--v-theme-on-background), 0.06);
+}
+
+.course-entry:last-child {
+  border-bottom: none;
+}
+
+.course-title-line {
+  font-size: 0.95rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.course-code {
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.course-hours {
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  margin-left: 4px;
+}
+
+.course-category {
+  font-size: 0.78rem;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+  margin-top: 2px;
+}
+
+.taken-chip {
+  margin-left: 12px;
+  min-width: 80px;
+  text-align: center;
+}
+
+@media (max-width: 600px) {
+  .course-title-line {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .taken-chip {
+    margin-top: 6px;
+    margin-left: 0;
+  }
+}
+
+/* ----------------------------------------------
+   Tabs & Progress
+---------------------------------------------- */
+
+.v-tabs {
+  background-color: transparent !important;
+}
+
+.year-progress-container {
+  margin-bottom: 12px;
+}
+
+.year-progress {
+  height: 10px;
+  border-radius: 6px;
+}
+
+.text-caption {
+  opacity: 0.8;
+}
+
 </style>

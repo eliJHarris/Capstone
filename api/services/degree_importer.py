@@ -1,82 +1,449 @@
 """
-Improved Degree Plan Importer
---------------------------------
-This importer FIXES the issue where the PDF importer produces
-one giant unstructured requirement group.
+COMPLETE STRUCTURED DEGREE PLAN IMPORTER (CONCENTRATION-ENABLED VERSION)
+------------------------------------------------------------------------
+This importer produces FULLY VALIDATED requirement structures that the
+degree validator + LLM can safely reason about.
 
-This version:
-
-✓ Extracts course codes using a strict regex
-✓ Groups them into Gen Ed, CS Core, Math/Science, Electives
-✓ Produces requirement groups the validator understands
-✓ Avoids false matches and duplicates
+Major additions:
+- Automatic extraction of Concentrations from PDF text
+- Support for required hours and choose hours
+- Normalized course list construction
+- Deep-copy protection against cross-student mutation
 """
 
 import re
-from typing import List, Optional
-from sqlalchemy import text
+import copy
+from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
-from models.advisee import AdviseeProfile
-from models.degree_plan import DegreeRequirementSet, ValidationRunType
 from fastapi import HTTPException
 
+from models.advisee import AdviseeProfile
+from models.degree_plan import DegreeRequirementSet, ValidationRunType
+from services.pdf_parser import extract_program_info
 
-# Strict UAFS-style course code detection
-COURSE_REGEX = re.compile(
-    r"\b([A-Z]{2,4}\s?\d{3,4})\b"
-)
 
-GEN_ED_KEYWORDS = [
-    "english", "speech", "literature", "history",
-    "government", "fine arts", "humanities"
-]
-
-CS_KEYWORDS = ["cs ", "computer", "program", "algorithm", "software"]
-MATH_KEYWORDS = ["math", "calculus", "statistics", "linear"]
-SCIENCE_KEYWORDS = ["chem", "phys", "geol", "bio"]
+# --------------------------------------------
+# 1. Regex for course codes (UAFS format)
+# --------------------------------------------
+COURSE_REGEX = re.compile(r"\b([A-Z]{2,4}\s?\d{3,4}[A-Z]?)\b")
 
 
 def extract_course_codes(text: str) -> List[str]:
-    """Return unique course codes from text."""
+    """Extracts all unique course codes from PDF text."""
     matches = COURSE_REGEX.findall(text)
-    return list({m.replace(" ", "").upper() for m in matches})
+    return sorted({m.replace(" ", "").upper() for m in matches})
 
 
-def categorize_course(code: str) -> str:
-    """Return which academic category the code belongs to."""
-    c = code.lower()
+# --------------------------------------------
+# 2. GEN ED CATEGORY DEFINITIONS
+# --------------------------------------------
+CATEGORY_RULES = {
+    "english": {
+        "title": "English Composition",
+        "type": "category",
+        "creditsRequired": 6,
+        "courses": ["ENG1013", "ENG1023"],
+    },
+    "speech": {
+        "title": "Speech / Communications",
+        "type": "category",
+        "creditsRequired": 3,
+        "courses": ["SPCH1203"],
+    },
+    "fine_arts": {
+        "title": "Fine Arts",
+        "type": "category",
+        "creditsRequired": 3,
+        "courses": ["ART1103", "THEA1203", "MUSI2763"],
+    },
+    "humanities": {
+        "title": "Humanities",
+        "type": "category",
+        "creditsRequired": 3,
+        "courses": ["HUMN1403", "HUMN1503", "PHIL2753", "PHIL3203"],
+    },
+    "history_gov": {
+        "title": "U.S. History / Government",
+        "type": "choose_one",
+        "options": ["HIST1163", "HIST1173", "HIST2753", "POLS2753"],
+    },
+}
 
-    if any(k in c for k in CS_KEYWORDS):
-        return "cs_core"
-    if any(k in c for k in MATH_KEYWORDS):
-        return "math"
-    if any(k in c for k in SCIENCE_KEYWORDS):
-        return "science"
-    if any(k in c for k in GEN_ED_KEYWORDS):
-        return "gen_ed"
 
-    # fallback
-    prefix = code[:4].lower()
-    if prefix.startswith("cs"):
-        return "cs_core"
-    if prefix.startswith("math"):
-        return "math"
-    return "electives"
+# --------------------------------------------
+# 3. LAB SCIENCE PAIRS
+# --------------------------------------------
+LAB_SCIENCE = {
+    "title": "Lab Science Requirement",
+    "type": "paired_group",
+    "min": 1,
+    "pairs": [
+        {"lecture": "BIOL1153", "lab": "BIOL1151"},
+        {"lecture": "CHEM1303", "lab": "CHEM1301"},
+        {"lecture": "GEOL1253", "lab": "GEOL1251"},
+    ],
+}
 
 
-def build_group(title: str, codes: List[str], required_credits: int = None):
-    """Helper for building a requirement group."""
+# --------------------------------------------
+# 4. DEFAULT CS CORE (kept unchanged)
+# --------------------------------------------
+CS_MAJOR_CORE = {
+    "title": "Computer Science Major Core",
+    "type": "credit_minimum",
+    "creditsRequired": 42,
+    "courses": [
+        "CS1013", "CS1063", "CS2023", "CS3013",
+        "CS3023", "CS3033", "CS3223", "CS3413", "CS3443",
+        "STAT2503", "MATH2804",
+        "CS4XX3"
+    ],
+}
+
+
+# --------------------------------------------
+# 5. ELECTIVE POOL BUILDER
+# --------------------------------------------
+def build_elective_pool(course_list: List[str], min_credits: int = 20) -> Dict:
+    """Builds the elective pool requirement."""
     return {
-        "id": title.lower().replace(" ", "-"),
-        "title": title,
-        "requiredCredits": required_credits,
-        "courses": [
-            {"code": c, "credits": 3.0, "prerequisites": []}
-            for c in sorted(codes)
-        ]
+        "title": "General Electives",
+        "type": "elective_pool",
+        "creditsRequired": min_credits,
+        "courses": sorted(course_list),
     }
 
 
+# --------------------------------------------
+# 6. Normalization Utilities
+# --------------------------------------------
+def _normalize_code(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    return str(value).replace(" ", "").upper().strip()
+
+
+def _extract_hours_from_text(text: str) -> Optional[int]:
+    """
+    Detect patterns like:
+    "12 hours", "nine hours", "Required 12 hours", "Choose 9 hours"
+    """
+    text = text.lower()
+    num_map = {
+        "one": 1, "two": 2, "three": 3, "four": 4,
+        "five": 5, "six": 6, "seven": 7, "eight": 8,
+        "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+    }
+
+    # numeric first
+    m = re.search(r"(\d+)\s+hours?", text)
+    if m:
+        return int(m.group(1))
+
+    # number words
+    for word, val in num_map.items():
+        if f"{word} hour" in text:
+            return val
+
+    return None
+
+
+def _normalize_course_entry(entry, default_credits: float = 3.0) -> Optional[Dict]:
+    code = None
+    title = None
+    credits = default_credits
+
+    if isinstance(entry, dict):
+        code = entry.get("code")
+        title = entry.get("title") or code
+        credits = entry.get("credits") or default_credits
+    else:
+        code = entry
+        title = entry
+
+    normalized_code = _normalize_code(code)
+    if not normalized_code:
+        return None
+
+    try:
+        credits_value = float(credits)
+    except:
+        credits_value = default_credits
+
+    if credits_value <= 0:
+        credits_value = default_credits
+
+    return {
+        "code": normalized_code,
+        "title": str(title) if title else normalized_code,
+        "credits": credits_value,
+    }
+
+
+def _normalize_courses(courses):
+    normalized = []
+    for entry in courses or []:
+        n = _normalize_course_entry(entry)
+        if n:
+            normalized.append(n)
+    return normalized
+
+
+def _normalize_group(group: Dict) -> Dict:
+    normalized = copy.deepcopy(group)
+    if "courses" in normalized:
+        normalized["courses"] = _normalize_courses(normalized["courses"])
+    for key in ("requiredCourses", "chooseCourses"):
+        if key in normalized:
+            normalized[key] = _normalize_courses(normalized[key])
+    return normalized
+
+
+# -------------------------------------------------------------
+# 7. CONCENTRATION PARSING LOGIC
+# -------------------------------------------------------------
+CONC_TITLE_PATTERN = re.compile(
+    r"(?P<title>.+?)\s*(?:concentration\s*)?(?:code[:\-]?)?\s*C0\d{2,3}",  # e.g., "Core Accounting Concepts C059" or "Concentration Code: C021"
+    re.IGNORECASE
+)
+
+COURSE_LINE_PATTERN = re.compile(r"\b([A-Z]{2,4}\s?\d{3,4}[A-Z]?)\b")
+
+
+def _extract_concentration_blocks(pdf_text: str, default_title: Optional[str] = None) -> List[Dict]:
+    """
+    Extracts a list of concentration requirement groups.
+    Each group:
+      {
+        "title": "...",
+        "hoursRequired": 12,
+        "requiredCourses": [],
+        "chooseCourses": []
+      }
+    """
+
+    lines = pdf_text.split("\n")
+    concentrations = []
+    current = None
+
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+        lower = line.lower()
+
+        # Detect concentration title
+        title = None
+        if "concentration code" in lower:
+            prefix = line.split("concentration code", 1)[0].strip(" :-")
+            title = prefix or default_title
+        if not title:
+            mt = CONC_TITLE_PATTERN.search(line)
+            if mt:
+                title = mt.group("title").strip(" :-")
+
+        if title:
+            clean_title = re.sub(r"\bconcentration\s*code\b", "", title, flags=re.IGNORECASE).strip(" :-")
+            clean_title = clean_title or default_title or "Concentration"
+            if "concentration code" in lower or "concentration codes" in lower:
+                # This is a header listing options, not a real concentration block
+                continue
+            # Save previous
+            if current:
+                concentrations.append(current)
+
+            current = {
+                "title": clean_title,
+                "hoursRequired": None,
+                "requiredCourses": [],
+                "chooseCourses": [],
+                "mode": None,   # "required" or "choose"
+            }
+            continue
+
+        if not current:
+            continue
+
+        # Detect hours in this line
+        hours = _extract_hours_from_text(line)
+        if hours:
+            current["hoursRequired"] = hours
+
+        # Detect REQUIRED or CHOOSE mode
+        if "requires" in lower or "required" in lower:
+            current["mode"] = "required"
+        if "choose" in lower:
+            current["mode"] = "choose"
+
+        # Detect course codes
+        courses = COURSE_LINE_PATTERN.findall(line)
+        if courses:
+            mode = current["mode"] or "required"
+            normalized = [_normalize_code(c) for c in courses]
+
+            if mode == "required":
+                current["requiredCourses"].extend(normalized)
+            elif mode == "choose":
+                current["chooseCourses"].extend(normalized)
+
+    # Append last block
+    if current:
+        concentrations.append(current)
+
+    return concentrations
+
+
+def _convert_concentration_blocks_to_groups(blocks: List[Dict]):
+    """
+    Convert the extracted raw concentration blocks into requirement group objects.
+    """
+
+    groups = []
+
+    for block in blocks:
+        title = block["title"]
+        hours = block["hoursRequired"] or 12  # fallback
+
+        required_courses = [{"code": c, "credits": 3.0} for c in block["requiredCourses"]]
+        choose_courses = [{"code": c, "credits": 3.0} for c in block["chooseCourses"]]
+        all_courses = required_courses + choose_courses
+
+        # If the detected hours look too low compared to listed courses, bump to a sensible default.
+        if hours < 9 and required_courses:
+            inferred_hours = min(12, len(required_courses) * 3)
+            hours = max(hours, inferred_hours)
+
+        group = {
+            "id": title,
+            "title": title,
+            "type": "concentration",
+            "hoursRequired": hours,
+            "requiredCourses": required_courses,
+            "chooseCourses": choose_courses,
+            "courses": all_courses,
+        }
+
+        groups.append(group)
+
+    return groups
+
+
+# -------------------------------------------------------------
+# 7b. MINOR PARSING LOGIC
+# -------------------------------------------------------------
+MINOR_TITLE_PATTERN = re.compile(
+    r"(?P<title>.+?)\s*-?\s*Minor\s*Code\s*:\s*A\d{3}",  # e.g., "Anthropology-Minor Code: A022"
+    re.IGNORECASE,
+)
+
+
+def _clean_minor_title(raw: str) -> str:
+    title = (raw or "").strip()
+    title = re.sub(r"\bminor\b", "", title, flags=re.IGNORECASE).strip(" :-")
+    return title or "Minor"
+
+
+def _extract_minor_blocks(pdf_text: str) -> List[Dict]:
+    """
+    Extract a list of minor requirement groups using the same pattern as concentrations.
+    """
+    lines = pdf_text.split("\n")
+    minors = []
+    current = None
+
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+        lower = line.lower()
+
+        # Detect minor title
+        title = None
+        if "minor code" in lower:
+            title = line.split("minor code", 1)[0]
+            if "-" in title:
+                title = title.split("-")[-1]
+        if not title:
+            mt = MINOR_TITLE_PATTERN.search(line)
+            if mt:
+                title = mt.group("title")
+
+        if title:
+            clean_title = _clean_minor_title(title)
+            if current:
+                minors.append(current)
+            current = {
+                "title": clean_title,
+                "hoursRequired": None,
+                "requiredCourses": [],
+                "chooseCourses": [],
+                "mode": None,
+            }
+            continue
+
+        if not current:
+            continue
+
+        hours = _extract_hours_from_text(line)
+        if hours:
+            current["hoursRequired"] = hours
+
+        if "required" in lower:
+            current["mode"] = "required"
+        if "choose" in lower or "select" in lower:
+            current["mode"] = "choose"
+
+        courses = COURSE_LINE_PATTERN.findall(line)
+        if courses:
+            mode = current["mode"] or "required"
+            normalized = [_normalize_code(c) for c in courses]
+            target = "requiredCourses" if mode == "required" else "chooseCourses"
+            current[target].extend(normalized)
+
+    if current:
+        minors.append(current)
+
+    return minors
+
+
+def _convert_minor_blocks_to_groups(blocks: List[Dict]) -> List[Dict]:
+    groups = []
+
+    for block in blocks:
+        title = block["title"]
+        hours = block["hoursRequired"] or 18
+
+        required_courses = [
+            _normalize_course_entry({"code": c, "credits": 3.0})
+            for c in block.get("requiredCourses", [])
+        ]
+        choose_courses = [
+            _normalize_course_entry({"code": c, "credits": 3.0})
+            for c in block.get("chooseCourses", [])
+        ]
+
+        required_courses = [c for c in required_courses if c]
+        choose_courses = [c for c in choose_courses if c]
+        all_courses = required_courses + choose_courses
+
+        group = {
+            "id": f"minor:{title}",
+            "title": f"Minor: {title}",
+            "type": "minor",
+            "hoursRequired": hours,
+            "creditsRequired": hours,
+            "requiredCourses": required_courses,
+            "chooseCourses": choose_courses,
+            "courses": all_courses,
+        }
+        groups.append(group)
+
+    return groups
+
+
+# -------------------------------------------------------------
+# 8. IMPORTER PIPELINE
+# -------------------------------------------------------------
 def import_degree_plan_from_pdf_url(
     db: Session,
     advisee_id: int,
@@ -84,143 +451,140 @@ def import_degree_plan_from_pdf_url(
     required_keywords: Optional[List[str]] = None,
     create_validation: bool = True,
 ):
-    """
-    FIXED IMPORT PIPELINE:
-    - Pull text from PDF
-    - Extract course codes
-    - Group them logically
-    """
+    """Full pipeline: read PDF → extract requirements → save."""
 
     from pdf_scraper.scrape_pdfs import scrape_pdf_text
     pdf_text = scrape_pdf_text(pdf_url)
+
     if not pdf_text:
-        raise HTTPException(400, "Unable to extract text from degree plan PDF")
+        raise HTTPException(400, "Unable to read PDF content")
 
-    keywords = [
-        keyword.strip().lower()
-        for keyword in (required_keywords or [])
-        if keyword and keyword.strip()
+    # Optional PDF keyword validation
+    if required_keywords:
+        lower = pdf_text.lower()
+        if not any(k.lower() in lower for k in required_keywords):
+            raise HTTPException(400, "PDF does not match expected plan")
+
+    program_hint, catalog_hint = extract_program_info(pdf_text)
+
+    # Fetch profile early so we can tailor major requirements
+    profile = db.query(AdviseeProfile).filter(AdviseeProfile.adviseeID == advisee_id).first()
+    if not profile:
+        raise HTTPException(404, "Advisee profile not found")
+
+    program_code = (program_hint or profile.major or "AUTO").strip() or "AUTO"
+    program_code = program_code.upper()
+
+    # Extract all course codes from entire PDF
+    found_codes = extract_course_codes(pdf_text)
+
+    # ---------------------------------------------------------
+    # Build base requirement groups (Gen Ed, Lab Science, etc.)
+    # ---------------------------------------------------------
+    requirement_groups = [
+        _normalize_group(copy.deepcopy(rule))
+        for rule in CATEGORY_RULES.values()
     ]
-    if keywords:
-        lowered = pdf_text.lower()
-        if not any(keyword in lowered for keyword in keywords):
-            raise HTTPException(
-                400,
-                "Degree plan PDF did not contain any of the required keywords",
-            )
 
-    course_codes = extract_course_codes(text)
-    if not course_codes:
-        raise HTTPException(400, "No course codes detected in PDF")
+    # Lab science
+    requirement_groups.append(_normalize_group(copy.deepcopy(LAB_SCIENCE)))
 
-    # Categorize
-    groups = {
-        "gen_ed": [],
-        "cs_core": [],
-        "math": [],
-        "science": [],
-        "electives": [],
-    }
+    # Major core fallback for CS programs to populate major bucket
+    core_codes = {c.get("code") for g in requirement_groups for c in g.get("courses", []) if c.get("code")}
+    if "CS" in program_code or "COMPUTER" in program_code:
+        cs_core = _normalize_group(copy.deepcopy(CS_MAJOR_CORE))
+        requirement_groups.append(cs_core)
+        core_codes.update({c.get("code") for c in cs_core.get("courses", []) if c.get("code")})
 
-    for code in course_codes:
-        category = categorize_course(code)
-        groups[category].append(code)
+    # Elective pool
+    elective_codes = sorted(c for c in found_codes if c not in core_codes)
 
-    # Build requirement groups
-    requirement_groups = []
+    requirement_groups.append(
+        _normalize_group(build_elective_pool(elective_codes))
+    )
 
-    if groups["gen_ed"]:
-        requirement_groups.append(
-            build_group("General Education Requirements", groups["gen_ed"], required_credits=35)
-        )
+    # ---------------------------------------------------------
+    # NEW: Concentration extraction
+    # ---------------------------------------------------------
+    concentration_blocks = _extract_concentration_blocks(pdf_text, default_title=program_hint)
+    concentration_groups = _convert_concentration_blocks_to_groups(concentration_blocks)
 
-    if groups["cs_core"]:
-        requirement_groups.append(
-            build_group("Major Core Requirements", groups["cs_core"], required_credits=45)
-        )
+    # Append concentration groups at BOTTOM
+    for g in concentration_groups:
+        requirement_groups.append(_normalize_group(copy.deepcopy(g)))
 
-    if groups["math"] or groups["science"]:
-        requirement_groups.append(
-            build_group("Math & Science Requirements", groups["math"] + groups["science"], required_credits=20)
-        )
+    # ---------------------------------------------------------
+    # NEW: Minor extraction
+    # ---------------------------------------------------------
+    minor_blocks = _extract_minor_blocks(pdf_text)
+    minor_groups = _convert_minor_blocks_to_groups(minor_blocks)
+    for g in minor_groups:
+        requirement_groups.append(_normalize_group(copy.deepcopy(g)))
 
-    if groups["electives"]:
-        requirement_groups.append(
-            build_group("Elective Requirements", groups["electives"], required_credits=20)
-        )
+    # Catalog year marking with ADV suffix
+    suffix = f"ADV-{advisee_id}"
+    catalog_year = f"{(catalog_hint or 'AUTO').strip()}::{suffix}"
 
-    # Fallback — ensures at least one group is created
-    if not requirement_groups:
-        requirement_groups.append(
-            build_group("Uncategorized Courses", course_codes, required_credits=3)
-        )
+    scope = f"advisee:{advisee_id}"
 
-    # Create requirement set record
-    profile = (
-        db.query(AdviseeProfile)
-        .filter(AdviseeProfile.adviseeID == advisee_id)
+    # Check if overwritten
+    requirement = (
+        db.query(DegreeRequirementSet)
+        .filter(DegreeRequirementSet.sourceDocument == scope)
         .first()
     )
-    if not profile:
-        raise HTTPException(404, "Advisee profile not found for import")
 
-    program_code = profile.major
-    if not program_code:
-        fallback = db.execute(
-            text("SELECT programCode FROM majors ORDER BY programCode LIMIT 1")
-        ).scalar_one_or_none()
-        program_code = fallback or "BS-CS"
+    if requirement:
+        requirement.programCode = program_code
+        requirement.catalogYear = catalog_year
+        requirement.programName = profile.degree_plan or program_code
+        requirement.totalCredits = 120
+        requirement.requirementData = requirement_groups
+    else:
+        requirement = DegreeRequirementSet(
+            programCode=program_code,
+            catalogYear=catalog_year,
+            programName=profile.degree_plan or program_code,
+            totalCredits=120,
+            requirementData=requirement_groups,
+            sourceDocument=scope,
+        )
+        db.add(requirement)
 
-    major_display_name = None
-    if program_code:
-        major_display_name = db.execute(
-            text("SELECT programName FROM majors WHERE programCode = :code"),
-            {"code": program_code},
-        ).scalar_one_or_none()
-
-    catalog_year = f"AUTO::ADV-{advisee_id}"
-
-    requirement = DegreeRequirementSet(
-        programCode=program_code,
-        catalogYear=catalog_year,
-        programName=profile.degree_plan or major_display_name or "Imported Degree Plan",
-        totalCredits=sum(g["requiredCredits"] or 0 for g in requirement_groups),
-        requirementData=requirement_groups,
-        sourceDocument=f"advisee:{advisee_id}",
-    )
-
-    db.add(requirement)
     db.commit()
     db.refresh(requirement)
 
-    # Attach to advisee context
+    # ---------------------------------------------------------
+    # Attach degree plan context
+    # ---------------------------------------------------------
     from models.degree_plan import AdviseeDegreeContext
+
     context = (
         db.query(AdviseeDegreeContext)
         .filter(AdviseeDegreeContext.adviseeID == advisee_id)
         .first()
     )
 
-    note = f"Imported from PDF: {pdf_url}"
     if context:
         context.requirementSetID = requirement.requirementSetID
-        context.notes = note
+        context.notes = f"Imported from PDF: {pdf_url}"
     else:
         context = AdviseeDegreeContext(
             adviseeID=advisee_id,
             requirementSetID=requirement.requirementSetID,
             completedCourses=[],
-            notes=note,
+            notes=f"Imported from PDF: {pdf_url}",
         )
         db.add(context)
 
     db.commit()
-    db.refresh(context)
 
+    # ---------------------------------------------------------
+    # Trigger validation job
+    # ---------------------------------------------------------
     validation_record = None
     if create_validation:
         from services.degree_plan_service import DegreePlanService
-
         validation_record = DegreePlanService.enqueue_validation(
             db=db,
             advisee_id=advisee_id,
