@@ -34,6 +34,59 @@ def extract_course_codes(text: str) -> List[str]:
     return sorted({m.replace(" ", "").upper() for m in matches})
 
 
+def extract_course_titles(text: str) -> Dict[str, str]:
+    """
+    Robust course title extractor for UAFS PDFs.
+    Captures patterns such as:
+      CS 1013 Intro to Programming
+      MATH 2804 Calculus I
+      STAT 2503 Probability & Statistics
+
+    This version works even when:
+      - There are no 'Hours' or 'Grade' markers
+      - Titles wrap across lines
+      - Titles contain punctuation
+      - ACTS equivalency or prereq text follows the title
+
+    Extraction stops when:
+      - Newline is reached, OR
+      - Another course code begins.
+    """
+
+    title_map: Dict[str, str] = {}
+
+    # Pattern:
+    #   CODE   TITLE   (stop at next code OR newline OR EOF)
+    pattern = re.compile(
+        r"\b([A-Z]{2,4}\s?\d{3,4}[A-Z]?)\b"          # Course code (e.g., CS 1013)
+        r"\s+"                                      # Space(s)
+        r"([A-Za-z][A-Za-z0-9&.,'()\-/\s]+?)"       # The course title
+        r"(?=\n|$|\b[A-Z]{2,4}\s?\d{3,4}[A-Z]?\b)", # Lookahead = stop conditions
+        re.MULTILINE,
+    )
+
+    for match in pattern.finditer(text):
+        raw_code, raw_title = match.groups()
+
+        code = _normalize_code(raw_code)
+        title = raw_title.strip(" -–—\n\t")
+
+        # Remove trailing parenthetical strings such as:
+        #   (ACTS Equivalency ...)
+        #   (Prerequisite: ...)
+        title = re.sub(r"\([^)]*\)$", "", title).strip()
+
+        # Remove trailing credit notations or weird artifacts
+        title = re.sub(r"\b\d+\s*Hours?$", "", title).strip()
+
+        if code and title:
+            if code not in title_map:  # keep first occurrence
+                title_map[code] = title
+
+    return title_map
+
+
+
 # --------------------------------------------
 # 2. GEN ED CATEGORY DEFINITIONS
 # --------------------------------------------
@@ -106,11 +159,20 @@ CS_MAJOR_CORE = {
 # --------------------------------------------
 def build_elective_pool(course_list: List[str], min_credits: int = 20) -> Dict:
     """Builds the elective pool requirement."""
+    prepared = []
+    for entry in course_list or []:
+        if isinstance(entry, dict):
+            prepared.append(entry)
+        else:
+            prepared.append({"code": entry, "title": entry, "credits": 3.0})
+
+    prepared.sort(key=lambda x: _normalize_code(x.get("code") or ""))
+
     return {
         "title": "General Electives",
         "type": "elective_pool",
         "creditsRequired": min_credits,
-        "courses": sorted(course_list),
+        "courses": prepared,
     }
 
 
@@ -197,6 +259,41 @@ def _normalize_group(group: Dict) -> Dict:
         if key in normalized:
             normalized[key] = _normalize_courses(normalized[key])
     return normalized
+
+
+def _apply_title_map_to_group(group: Dict, title_map: Dict[str, str]) -> Dict:
+    """
+    If a course entry is missing a title (or title == code),
+    inject the title from the parsed PDF map when available.
+    """
+    def enrich_courses(course_list):
+        enriched = []
+        for entry in course_list or []:
+            if isinstance(entry, dict):
+                enriched_entry = copy.deepcopy(entry)
+                code = _normalize_code(enriched_entry.get("code"))
+                title = enriched_entry.get("title")
+                if code and (not title or _normalize_code(title) == code):
+                    mapped = title_map.get(code)
+                    if mapped:
+                        enriched_entry["title"] = mapped
+                enriched.append(enriched_entry)
+            else:
+                code = _normalize_code(entry)
+                enriched.append({
+                    "code": code,
+                    "title": title_map.get(code) or code,
+                    "credits": 3.0,
+                })
+        return enriched
+
+    updated = copy.deepcopy(group)
+    if "courses" in updated:
+        updated["courses"] = enrich_courses(updated.get("courses"))
+    for key in ("requiredCourses", "chooseCourses"):
+        if key in updated:
+            updated[key] = enrich_courses(updated.get(key))
+    return updated
 
 
 # -------------------------------------------------------------
@@ -477,22 +574,31 @@ def import_degree_plan_from_pdf_url(
 
     # Extract all course codes from entire PDF
     found_codes = extract_course_codes(pdf_text)
+    title_map = extract_course_titles(pdf_text)
 
     # ---------------------------------------------------------
     # Build base requirement groups (Gen Ed, Lab Science, etc.)
     # ---------------------------------------------------------
     requirement_groups = [
-        _normalize_group(copy.deepcopy(rule))
+        _normalize_group(
+            _apply_title_map_to_group(copy.deepcopy(rule), title_map)
+        )
         for rule in CATEGORY_RULES.values()
     ]
 
     # Lab science
-    requirement_groups.append(_normalize_group(copy.deepcopy(LAB_SCIENCE)))
+    requirement_groups.append(
+        _normalize_group(
+            _apply_title_map_to_group(copy.deepcopy(LAB_SCIENCE), title_map)
+        )
+    )
 
     # Major core fallback for CS programs to populate major bucket
     core_codes = {c.get("code") for g in requirement_groups for c in g.get("courses", []) if c.get("code")}
     if "CS" in program_code or "COMPUTER" in program_code:
-        cs_core = _normalize_group(copy.deepcopy(CS_MAJOR_CORE))
+        cs_core = _normalize_group(
+            _apply_title_map_to_group(copy.deepcopy(CS_MAJOR_CORE), title_map)
+        )
         requirement_groups.append(cs_core)
         core_codes.update({c.get("code") for c in cs_core.get("courses", []) if c.get("code")})
 
@@ -500,7 +606,15 @@ def import_degree_plan_from_pdf_url(
     elective_codes = sorted(c for c in found_codes if c not in core_codes)
 
     requirement_groups.append(
-        _normalize_group(build_elective_pool(elective_codes))
+        _normalize_group(
+            _apply_title_map_to_group(
+                build_elective_pool([
+                    {"code": c, "title": title_map.get(_normalize_code(c), c), "credits": 3.0}
+                    for c in elective_codes
+                ]),
+                title_map,
+            )
+        )
     )
 
     # ---------------------------------------------------------
@@ -511,7 +625,9 @@ def import_degree_plan_from_pdf_url(
 
     # Append concentration groups at BOTTOM
     for g in concentration_groups:
-        requirement_groups.append(_normalize_group(copy.deepcopy(g)))
+        requirement_groups.append(
+            _normalize_group(_apply_title_map_to_group(copy.deepcopy(g), title_map))
+        )
 
     # ---------------------------------------------------------
     # NEW: Minor extraction
@@ -519,7 +635,9 @@ def import_degree_plan_from_pdf_url(
     minor_blocks = _extract_minor_blocks(pdf_text)
     minor_groups = _convert_minor_blocks_to_groups(minor_blocks)
     for g in minor_groups:
-        requirement_groups.append(_normalize_group(copy.deepcopy(g)))
+        requirement_groups.append(
+            _normalize_group(_apply_title_map_to_group(copy.deepcopy(g), title_map))
+        )
 
     # Catalog year marking with ADV suffix
     suffix = f"ADV-{advisee_id}"

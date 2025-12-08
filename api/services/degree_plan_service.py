@@ -882,17 +882,22 @@ class DegreePlanService:
         general_summary, gen_required, gen_satisfied = _build_general_education_summary(
             general_ed_groups, completed_display
         )
-        general_percent = 100.0 if gen_required == 0 else round((gen_satisfied / gen_required) * 100, 2)
+        general_percent = 0.0 if gen_required == 0 else round((gen_satisfied / gen_required) * 100, 2)
 
         # Major/minor summaries
         major_summary, major_required, major_satisfied, major_percent, major_needed = _summarize_course_requirements(
             major_groups,
             completed_codes,
         )
+        if major_required == 0:
+            major_percent = 0.0
+
         minor_summary, minor_required, minor_satisfied, minor_percent, minor_needed = _summarize_course_requirements(
             minor_groups,
             completed_codes,
         )
+        if minor_required == 0:
+            minor_percent = 0.0
 
         # Concentration logic
         conc_required_count = (

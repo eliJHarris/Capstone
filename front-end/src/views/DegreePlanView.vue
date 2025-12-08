@@ -230,7 +230,7 @@
               </div>
             </div>
 
-            <div v-if="concentrationPercent > 0" class="mb-4">
+            <div v-if="hasConcentration" class="mb-4">
               <div class="text-body-2 font-weight-medium mb-1">Concentration</div>
               <v-progress-linear
                 :model-value="concentrationPercent"
@@ -243,7 +243,7 @@
               </div>
             </div>
 
-            <div v-if="minorPercent > 0">
+            <div v-if="hasMinor">
               <div class="text-body-2 font-weight-medium mb-1">Minor</div>
               <v-progress-linear
                 :model-value="minorPercent"
@@ -296,48 +296,98 @@
             </div>
 
             <!-- YEAR COURSE LIST -->
-            <v-list density="comfortable" v-if="degreePlanYearBuckets[yearTab].length">
-              <v-list-item
-                v-for="c in degreePlanYearBuckets[yearTab]"
-                :key="c.code"
-              >
-                <v-list-item-title>
-                  <strong>{{ c.code }}</strong> — {{ c.title }}
-                  <span class="text-medium-emphasis">
-                    ({{ c.credits }} hrs)
-                  </span>
-                </v-list-item-title>
+            <div class="d-flex align-center justify-space-between mb-3">
+              <div class="text-subtitle-1 font-weight-medium">{{ formattedYearTitle }}</div>
+              <v-chip size="small" color="grey-darken-1" variant="tonal">
+                {{ activeYearHours }} hrs planned
+              </v-chip>
+            </div>
 
-                <v-list-item-subtitle class="text-caption text-medium-emphasis">
-                  {{ c.category }}
-                </v-list-item-subtitle>
-
-                <template #append>
-                  <v-chip
-                    v-if="c.taken"
-                    color="success"
-                    size="small"
-                    variant="tonal"
-                  >
-                    ✓ Taken
-                  </v-chip>
-
-                  <v-chip
-                    v-else
-                    color="warning"
-                    size="small"
-                    variant="tonal"
-                  >
-                    ⚠ Not Taken
-                  </v-chip>
-                </template>
-              </v-list-item>
-            </v-list>
+            <v-table
+              v-if="activeYearCourses.length"
+              class="degree-plan-table"
+              density="comfortable"
+            >
+              <thead>
+                <tr>
+                  <th class="text-left">Course</th>
+                  <th class="text-left">Details</th>
+                  <th class="text-left">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="c in activeYearCourses" :key="c.code">
+                  <td>
+                    <div class="font-weight-medium">
+                      {{ c.code }}
+                      <span class="text-body-2 font-weight-regular">— {{ c.title }}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="text-body-2">{{ c.credits || '—' }} hrs</div>
+                    <div class="text-caption text-medium-emphasis">
+                      {{ c.category || 'Requirement' }}
+                    </div>
+                  </td>
+                  <td class="text-no-wrap">
+                    <v-chip
+                      :color="c.taken ? 'success' : 'warning'"
+                      size="small"
+                      variant="tonal"
+                    >
+                      {{ statusLabel(c) }}
+                    </v-chip>
+                    <div v-if="termLabel(c)" class="text-caption text-medium-emphasis">
+                      {{ termLabel(c) }}
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </v-table>
 
             <div v-else class="text-body-2 text-medium-emphasis">
               No courses assigned to {{ yearTab }} year.
             </div>
 
+          </v-card-text>
+        </v-card>
+
+        <!-- NEEDED COURSES BY CATEGORY -->
+        <v-card rounded="xl">
+          <v-card-title class="d-flex align-center">
+            Remaining Courses
+            <v-spacer />
+            <v-tabs v-model="needTab" grow density="compact" class="ml-4">
+              <v-tab v-for="tab in needTabs" :key="tab" :value="tab">
+                {{ tab }}
+              </v-tab>
+            </v-tabs>
+          </v-card-title>
+
+          <v-divider />
+
+          <v-card-text>
+            <div v-if="neededCourses[needTab] && neededCourses[needTab].length">
+              <v-list density="comfortable">
+                <v-list-item
+                  v-for="course in neededCourses[needTab]"
+                  :key="course.code"
+                >
+                  <v-list-item-title>
+                    <strong>{{ course.code }}</strong> — {{ course.title }}
+                    <span class="text-medium-emphasis">
+                      ({{ course.credits || '—' }} hrs)
+                    </span>
+                  </v-list-item-title>
+                  <v-list-item-subtitle class="text-caption text-medium-emphasis">
+                    {{ course.category }}
+                  </v-list-item-subtitle>
+                </v-list-item>
+              </v-list>
+            </div>
+            <div v-else class="text-body-2 text-medium-emphasis">
+              No outstanding courses in this category.
+            </div>
           </v-card-text>
         </v-card>
       </v-col>
@@ -377,6 +427,7 @@ const seeding = ref(false)
 
 // year tab state
 const yearTab = ref("All")
+const needTab = ref("Major")
 
 /* ------------------------------------------
    CURRENT USER INFO
@@ -396,6 +447,16 @@ const isStudent = computed(() => userRole.value === NORMALIZED_ROLES.STUDENT)
 const context = computed(() => degreePlanStore.context)
 const requirementSet = computed(() => degreePlanStore.requirementSet)
 const latestValidation = computed(() => degreePlanStore.latestValidation || {})
+const hasConcentration = computed(() => (latestValidation.value.concentrationRequirementCount || 0) > 0)
+const hasMinor = computed(() => (latestValidation.value.minorRequirementCount || 0) > 0)
+const activeConcentrationIds = computed(() => {
+  const ids = new Set()
+  ;(latestValidation.value.concentrations || []).forEach((c) => {
+    const key = (c.groupId || c.title || "").toString().toLowerCase()
+    if (key) ids.add(key)
+  })
+  return ids
+})
 
 /* Category progress */
 const degreeCompletion = computed(() => latestValidation.value.completionPercent ?? degreePlanStore.completionPercent ?? 0)
@@ -424,7 +485,9 @@ const statusColor = computed(() => {
 /* ------------------------------------------
    UTILS: Infer year bucket from course code
 ------------------------------------------ */
-function inferYearBucket(code = "") {
+function inferYearBucket(code = "", category = "") {
+  const categoryText = (category || "").toLowerCase()
+  if (categoryText.includes("elective")) return "Other"
   if (!code) return "Other"
   const digits = code.replace(/\s+/g, "").match(/\d+/)
   if (!digits || !digits[0]) return "Other"
@@ -434,6 +497,27 @@ function inferYearBucket(code = "") {
   if (first === "3") return "Junior"
   if (first === "4" || first === "5") return "Senior"
   return "Other"
+}
+
+function normalizeYearLabel(value = "") {
+  const label = value.toString().toLowerCase()
+  if (label.includes("fresh")) return "Freshman"
+  if (label.includes("soph")) return "Sophomore"
+  if (label.includes("junior")) return "Junior"
+  if (label.includes("senior")) return "Senior"
+  return ""
+}
+
+function statusLabel(course = {}) {
+  if (course.taken) return "Taken"
+  const status = (course.status || "").toString().toUpperCase()
+  if (status === "IN_PROGRESS") return "In Progress"
+  if (status === "COMPLETED") return "Taken"
+  return "Not Taken"
+}
+
+function termLabel(course = {}) {
+  return course.term || ""
 }
 
 /* ------------------------------------------
@@ -457,11 +541,29 @@ const completedCodes = computed(() => {
   return new Set(all.map((c) => normalizeCourseCode(c)).filter(Boolean))
 })
 
+const completedCourseDetailMap = computed(() => {
+  const detailMap = new Map()
+  const sources = [
+    ...(degreePlanStore.completedCourses || []),
+    ...(latestValidation.value.completedCourseDetails || []),
+    ...(latestValidation.value.completedCourses || []),
+  ]
+
+  sources.forEach((entry) => {
+    if (!entry || typeof entry === "string") return
+    const code = normalizeCourseCode(entry.code)
+    if (!code) return
+    detailMap.set(code, entry)
+  })
+
+  return detailMap
+})
+
 /* ------------------------------------------
    2. Extract planned courses from requirement sets
 ------------------------------------------ */
 function extractPlannedCourses() {
-  const items = []
+  const itemsMap = new Map()
 
   const groups = requirementSet.value?.requirementGroups || requirementSet.value?.requirementData || []
 
@@ -493,11 +595,21 @@ function extractPlannedCourses() {
     const credits = Number(
       (typeof course === "string" ? null : course.credits) ?? 3
     )
-    return { code, title, credits: Number.isFinite(credits) ? credits : 3 }
+    const rawYear = typeof course === "string" ? null : (course.yearBucket || course.year || course.termBucket)
+    const yearBucket = normalizeYearLabel(rawYear || "")
+    return { code, title, credits: Number.isFinite(credits) ? credits : 3, yearBucket }
   }
 
   if (groups.length) {
     groups.forEach((group) => {
+      const type = (group.type || "").toLowerCase()
+      if (type === "concentration" && activeConcentrationIds.value.size) {
+        const key = (group.id || group.title || "").toString().toLowerCase()
+        if (!activeConcentrationIds.value.has(key)) {
+          return
+        }
+      }
+
       const categoryLabel = labelForGroup(group)
       const courseEntries = (group.courses && group.courses.length)
         ? group.courses
@@ -506,10 +618,14 @@ function extractPlannedCourses() {
       courseEntries.forEach((course) => {
         const normalized = normalizeCourseEntry(course)
         if (!normalized) return
-        items.push({ ...normalized, category: categoryLabel })
+        const courseYear = normalized.yearBucket || normalizeYearLabel(group.year || group.yearBucket || group.termBucket)
+        const key = normalized.code
+        if (!itemsMap.has(key)) {
+          itemsMap.set(key, { ...normalized, category: categoryLabel, yearBucket: courseYear })
+        }
       })
     })
-    return items
+    return Array.from(itemsMap.values())
   }
 
   // Fallback to validation payload if requirement set is unavailable
@@ -520,7 +636,11 @@ function extractPlannedCourses() {
     group.courses.forEach((course) => {
       const normalized = normalizeCourseEntry(course)
       if (!normalized) return
-      items.push({ ...normalized, category: categoryLabel })
+      const courseYear = normalized.yearBucket || normalizeYearLabel(group.year || group.yearBucket || group.termBucket)
+      const key = normalized.code
+      if (!itemsMap.has(key)) {
+        itemsMap.set(key, { ...normalized, category: categoryLabel, yearBucket: courseYear })
+      }
     })
   }
 
@@ -529,7 +649,7 @@ function extractPlannedCourses() {
   ;(raw.generalEducation || []).forEach((g) => pushGroup(g, `General Education — ${g.title}`))
   ;(raw.concentrations || []).forEach((g) => pushGroup(g, `Concentration — ${g.title}`))
 
-  return items
+  return Array.from(itemsMap.values())
 }
 
 const plannedCourses = computed(() => extractPlannedCourses())
@@ -548,13 +668,20 @@ function bucketPlannedCourses() {
   }
 
   plannedCourses.value.forEach((c) => {
-    const year = inferYearBucket(c.code)
+    const explicitYear = normalizeYearLabel(c.yearBucket || "")
+    const year = explicitYear || inferYearBucket(c.code, c.category)
     const entry = {
       ...c,
-      taken: completedCodes.value.has(c.code)
+      taken: completedCodes.value.has(c.code),
+      status: completedCourseDetailMap.value.get(c.code)?.status,
+      term: completedCourseDetailMap.value.get(c.code)?.term,
     }
     buckets[year].push(entry)
     buckets["All"].push(entry)
+  })
+
+  Object.keys(buckets).forEach((key) => {
+    buckets[key] = sortCourses(buckets[key])
   })
 
   return buckets
@@ -566,6 +693,115 @@ const degreePlanYearBuckets = computed(() => bucketPlannedCourses())
    4. Year Tabs
 ------------------------------------------ */
 const yearTabs = ["All", "Freshman", "Sophomore", "Junior", "Senior", "Other"]
+
+function sortCourses(list = []) {
+  return [...list].sort((a, b) => {
+    const codeA = a.code || ""
+    const codeB = b.code || ""
+    const numA = parseInt(codeA.replace(/\D/g, ""), 10) || 0
+    const numB = parseInt(codeB.replace(/\D/g, ""), 10) || 0
+    if (numA !== numB) return numA - numB
+    return codeA.localeCompare(codeB)
+  })
+}
+
+const activeYearCourses = computed(() => degreePlanYearBuckets.value[yearTab.value] || [])
+
+const activeYearHours = computed(() =>
+  activeYearCourses.value.reduce((sum, course) => {
+    const credits = Number(course.credits || 0)
+    return sum + (Number.isFinite(credits) ? credits : 0)
+  }, 0)
+)
+
+const formattedYearTitle = computed(() => {
+  if (yearTab.value === "All") return "All Courses"
+  return `${yearTab.value} Year Plan`
+})
+
+/* ------------------------------------------
+   Needed courses per category (major/minor/concentration)
+------------------------------------------ */
+const needTabs = computed(() => {
+  const tabs = ["Major"]
+  if (hasConcentration.value) tabs.push("Concentration")
+  if (hasMinor.value) tabs.push("Minor")
+  return tabs
+})
+
+watch(needTabs, (tabs) => {
+  if (!tabs.includes(needTab.value)) {
+    needTab.value = tabs[0]
+  }
+})
+
+function normalizeNeededCourse(detail, categoryLabel) {
+  const code = normalizeCourseCode(detail?.code || detail)
+  if (!code) return null
+  return {
+    code,
+    title: detail?.title || detail?.display || code,
+    credits: detail?.credits,
+    category: categoryLabel,
+  }
+}
+
+const neededCourses = computed(() => {
+  const buckets = { Major: [], Concentration: [], Minor: [] }
+  const dedupe = { Major: new Set(), Concentration: new Set(), Minor: new Set() }
+
+  // Major requirements
+  ;(latestValidation.value.majorRequirements || []).forEach((group) => {
+    const label = `Major — ${group.title || group.groupId || "Requirement"}`
+    const list = group.missingCourseDetails?.length
+      ? group.missingCourseDetails
+      : (group.missingCourses || [])
+    list.forEach((c) => {
+      const normalized = normalizeNeededCourse(c, label)
+      if (!normalized) return
+      if (!dedupe.Major.has(normalized.code)) {
+        dedupe.Major.add(normalized.code)
+        buckets.Major.push(normalized)
+      }
+    })
+  })
+
+  // Concentration requirements (only active ones)
+  ;(latestValidation.value.concentrations || []).forEach((group) => {
+    const key = (group.groupId || group.title || "").toString().toLowerCase()
+    if (activeConcentrationIds.value.size && !activeConcentrationIds.value.has(key)) return
+    const label = `Concentration — ${group.title || "Option"}`
+    const list = group.missingCourseDetails?.length
+      ? group.missingCourseDetails
+      : (group.missingCourses || [])
+    list.forEach((c) => {
+      const normalized = normalizeNeededCourse(c, label)
+      if (!normalized) return
+      if (!dedupe.Concentration.has(normalized.code)) {
+        dedupe.Concentration.add(normalized.code)
+        buckets.Concentration.push(normalized)
+      }
+    })
+  })
+
+  // Minor requirements
+  ;(latestValidation.value.minorRequirements || []).forEach((group) => {
+    const label = `Minor — ${group.title || group.groupId || "Requirement"}`
+    const list = group.missingCourseDetails?.length
+      ? group.missingCourseDetails
+      : (group.missingCourses || [])
+    list.forEach((c) => {
+      const normalized = normalizeNeededCourse(c, label)
+      if (!normalized) return
+      if (!dedupe.Minor.has(normalized.code)) {
+        dedupe.Minor.add(normalized.code)
+        buckets.Minor.push(normalized)
+      }
+    })
+  })
+
+  return buckets
+})
 
 /* ------------------------------------------
    5. Year Progress Calculations
@@ -719,6 +955,21 @@ onMounted(async () => {
   font-size: 0.78rem;
   color: rgba(var(--v-theme-on-surface), 0.6);
   margin-top: 2px;
+}
+
+.degree-plan-table th {
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+}
+
+.degree-plan-table td {
+  vertical-align: middle;
+}
+
+.degree-plan-table .v-chip {
+  font-weight: 600;
 }
 
 .taken-chip {
