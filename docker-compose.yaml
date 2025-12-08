@@ -101,6 +101,11 @@ services:
       DB_NAME: adviseme
       DB_PASSWORD: ${DB_APP_PASSWORD?Set DB_APP_PASSWORD in .env}
       JWT_SECRET: ${JWT_SECRET?Set JWT_SECRET in .env}
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: 587
+      SMTP_USER: advisemeproject@gmail.com
+      SMTP_PASSWORD: qwqj hhhq rdfa regv
+      SMTP_FROM: "AdviseMe <advisemeproject@gmail.com>"
     expose:
       - "8000"
     depends_on:

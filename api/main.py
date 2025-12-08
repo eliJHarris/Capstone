@@ -17,6 +17,7 @@ from routes.degree_import import router as degree_import_router
 from routes.advisees import router as advisees_router
 from routes.terms import router as terms_router
 from routes.transcripts import router as transcripts_router
+from routes.emails import router as emails_router
 
 
 # Initialize FastAPI app
@@ -73,6 +74,7 @@ _ROUTERS = [
     advisees_router,
     terms_router,
     transcripts_router,
+    emails_router,
 ]
 
 for router in _ROUTERS:
