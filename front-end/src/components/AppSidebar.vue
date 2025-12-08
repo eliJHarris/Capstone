@@ -1,8 +1,7 @@
 <template>
   <v-navigation-drawer
-    model-value="true"
+    v-model="drawerOpen"
     width="260"
-    variant="permanent"
     class="pa-2"
     style="background-color:#ccccc6;"
   >
@@ -42,6 +41,7 @@ import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { normalizeRole, NORMALIZED_ROLES } from '@/utils/auth'
 import { AUTH_ROLE_EVENT } from '@/composables/useUserRole'
 import { useCurrentUser } from '@/composables/useCurrentUser'
+import { useLayoutStore } from '@/stores/layout'
 
 export default {
   name: 'AppSidebar',
@@ -51,6 +51,11 @@ export default {
   setup() {
     const { displayName, username, refreshIdentity } = useCurrentUser()
     const userLabel = computed(() => displayName.value || username.value || 'User')
+    const layoutStore = useLayoutStore()
+    const drawerOpen = computed({
+      get: () => layoutStore.sidebarOpen,
+      set: (value) => layoutStore.setSidebar(value),
+    })
 
     const handleIdentityChange = (event) => {
       if (
@@ -81,6 +86,7 @@ export default {
 
     return {
       userLabel,
+      drawerOpen,
     }
   },
   computed: {

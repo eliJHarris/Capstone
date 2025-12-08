@@ -310,6 +310,8 @@ class ScheduleService:
                 f"Schedule {new_schedule.scheduleID} created for term "
                 f"{term.code} with status {new_schedule.status.value}."
             ),
+            include_advisee=False,
+            include_advisor=True,
         )
         db.commit()
         db.refresh(new_schedule)
@@ -371,6 +373,8 @@ class ScheduleService:
                     f"Schedule {schedule_id} status updated to "
                     f"{schedule.status.value} for term {term_code}."
                 ),
+                include_advisee=True,
+                include_advisor=False,
             )
 
         db.commit()
@@ -504,6 +508,8 @@ class ScheduleService:
                 f"Added {course_name} ({section.crn}) to schedule "
                 f"{schedule_id} for term {term_code}."
             ),
+            include_advisee=False,
+            include_advisor=True,
         )
 
         try:
@@ -569,6 +575,8 @@ class ScheduleService:
                 f"Removed {course_name} ({crn}) from schedule "
                 f"{schedule_id} for term {term_code}."
             ),
+            include_advisee=False,
+            include_advisor=True,
         )
 
         db.delete(cls)
