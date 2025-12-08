@@ -69,6 +69,17 @@ CREATE TABLE IF NOT EXISTS courses (
   CONSTRAINT checkCredits CHECK (credits > 0)
 );
 
+-- Store course-level prerequisites for validation and planning
+CREATE TABLE IF NOT EXISTS coursePrerequisites (
+  courseID              INT NOT NULL,
+  prerequisiteCourseID  INT NOT NULL,
+  minimumGrade          VARCHAR(2) DEFAULT NULL,
+  PRIMARY KEY (courseID, prerequisiteCourseID),
+  CONSTRAINT fk_cp_course FOREIGN KEY (courseID) REFERENCES courses(courseID) ON DELETE CASCADE,
+  CONSTRAINT fk_cp_prereq FOREIGN KEY (prerequisiteCourseID) REFERENCES courses(courseID) ON DELETE RESTRICT,
+  CONSTRAINT chk_cp_not_self CHECK (courseID <> prerequisiteCourseID)
+);
+
 CREATE TABLE IF NOT EXISTS sections (
   sectionID      INT AUTO_INCREMENT PRIMARY KEY,
   courseID       INT NOT NULL,
@@ -139,6 +150,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   notificationID  INT AUTO_INCREMENT PRIMARY KEY,
   userID          INT NOT NULL,
   description     VARCHAR(500) NOT NULL,
+  isRead          TINYINT(1) NOT NULL DEFAULT 0,
   createdAt       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT notificationUser FOREIGN KEY (userID) REFERENCES users(userID) ON DELETE CASCADE
 );
@@ -173,7 +185,7 @@ INSERT INTO users (userID, username, email, role, isActive, createdDate) VALUES
 (14, 'advisor_cho', 'cho@college.edu', 'ADVISOR', 1, '2025-04-11 15:20:00'),
 (15, 'advisor_williams', 'williams@college.edu', 'ADVISOR', 1, '2025-04-30 12:40:00'),
 
-(16, 'student_01', 's01@college.edu', 'STUDENT', 1, '2024-11-15 09:00:00'),
+(16, 'student_01', 'andrewcaydence@gmail.com', 'STUDENT', 1, '2024-11-15 09:00:00'),
 (17, 'student_02', 's02@college.edu', 'STUDENT', 1, '2024-11-17 09:10:00'),
 (18, 'student_03', 's03@college.edu', 'STUDENT', 1, '2024-11-20 10:00:00'),
 (19, 'student_04', 's04@college.edu', 'STUDENT', 1, '2024-11-25 10:45:00'),
@@ -332,7 +344,6 @@ ON DUPLICATE KEY UPDATE
   courseName = VALUES(courseName),
   description = VALUES(description),
   credits = VALUES(credits);
-
 -- Correct table name here: sections (not section)
 INSERT INTO sections (sectionID, courseID, termID, crn, capacity, enrolled, professorName, status, description) VALUES
 (1, 1, 2, 'CS101-SP', 30, 25, 'Dr. Alan Turing', 'OPEN', 'Introductory CS course'),
@@ -1921,6 +1932,138 @@ ON DUPLICATE KEY UPDATE
   sourceDocument = VALUES(sourceDocument);
 
 
+-- Seed prerequisite relationships (based on common UAFS sequencing, not exact catalog)
+INSERT INTO coursePrerequisites (courseID, prerequisiteCourseID, minimumGrade) VALUES
+  (2, 1, 'C'),   -- Data Structures -> Intro to CS
+  (11, 2, 'C'),  -- Algorithms -> Data Structures
+  (12, 2, 'C'),  -- Operating Systems -> Data Structures
+  (13, 2, 'C'),  -- Database Systems -> Data Structures
+  (17, 2, 'C'),  -- Computer Organization -> Data Structures
+  (16, 3, 'C'),  -- Discrete Math -> Calculus I
+  (14, 3, 'C'),  -- Linear Algebra -> Calculus I
+  (21, 3, 'C'),  -- Calculus II -> Calculus I
+  (6, 3, 'C'),   -- Physics I -> Calculus I
+  (15, 3, 'C')   -- Statistics -> Calculus I
+ON DUPLICATE KEY UPDATE
+  minimumGrade = VALUES(minimumGrade);
+
+-- Map prerequisites for auto-imported UAFS courses (handles raw and cleaned names)
+INSERT INTO coursePrerequisites (courseID, prerequisiteCourseID, minimumGrade)
+SELECT courseID, prerequisiteCourseID, minimumGrade
+FROM (
+  -- Accounting sequence
+  SELECT c.courseID, p.courseID AS prerequisiteCourseID, 'C' AS minimumGrade
+  FROM courses c
+  JOIN courses p ON p.courseName IN ('ACCT 2803 Principles of Financial Accounting', 'Principles of Financial Accounting')
+  WHERE c.courseName IN ('ACCT 2813 Principles of Managerial Accounting', 'Principles of Managerial Accounting')
+  UNION ALL
+  SELECT c.courseID, p.courseID, 'C'
+  FROM courses c
+  JOIN courses p ON p.courseName IN ('ACCT 2813 Principles of Managerial Accounting', 'Principles of Managerial Accounting')
+  WHERE c.courseName IN ('ACCT 3003 Intermediate Accounting I', 'Intermediate Accounting I')
+  UNION ALL
+  SELECT c.courseID, p.courseID, 'C'
+  FROM courses c
+  JOIN courses p ON p.courseName IN ('ACCT 3003 Intermediate Accounting I', 'Intermediate Accounting I')
+  WHERE c.courseName IN ('ACCT 3013 Intermediate Accounting II', 'Intermediate Accounting II')
+  UNION ALL
+  SELECT c.courseID, p.courseID, 'C'
+  FROM courses c
+  JOIN courses p ON p.courseName IN ('ACCT 2813 Principles of Managerial Accounting', 'Principles of Managerial Accounting')
+  WHERE c.courseName IN ('ACCT 3023 Cost Accounting', 'Cost Accounting')
+  UNION ALL
+  SELECT c.courseID, p.courseID, 'C'
+  FROM courses c
+  JOIN courses p ON p.courseName IN ('ACCT 2813 Principles of Managerial Accounting', 'Principles of Managerial Accounting')
+  WHERE c.courseName IN ('ACCT 3053 Accounting Information Systems', 'Accounting Information Systems')
+
+  -- Economics bridge
+  UNION ALL
+  SELECT c.courseID, p.courseID, 'C'
+  FROM courses c
+  JOIN courses p ON p.courseName IN ('ECON 2813 Principles of Microeconomics', 'Principles of Microeconomics')
+  WHERE c.courseName IN ('ECON 3313 Microeconomic Analysis', 'Microeconomic Analysis')
+  UNION ALL
+  SELECT c.courseID, p.courseID, 'C'
+  FROM courses c
+  JOIN courses p ON p.courseName IN ('ECON 2803 Principles of Macroeconomics', 'Principles of Macroeconomics')
+  WHERE c.courseName IN ('ECON 3353 Macroeconomic Analysis', 'Macroeconomic Analysis')
+
+  -- Programming & CS core
+  UNION ALL
+  SELECT c.courseID, p.courseID, 'C'
+  FROM courses c
+  JOIN courses p ON p.courseName IN ('CS 1014 Foundations of Programming I', 'Foundations of Programming I')
+  WHERE c.courseName IN ('CS 1024 Foundations of Programming II', 'Foundations of Programming II')
+    AND c.courseID > 21
+  UNION ALL
+  SELECT c.courseID, p.courseID, 'C'
+  FROM courses c
+  JOIN courses p ON p.courseName IN ('CS 1024 Foundations of Programming II', 'Foundations of Programming II')
+  WHERE c.courseName IN ('CS 2003 Data Structures', 'Data Structures')
+    AND c.courseID > 21
+  UNION ALL
+  SELECT c.courseID, p.courseID, 'C'
+  FROM courses c
+  JOIN courses p ON p.courseName IN ('CS 2003 Data Structures', 'Data Structures')
+  WHERE c.courseName IN ('CS 3103 Algorithms', 'CS 3103 Algorithm Design or', 'Algorithms')
+    AND c.courseID > 21
+  UNION ALL
+  SELECT c.courseID, p.courseID, 'C'
+  FROM courses c
+  JOIN courses p ON p.courseName IN ('CS 2003 Data Structures', 'Data Structures')
+  WHERE c.courseName IN ('CS 3043 Database Systems', 'Database Systems')
+    AND c.courseID > 21
+  UNION ALL
+  SELECT c.courseID, p.courseID, 'C'
+  FROM courses c
+  JOIN courses p ON p.courseName IN ('CS 2003 Data Structures', 'Data Structures')
+  WHERE c.courseName IN ('CS 3053 Operating Systems', 'Operating Systems')
+    AND c.courseID > 21
+  UNION ALL
+  SELECT c.courseID, p.courseID, 'C'
+  FROM courses c
+  JOIN courses p ON p.courseName IN ('CS 2003 Data Structures', 'Data Structures')
+  WHERE c.courseName IN ('CS 3033 Computer Architecture', 'Computer Architecture')
+    AND c.courseID > 21
+  UNION ALL
+  SELECT c.courseID, p.courseID, 'C'
+  FROM courses c
+  JOIN courses p ON p.courseName IN ('CS 3103 Algorithms', 'Algorithms')
+  WHERE c.courseName IN ('CS 4003 Software Engineering', 'Software Engineering')
+  UNION ALL
+  SELECT c.courseID, p.courseID, 'C'
+  FROM courses c
+  JOIN courses p ON p.courseName IN ('CS 4003 Software Engineering', 'Software Engineering')
+  WHERE c.courseName IN ('CS 4023 Senior Capstone', 'Senior Capstone')
+
+  -- Math & science
+  UNION ALL
+  SELECT c.courseID, p.courseID, 'C'
+  FROM courses c
+  JOIN courses p ON p.courseName IN ('MATH 1403 College Algebra', 'MATH 1453', 'College Algebra')
+  WHERE c.courseName IN ('MATH 2403 Calculus for Business', 'Calculus for Business')
+  UNION ALL
+  SELECT c.courseID, p.courseID, 'C'
+  FROM courses c
+  JOIN courses p ON p.courseName IN ('MATH 1403 College Algebra', 'College Algebra')
+  WHERE c.courseName IN ('STAT 2503 Probability and Statistics I', 'Probability and Statistics I')
+
+  -- Biology
+  UNION ALL
+  SELECT c.courseID, p.courseID, 'C'
+  FROM courses c
+  JOIN courses p ON p.courseName IN ('BIOL 2003 Introduction to Cell Biology', 'Introduction to Cell Biology')
+  WHERE c.courseName IN ('BIOL 2011 General Biology Lab', 'BIOL 2011 General Biology Laboratory', 'General Biology Lab', 'General Biology Laboratory')
+  UNION ALL
+  SELECT c.courseID, p.courseID, 'C'
+  FROM courses c
+  JOIN courses p ON p.courseName IN ('BIOL 2003 Introduction to Cell Biology', 'Introduction to Cell Biology')
+  WHERE c.courseName IN ('BIOL 2013 Introduction to Organismal Biol', 'BIOL 2013 Introduction to Organismal Biology', 'Introduction to Organismal Biology')
+) AS prereq_mappings
+ON DUPLICATE KEY UPDATE
+  minimumGrade = VALUES(minimumGrade);
+
 -- Auto-generate sections for roughly half of all seeded courses (every even courseID after the initial 10)
 INSERT INTO sections (courseID, termID, crn, capacity, enrolled, professorName, status, description)
 SELECT
@@ -1958,3 +2101,60 @@ ON DUPLICATE KEY UPDATE
 UPDATE courses
 SET courseName = TRIM(SUBSTRING(courseName, CHAR_LENGTH(TRIM(SUBSTRING_INDEX(courseName, ' ', 2))) + 1))
 WHERE courseName REGEXP '^[A-Z]{2,}[[:space:]]+[0-9]{3,4}[[:space:]]+';
+
+-- Enforce prerequisites when enrolling students
+DELIMITER //
+DROP TRIGGER IF EXISTS trg_enrollment_prereq_before_insert;
+CREATE TRIGGER trg_enrollment_prereq_before_insert
+BEFORE INSERT ON enrollments
+FOR EACH ROW
+BEGIN
+  DECLARE unmet INT DEFAULT 0;
+  DECLARE msg VARCHAR(255);
+  SELECT COUNT(*) INTO unmet
+  FROM coursePrerequisites cp
+  WHERE cp.courseID = NEW.courseID
+    AND NOT EXISTS (
+      SELECT 1
+      FROM enrollments e
+      WHERE e.adviseeID = NEW.adviseeID
+        AND e.courseID = cp.prerequisiteCourseID
+        AND e.status = 'COMPLETED'
+        AND e.creditsEarned > 0
+    );
+  IF unmet > 0 THEN
+    SET msg = CONCAT('Prerequisite not met for course ', NEW.courseID);
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = msg;
+  END IF;
+END;
+//
+
+DROP TRIGGER IF EXISTS trg_enrollment_prereq_before_update;
+CREATE TRIGGER trg_enrollment_prereq_before_update
+BEFORE UPDATE ON enrollments
+FOR EACH ROW
+BEGIN
+  DECLARE unmet INT DEFAULT 0;
+  DECLARE msg VARCHAR(255);
+  IF NEW.courseID <> OLD.courseID OR NEW.adviseeID <> OLD.adviseeID THEN
+    SELECT COUNT(*) INTO unmet
+    FROM coursePrerequisites cp
+    WHERE cp.courseID = NEW.courseID
+      AND NOT EXISTS (
+        SELECT 1
+        FROM enrollments e
+        WHERE e.adviseeID = NEW.adviseeID
+          AND e.courseID = cp.prerequisiteCourseID
+        AND e.status = 'COMPLETED'
+          AND e.creditsEarned > 0
+      );
+    IF unmet > 0 THEN
+      SET msg = CONCAT('Prerequisite not met for course ', NEW.courseID);
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = msg;
+    END IF;
+  END IF;
+END;
+//
+DELIMITER ;

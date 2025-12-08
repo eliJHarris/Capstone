@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -11,6 +11,7 @@ class Notification(Base):
     notificationID = Column(Integer, primary_key=True, index=True, autoincrement=True)
     userID = Column(Integer, ForeignKey("users.userID"), nullable=False, index=True)
     description = Column(String, nullable=False)
+    isRead = Column(Boolean, nullable=False, default=False)
     createdAt = Column(DateTime, nullable=False, default=func.now())
 
     user = relationship("User", back_populates="notifications")

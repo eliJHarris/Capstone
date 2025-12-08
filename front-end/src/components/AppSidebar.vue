@@ -24,6 +24,14 @@
         router
       >
         <v-list-item-title>{{ item.title }}</v-list-item-title>
+        <template #append v-if="item.badge && item.badge > 0">
+          <v-badge
+            :content="item.badge"
+            color="red"
+            inline
+            size="small"
+          />
+        </template>
       </v-list-item>
     </v-list>
   </v-navigation-drawer>

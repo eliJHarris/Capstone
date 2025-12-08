@@ -8,13 +8,17 @@
 </template>
 
 <script setup>
-import { useRoute } from 'vue-router'
 import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import ChatBubble from '@/components/ChatBubble.vue'
-
+import { useUserRole } from '@/composables/useUserRole'
+import { NORMALIZED_ROLES } from '@/utils/auth'
 
 const route = useRoute()
-const showChat = computed(() => route.path !== '/' && route.path !== '/login')
+const { role } = useUserRole()
+const showChat = computed(
+  () => role.value === NORMALIZED_ROLES.STUDENT && route.path !== '/' && route.path !== '/login'
+)
 </script>
 
 <script>

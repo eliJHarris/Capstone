@@ -261,6 +261,106 @@
       </v-col>
     </v-row>
 
+    <v-dialog
+      v-model="prereqDialog"
+      max-width="720"
+      persistent
+    >
+      <v-card rounded="xl">
+        <v-card-title class="d-flex align-center">
+          <div>
+            <div class="text-h6">Prerequisite needed</div>
+            <div class="text-caption text-medium-emphasis">
+              Select an available prerequisite section for this term.
+            </div>
+          </div>
+          <v-spacer />
+          <v-btn icon="mdi-close" variant="text" @click="prereqDialog = false" />
+        </v-card-title>
+        <v-card-text>
+          <v-alert
+            v-if="prereqError"
+            type="error"
+            density="comfortable"
+            class="mb-3"
+          >
+            {{ prereqError }}
+          </v-alert>
+
+          <div class="mb-3">
+            <div class="text-subtitle-2 mb-1">Missing prerequisites</div>
+            <v-chip
+              v-for="item in missingPrereqs"
+              :key="item"
+              class="mr-2 mb-2"
+              color="primary"
+              variant="tonal"
+              label
+            >
+              {{ item }}
+            </v-chip>
+          </div>
+
+          <div v-if="prereqLoading" class="py-4 d-flex align-center">
+            <v-progress-circular indeterminate color="primary" class="mr-3" />
+            <div class="text-medium-emphasis">Searching available prerequisite sections…</div>
+          </div>
+
+          <div v-else>
+            <div
+              v-for="option in prereqOptions"
+              :key="option.name"
+              class="mb-4"
+            >
+              <div class="text-subtitle-2 mb-2">{{ option.name }}</div>
+              <v-alert
+                v-if="!option.sections || !option.sections.length"
+                type="info"
+                density="comfortable"
+                variant="tonal"
+                class="mb-2"
+              >
+                No open sections for this prerequisite in the selected term.
+              </v-alert>
+              <v-card
+                v-for="section in option.sections"
+                :key="section.sectionID"
+                class="mb-2"
+                variant="tonal"
+                rounded="lg"
+              >
+                <v-card-text class="d-flex align-center">
+                  <div>
+                    <div class="text-subtitle-2">{{ section.courseName }}</div>
+                    <div class="text-caption text-medium-emphasis">
+                      CRN {{ section.crn }} • {{ section.professorName || 'TBD' }} • {{ section.credits }} credits
+                    </div>
+                    <div class="text-caption text-medium-emphasis">
+                      {{ section.seatsRemaining }} seats remaining
+                    </div>
+                  </div>
+                  <v-spacer />
+                  <v-btn
+                    color="primary"
+                    :loading="prereqActionId === section.sectionID"
+                    :disabled="prereqActionId === section.sectionID"
+                    @click="addPrereqSection(section.sectionID)"
+                  >
+                    Add prerequisite
+                  </v-btn>
+                </v-card-text>
+              </v-card>
+            </div>
+          </div>
+        </v-card-text>
+        <v-card-actions class="justify-end">
+          <v-btn variant="text" color="secondary" @click="prereqDialog = false">
+            Dismiss
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <v-snackbar
       v-model="feedback.show"
       :color="feedback.color"
@@ -611,6 +711,10 @@ const handleAddClass = async (sectionId) => {
     showFeedback(`Section ${sectionId} added`)
     await scheduleStore.searchSections(selectedSchedule.value.scheduleID, '')
   } catch (err) {
+    if (isPrereqError(err)) {
+      await promptPrereqFallback(err, sectionId)
+      return
+    }
     showFeedback(err.message || 'Failed to add section', 'error')
   }
 }
@@ -735,4 +839,85 @@ onMounted(async () => {
   await loadAdvisees()
   await loadTerms()
 })
+
+// Prerequisite fallback UX
+const prereqDialog = ref(false)
+const prereqLoading = ref(false)
+const prereqError = ref('')
+const prereqOptions = ref([])
+const missingPrereqs = ref([])
+const prereqActionId = ref(null)
+
+const isPrereqError = (err) => {
+  const detail = err?.payload?.detail || err?.message || ''
+  return typeof detail === 'string' && detail.toLowerCase().includes('prereq')
+}
+
+const parseMissingPrereqs = (err) => {
+  const detail = err?.payload?.detail || err?.message || ''
+  const match = detail.match(/Missing prerequisites:\s*(.+)/i)
+  if (!match || !match[1]) return []
+  return match[1]
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+const loadPrereqSections = async (names = []) => {
+  if (!selectedScheduleId.value || !names.length) return []
+  const results = []
+  prereqLoading.value = true
+  prereqError.value = ''
+  try {
+    for (const name of names) {
+      const qs = encodeURIComponent(name)
+      const sections = await apiFetch(`/schedules/${selectedScheduleId.value}/sections?search=${qs}`)
+      const matching = sections.filter((item) =>
+        (item.courseName || '').toLowerCase().includes(name.toLowerCase())
+      )
+      if (matching.length) {
+        results.push({ name, sections: matching })
+      }
+    }
+  } catch (err) {
+    prereqError.value = err.message || 'Failed to load prerequisite options'
+  } finally {
+    prereqLoading.value = false
+  }
+  return results
+}
+
+const promptPrereqFallback = async (err, targetSectionId) => {
+  const missing = parseMissingPrereqs(err)
+  if (!missing.length) {
+    showFeedback(err.message || 'Prerequisite not met', 'error')
+    return
+  }
+
+  prereqTargetSection.value = targetSectionId
+  missingPrereqs.value = missing
+  const options = await loadPrereqSections(missing)
+
+  prereqOptions.value = options
+  if (!options.length) {
+    showFeedback('Prerequisite required but no available sections this term.', 'error')
+    return
+  }
+  prereqDialog.value = true
+}
+
+const addPrereqSection = async (sectionId) => {
+  if (!sectionId || !selectedSchedule.value) return
+  prereqActionId.value = sectionId
+  try {
+    await scheduleStore.addClassToSchedule(selectedSchedule.value.scheduleID, sectionId)
+    showFeedback('Prerequisite section added')
+    prereqDialog.value = false
+    await scheduleStore.searchSections(selectedSchedule.value.scheduleID, '')
+  } catch (err) {
+    showFeedback(err.message || 'Failed to add prerequisite section', 'error')
+  } finally {
+    prereqActionId.value = null
+  }
+}
 </script>

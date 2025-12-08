@@ -18,6 +18,8 @@ from schemas.schedule import (
 from services.schedule_service import ScheduleService
 from services.schedule_ai_service import ScheduleAISuggestionService
 from services.openai_service import get_openai_service
+from dependencies.auth import require_user
+from schemas.user import UserRole
 
 router = APIRouter(
     prefix="/schedules",
@@ -178,7 +180,8 @@ def update_schedule(
 @router.delete("/{schedule_id}")
 def delete_schedule(
     schedule_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_user),
 ):
     """
     Delete a schedule.
@@ -187,6 +190,19 @@ def delete_schedule(
 
     Note: This will cascade delete all classes associated with the schedule.
     """
+    role = str(current_user.get("role", "")).strip().lower()
+    roles = current_user.get("roles") or []
+    normalized_roles = {role}
+    if isinstance(roles, list):
+        normalized_roles.update(str(item).strip().lower() for item in roles if item)
+    elif isinstance(roles, str):
+        normalized_roles.add(roles.strip().lower())
+
+    if {"advisee", UserRole.STUDENT.value.lower()} & normalized_roles:
+        raise HTTPException(
+            status_code=403,
+            detail="Students are not allowed to delete schedules.",
+        )
     return ScheduleService.delete_schedule(db=db, schedule_id=schedule_id)
 
 

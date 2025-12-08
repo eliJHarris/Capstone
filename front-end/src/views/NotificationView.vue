@@ -4,7 +4,27 @@
     <v-main class="d-flex">
       <AppSidebar :role="role" />
       <v-container fluid style="flex:1; padding-top: 24px;">
-        <h2 class="text-h4 mb-4">You're in the {{ tabName }} tab</h2>
+        <div class="d-flex align-center justify-space-between mb-4 flex-wrap ga-4">
+          <div class="d-flex align-center ga-4">
+            <h2 class="text-h4 mb-0">You're in the {{ tabName }} tab</h2>
+            <v-chip
+              size="small"
+              color="primary"
+              variant="tonal"
+            >
+              {{ unreadCount }} unread
+            </v-chip>
+          </div>
+          <v-btn
+            variant="text"
+            color="primary"
+            prepend-icon="mdi-refresh"
+            @click="loadNotifications(true)"
+            :loading="loading"
+          >
+            Refresh
+          </v-btn>
+        </div>
 
         <v-alert
           v-if="errorMsg"
@@ -48,11 +68,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { apiFetch } from '@/services/apiClient'
+import { computed, ref, onMounted } from 'vue'
 import AppNavbar from '@/components/AppNavbar.vue'
 import AppSidebar from '@/components/AppSidebar.vue'
 import { useCurrentUser } from '@/composables/useCurrentUser'
+import { apiFetch } from '@/services/apiClient'
 
 const notifications = ref([])
 const loading = ref(false)
@@ -62,6 +82,10 @@ const { role, user, loadUserContext } = useCurrentUser()
 defineProps({
   tabName: String
 })
+
+const unreadCount = computed(() =>
+  notifications.value.filter((n) => n && n.read === false).length || 0
+)
 
 const loadNotifications = async () => {
   loading.value = true

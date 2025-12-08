@@ -14,6 +14,7 @@
         </div>
         <v-spacer />
         <v-btn
+          v-if="canDelete"
           variant="text"
           color="error"
           :disabled="mutationLoading"
@@ -771,6 +772,7 @@ function requestRemoveClass(classId) {
 
 function confirmDelete() {
   dialogOpen.value = false
+  if (!props.canDelete) return
   if (props.schedule) {
     pendingAction.value = 'delete'
     emit('delete', props.schedule.scheduleID)

@@ -413,6 +413,15 @@ import { NORMALIZED_ROLES } from "@/utils/auth"
    STORE
 ------------------------------------------ */
 const degreePlanStore = useDegreePlanStore()
+const {
+  role: userRole,
+  advisee: currentAdvisee,
+  loadUserContext,
+  loading: userContextLoading,
+  error: userContextError,
+} = useCurrentUser()
+
+const isStudent = computed(() => userRole.value === NORMALIZED_ROLES.STUDENT)
 
 /* ------------------------------------------
    STATE
@@ -428,18 +437,6 @@ const seeding = ref(false)
 // year tab state
 const yearTab = ref("All")
 const needTab = ref("Major")
-
-/* ------------------------------------------
-   CURRENT USER INFO
------------------------------------------- */
-const {
-  role: userRole,
-  advisee: currentAdvisee,
-  loadUserContext,
-  error: userContextError,
-} = useCurrentUser()
-
-const isStudent = computed(() => userRole.value === NORMALIZED_ROLES.STUDENT)
 
 /* ------------------------------------------
    CONTEXT & VALIDATION BINDINGS
