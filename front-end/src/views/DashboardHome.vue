@@ -73,23 +73,6 @@
         </v-card>
       </v-col>
     </v-row>
-
-    <v-row dense>
-      <v-col
-        v-for="card in cards"
-        :key="card.title"
-        cols="12"
-        sm="6"
-        md="4"
-      >
-        <DashboardCard
-          :title="card.title"
-          :value="card.value"
-          :icon="card.icon"
-          :footer="card.footer"
-        />
-      </v-col>
-    </v-row>
   </div>
 </template>
 
@@ -126,12 +109,6 @@ const coreProgressPercent = computed(() => {
   return Math.min(100, Math.round((completed / total) * 100))
 })
 const isStudent = computed(() => role.value === NORMALIZED_ROLES.STUDENT)
-
-const cards = [
-  { title: 'Active Schedules', value: 8, icon: 'mdi-calendar-check', footer: 'Across all advisees' },
-  { title: 'Pending Approvals', value: 3, icon: 'mdi-alert-circle', footer: 'Awaiting advisor review' },
-  { title: 'Completed Scrapes', value: 14, icon: 'mdi-file-document', footer: 'Last updated today' },
-]
 
 onMounted(async () => {
   if (role.value !== NORMALIZED_ROLES.STUDENT) return
