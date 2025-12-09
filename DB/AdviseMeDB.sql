@@ -368,7 +368,9 @@ INSERT INTO sections (sectionID, courseID, termID, crn, capacity, enrolled, prof
 (17, 3, 1, 'MATH101-FA', 40, 39, 'Dr. Isaac Newton', 'CLOSED', 'Fall Calculus I'),
 (18, 4, 1, 'ENG201-FA', 35, 34, 'Dr. Jane Austen', 'CLOSED', 'Fall English Literature survey'),
 (19, 5, 1, 'ECO101-FA', 50, 47, 'Dr. Adam Smith', 'CLOSED', 'Fall Economics principles'),
-(20, 6, 1, 'PHY101-FA', 40, 36, 'Dr. Albert Einstein', 'CLOSED', 'Fall Physics mechanics');
+(20, 6, 1, 'PHY101-FA', 40, 36, 'Dr. Albert Einstein', 'CLOSED', 'Fall Physics mechanics'),
+(71, 2, 1, 'CS201-FA24', 30, 27, 'Dr. Grace Hopper', 'CLOSED', 'Data Structures for CS majors'),
+(72, 16, 1, 'MATH210-FA24', 35, 32, 'Dr. George Boole', 'CLOSED', 'Discrete Mathematics for CS majors');
 
 -- Spring 2024 sections (termID 4)
 INSERT INTO sections (sectionID, courseID, termID, crn, capacity, enrolled, professorName, status, description) VALUES
@@ -471,7 +473,7 @@ INSERT INTO schedules (scheduleID, adviseeID, termID, source, status, createdWhe
 
 INSERT INTO classes (classID, sectionID, scheduleID, termID, createdDate) VALUES
 (1, 1, 1,  2, '2025-01-05 09:05:00'),
-(2, 3, 1,  2, '2025-01-05 09:05:00'),
+(2, 7, 1,  2, '2025-01-05 09:05:00'),
 (3, 4, 2,  2, '2025-01-06 09:05:00'),
 (4, 5, 3,  2, '2025-01-07 09:05:00'),
 (5, 2, 4,  2, '2025-01-08 09:05:00'),
@@ -506,8 +508,8 @@ INSERT INTO enrollments (enrollmentID, adviseeID, sectionID, courseID, status, g
 
 -- Historical Fall 2024 enrollments so transcripts show prior terms
 INSERT INTO enrollments (enrollmentID, adviseeID, sectionID, courseID, status, grade, creditsEarned, attemptedNumber, createdWhen) VALUES
-(21, 1, 16, 1, 'COMPLETED', 'A',  3, 1, '2024-09-05 09:10:00'),
-(22, 1, 17, 3, 'COMPLETED', 'B', 4, 1, '2024-09-06 09:12:00'),
+(21, 1, 71, 2, 'COMPLETED', 'A', 3, 1, '2024-09-05 09:10:00'),
+(22, 1, 72, 16, 'COMPLETED', 'A', 3, 1, '2024-09-06 09:12:00'),
 (23, 2, 18, 4, 'COMPLETED', 'A', 3, 1, '2024-09-07 09:10:00'),
 (24, 2, 19, 5, 'COMPLETED', 'B',  3, 1, '2024-09-07 09:12:00'),
 (25, 3, 17, 3, 'COMPLETED', 'A',  4, 1, '2024-09-08 09:10:00'),
@@ -515,8 +517,6 @@ INSERT INTO enrollments (enrollmentID, adviseeID, sectionID, courseID, status, g
 
 -- Additional historical enrollments per advisee for richer transcripts
 INSERT INTO enrollments (enrollmentID, adviseeID, sectionID, courseID, status, grade, creditsEarned, attemptedNumber, createdWhen) VALUES
-(27, 1, 33, 1, 'COMPLETED', 'A', 3, 1, '2023-09-05 09:10:00'),
-(28, 1, 34, 3, 'COMPLETED', 'A',4, 1, '2023-09-06 09:12:00'),
 (29, 1, 35, 4, 'COMPLETED', 'B',3, 1, '2023-09-07 09:15:00'),
 (30, 2, 26,14, 'COMPLETED', 'B',3, 1, '2024-02-01 09:10:00'),
 (31, 2, 24,21, 'COMPLETED', 'A',4, 1, '2024-02-02 09:12:00'),
