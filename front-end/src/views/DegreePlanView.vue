@@ -31,6 +31,25 @@
       {{ degreePlanStore.error }}
     </v-alert>
 
+    <v-alert
+      v-if="transcriptError"
+      type="error"
+      variant="tonal"
+      class="mb-4"
+      closable
+      @click:close="transcriptError = null"
+    >
+      {{ transcriptError }}
+    </v-alert>
+
+    <div
+      v-if="transcriptLoading"
+      class="d-flex align-center mb-4 text-caption text-medium-emphasis"
+    >
+      <v-progress-circular indeterminate size="18" width="3" color="primary" class="mr-2" />
+      Syncing transcript data…
+    </div>
+
     <v-card rounded="xl" class="mb-4">
       <v-card-text>
         <div class="d-flex flex-column flex-md-row align-start" style="gap: 24px;">
@@ -130,16 +149,6 @@
               </div>
             </v-progress-circular>
 
-            <div class="mt-4 text-body-2">
-              Status:
-              <span :class="`text-${statusColor}`">
-                {{ latestValidation.status }}
-              </span>
-            </div>
-
-            <div class="text-caption text-medium-emphasis">
-              Last run: {{ formattedLastRun }}
-            </div>
           </v-card-text>
 
           <v-divider />
@@ -309,6 +318,7 @@ import { ref, computed, watch, onMounted } from "vue"
 import { useCurrentUser } from "@/composables/useCurrentUser"
 import { useDegreePlanStore } from "@/stores/degreePlans"
 import { fetchAdvisees } from "@/services/advisees"
+import { fetchMyTranscript, fetchTranscriptByAdvisee } from "@/services/transcripts"
 import { NORMALIZED_ROLES } from "@/utils/auth"
 
 const degreePlanStore = useDegreePlanStore()
@@ -326,6 +336,8 @@ const isStudent = computed(() => userRole.value === NORMALIZED_ROLES.STUDENT)
 const selectedAdviseeId = ref(null)
 const advisees = ref([])
 const adviseeListLoading = ref(false)
+const transcriptError = ref(null)
+const transcriptLoading = ref(false)
 
 const showImportDialog = ref(false)
 const pdfURL = ref("")
@@ -348,12 +360,6 @@ const activeConcentrationIds = computed(() => {
   return ids
 })
 
-
-const formattedLastRun = computed(() => {
-  const dt = latestValidation.value?.finishedAt || latestValidation.value?.createdAt
-  if (!dt) return "n/a"
-  return new Date(dt).toLocaleString()
-})
 
 const statusColor = computed(() => {
   switch (latestValidation.value?.status) {
@@ -418,16 +424,46 @@ function normalizeCourseCode(entry) {
   return (raw || "").replace(/\s+/g, "").toUpperCase()
 }
 
+function normalizeTranscriptStatus(status = "", grade = "") {
+  const normalized = status.toString().toUpperCase()
+  const normalizedGrade = grade.toString().toUpperCase()
+  if (normalized.includes("PROGRESS") || normalized === "IP" || normalizedGrade === "IP") {
+    return "IN_PROGRESS"
+  }
+  if (normalized === "COMPLETED") return "COMPLETED"
+  if (normalized === "DROPPED" || normalized === "WITHDRAWN") return normalized
+  return normalized || "COMPLETED"
+}
+
 const completedCodes = computed(() => {
   const all = [
     ...(degreePlanStore.completedCourses || []),
+    ...(latestValidation.value.completedCourseDetails || []),
     ...(latestValidation.value.completedCourses || []),
     ...(latestValidation.value.completed || []),
     ...(latestValidation.value.takenCourses || []),
     ...(latestValidation.value.llmCourseBreakdown?.takenCourses || [])
   ]
 
-  return new Set(all.map((c) => normalizeCourseCode(c)).filter(Boolean))
+  const completed = new Set()
+
+  const isCompletedEntry = (entry) => {
+    if (!entry) return false
+    if (typeof entry === "string") return true
+    const status = (entry.status || "").toString().toUpperCase()
+    const grade = (entry.grade || "").toString().toUpperCase()
+    if (status && ["IN_PROGRESS", "PLANNED", "WITHDRAWN", "DROPPED"].includes(status)) return false
+    if (grade && (grade === "IP" || grade === "IN PROGRESS")) return false
+    return true
+  }
+
+  all.forEach((entry) => {
+    if (!isCompletedEntry(entry)) return
+    const code = normalizeCourseCode(entry)
+    if (code) completed.add(code)
+  })
+
+  return completed
 })
 
 const completedCourseDetailMap = computed(() => {
@@ -711,6 +747,38 @@ const neededCourses = computed(() => {
 })
 
 
+function mergeCompletedCourses(existing = [], additions = []) {
+  const map = new Map()
+  const push = (entry = {}) => {
+    const code = normalizeCourseCode(entry.code)
+    if (!code) return
+    const key = `${code}-${entry.term || ""}-${entry.grade || ""}-${entry.status || ""}`
+    map.set(key, { ...entry, code })
+  }
+  existing.forEach(push)
+  additions.forEach(push)
+  return Array.from(map.values())
+}
+
+function transcriptCoursesToCompleted(data) {
+  const items = []
+  data?.terms?.forEach((term) => {
+    term?.courses?.forEach((course) => {
+      const code = normalizeCourseCode(course.courseCode)
+      if (!code) return
+      items.push({
+        code,
+        title: course.courseTitle || code,
+        credits: course.credits,
+        term: course.term || term.term,
+        status: normalizeTranscriptStatus(course.status, course.grade),
+        grade: course.grade,
+      })
+    })
+  })
+  return items
+}
+
 function yearProgress(year) {
   const list = degreePlanYearBuckets.value[year] || []
   if (list.length === 0) return 0
@@ -760,9 +828,7 @@ async function loadAdvisees() {
 watch(selectedAdviseeId, async (id) => {
   if (!id) return
 
-  const allowBootstrap = !isStudent.value
-  await degreePlanStore.fetchContext(id, { allowBootstrap })
-  await degreePlanStore.loadSummary(id, { allowBootstrap })
+  await loadDegreePlanData(id)
 })
 
 
@@ -773,13 +839,52 @@ async function importPdf() {
   pdfURL.value = ""
 }
 
+async function loadTranscriptData(adviseeId) {
+  transcriptLoading.value = true
+  transcriptError.value = null
+  try {
+    let data = null
+    if (isStudent.value) {
+      data = await fetchMyTranscript()
+      selectedAdviseeId.value = data?.adviseeID || selectedAdviseeId.value
+    } else if (adviseeId) {
+      data = await fetchTranscriptByAdvisee(adviseeId)
+    }
+    const mapped = transcriptCoursesToCompleted(data)
+    if (mapped.length) {
+      degreePlanStore.completedCourses = mergeCompletedCourses(
+        degreePlanStore.completedCourses,
+        mapped
+      )
+    }
+  } catch (err) {
+    transcriptError.value = err?.message || "Failed to load transcript data"
+  } finally {
+    transcriptLoading.value = false
+  }
+}
+
+async function loadDegreePlanData(adviseeId) {
+  if (!adviseeId) return
+  const allowBootstrap = false
+  try {
+    await degreePlanStore.fetchContext(adviseeId, { allowBootstrap })
+    await loadTranscriptData(adviseeId)
+    await degreePlanStore.loadSummary(adviseeId, { allowBootstrap })
+  } catch (err) {
+    // Errors are surfaced via degreePlanStore.error or transcriptError; prevent unhandled rejections
+    if (!degreePlanStore.error) {
+      degreePlanStore.error = err?.message || "Failed to load degree plan data"
+    }
+  }
+}
+
 onMounted(async () => {
   await loadUserContext()
 
   if (isStudent.value) {
     selectedAdviseeId.value = currentAdvisee.value?.adviseeID
-    await degreePlanStore.fetchContext(selectedAdviseeId.value, { allowBootstrap: false })
-    await degreePlanStore.loadSummary(selectedAdviseeId.value, { allowBootstrap: false })
+    await loadDegreePlanData(selectedAdviseeId.value)
   } else {
     await loadAdvisees()
   }

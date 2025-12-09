@@ -118,7 +118,7 @@ class ScheduleSuggestionRequest(BaseModel):
 
 
 class AIScheduleNotificationRequest(BaseModel):
-   optionNumber: int = Field(
+    optionNumber: int = Field(
         ...,
         description="The option number provided by the AI suggestion that was applied",
     )
