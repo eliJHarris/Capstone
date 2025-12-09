@@ -48,7 +48,7 @@
           <div class="text-body-2">{{ feedbackModel }}</div>
         </v-alert>
 
-        <v-row dense class="mb-4">
+        <v-row dense class="mb-4" align="start">
           <v-col cols="12" md="6">
             <v-select
               v-model="statusModel"
@@ -59,7 +59,7 @@
               :disabled="disableStatusChange"
             />
           </v-col>
-          <v-col cols="12" md="6" class="d-flex align-end">
+          <v-col cols="12" md="6" class="d-flex align-start justify-end">
             <v-btn
               color="primary"
               block
