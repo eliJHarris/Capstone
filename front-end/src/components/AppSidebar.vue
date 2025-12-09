@@ -42,6 +42,7 @@ import { normalizeRole, NORMALIZED_ROLES } from '@/utils/auth'
 import { AUTH_ROLE_EVENT } from '@/composables/useUserRole'
 import { useCurrentUser } from '@/composables/useCurrentUser'
 import { useLayoutStore } from '@/stores/layout'
+import { useNotificationsStore } from '@/stores/notifications'
 
 export default {
   name: 'AppSidebar',
@@ -49,13 +50,28 @@ export default {
     role: { type: String, default: NORMALIZED_ROLES.STUDENT }
   },
   setup() {
-    const { displayName, username, refreshIdentity } = useCurrentUser()
+    const { displayName, username, user, refreshIdentity, loadUserContext } = useCurrentUser()
     const userLabel = computed(() => displayName.value || username.value || 'User')
     const layoutStore = useLayoutStore()
+    const notificationsStore = useNotificationsStore()
+    const unreadCount = computed(() => notificationsStore.unreadCount)
     const drawerOpen = computed({
       get: () => layoutStore.sidebarOpen,
       set: (value) => layoutStore.setSidebar(value),
     })
+    const loadNotifications = async () => {
+      try {
+        if (!user.value) {
+          await loadUserContext()
+        }
+        const userId = user.value?.userID
+        if (userId) {
+          await notificationsStore.loadForUser(userId)
+        }
+      } catch (err) {
+        console.warn('Failed to load notifications for sidebar', err)
+      }
+    }
 
     const handleIdentityChange = (event) => {
       if (
@@ -75,6 +91,7 @@ export default {
         window.addEventListener('storage', handleIdentityChange)
         window.addEventListener(AUTH_ROLE_EVENT, handleIdentityChange)
       }
+      loadNotifications()
     })
 
     onBeforeUnmount(() => {
@@ -87,6 +104,7 @@ export default {
     return {
       userLabel,
       drawerOpen,
+      unreadCount,
     }
   },
   computed: {
@@ -103,7 +121,7 @@ export default {
         return [
           { title: 'Dashboard', to: '/dashboard' },
           { title: 'Profile', to: '/profile' },
-          { title: 'Notifications', to: '/notifications' },
+          { title: 'Notifications', to: '/notifications', badge: this.unreadCount },
           { title: 'Transcripts', to: '/transcripts' },
           { title: 'Degree Plan', to: '/degree-plan' },
           { title: 'Schedules / Appointments', to: '/schedules' },
@@ -113,7 +131,7 @@ export default {
       return [
         { title: 'Dashboard', to: '/dashboard' },
         { title: 'Profile', to: '/profile' },
-        { title: 'Notifications', to: '/notifications' },
+        { title: 'Notifications', to: '/notifications', badge: this.unreadCount },
         { title: 'Student List', to: '/student-list' },
         { title: 'Security', to: '/security' },
         { title: 'Transcripts', to: '/transcripts' },

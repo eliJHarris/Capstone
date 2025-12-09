@@ -31,37 +31,81 @@
           type="error"
           class="mb-4"
           variant="tonal"
+          closable
+          @click:close="clearError"
         >
           {{ errorMsg }}
         </v-alert>
 
-        <v-alert
-          v-else-if="loading"
-          type="info"
-          variant="tonal"
-          class="mb-4"
-        >
-          Loading notifications...
-        </v-alert>
+        <v-card rounded="xl" class="notification-card">
+          <v-data-table
+            :headers="headers"
+            :items="tableItems"
+            :sort-by="sortBy"
+            :loading="loading"
+            item-value="notificationID"
+            hover
+            density="comfortable"
+            class="notification-table"
+          >
+            <template #item.isRead="{ item }">
+              <v-chip
+                size="small"
+                :color="asRow(item).isRead ? 'success' : 'error'"
+                variant="tonal"
+              >
+                {{ asRow(item).isRead ? 'Read' : 'Unread' }}
+              </v-chip>
+            </template>
 
-        <v-table v-else-if="notifications.length > 0">
-          <thead>
-            <tr>
-              <th class="text-left">From</th>
-              <th class="text-left">Description</th>
-              <th class="text-left">Time</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="notification in notifications" :key="notification.notificationID">
-              <td>{{ notification.userID }}</td>
-              <td>{{ notification.description }}</td>
-              <td>{{ notification.createdAt }}</td>
-            </tr>
-          </tbody>
-        </v-table>
+            <template #item.description="{ item }">
+              <div class="text-body-2">{{ asRow(item).description }}</div>
+              <div class="text-caption text-medium-emphasis">
+                ID: {{ asRow(item).notificationID }}
+              </div>
+            </template>
 
-        <v-alert v-else type="info">No notifications found.</v-alert>
+            <template #item.createdAt="{ item }">
+              {{ formatDate(asRow(item).createdAt) }}
+            </template>
+
+            <template #item.actions="{ item }">
+              <div class="text-right">
+                <v-btn
+                  size="small"
+                  variant="text"
+                  color="primary"
+                  :loading="updatingId === asRow(item).notificationID"
+                  @click="toggleRead(asRow(item))"
+                >
+                  Mark {{ asRow(item).isRead ? 'unread' : 'read' }}
+                </v-btn>
+              </div>
+            </template>
+
+            <template #loading>
+              <tr>
+                <td :colspan="headers.length">
+                  <v-progress-linear indeterminate color="primary" class="ma-4" />
+                </td>
+              </tr>
+            </template>
+
+            <template #no-data>
+              <v-alert type="info" variant="tonal" class="ma-4">
+                No notifications found.
+                <v-btn
+                  class="ml-2"
+                  size="small"
+                  variant="text"
+                  @click="loadNotifications(true)"
+                >
+                  Reload
+                </v-btn>
+              </v-alert>
+            </template>
+          </v-data-table>
+        </v-card>
       </v-container>
     </v-main>
   </v-app>
@@ -69,54 +113,93 @@
 
 <script setup>
 import { computed, ref, onMounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import AppNavbar from '@/components/AppNavbar.vue'
 import AppSidebar from '@/components/AppSidebar.vue'
 import { useCurrentUser } from '@/composables/useCurrentUser'
-import { apiFetch } from '@/services/apiClient'
+import { useNotificationsStore } from '@/stores/notifications'
 
-const notifications = ref([])
-const loading = ref(false)
-const errorMsg = ref('')
-const { role, user, loadUserContext } = useCurrentUser()
+const localError = ref('')
+const updatingId = ref(null)
 
 defineProps({
   tabName: String
 })
 
-const unreadCount = computed(() =>
-  notifications.value.filter((n) => n && n.read === false).length || 0
-)
+const { role, user, loadUserContext } = useCurrentUser()
+const notificationsStore = useNotificationsStore()
+const { notifications, unreadCount, loading, error } = storeToRefs(notificationsStore)
+const sortBy = ref([{ key: 'createdAt', order: 'desc' }])
+const headers = [
+  { title: 'Status', key: 'isRead', sortable: false, width: '120px' },
+  { title: 'Description', key: 'description', sortable: false, minWidth: '280px' },
+  { title: 'Time', key: 'createdAt', sortable: true, width: '220px' },
+  { title: 'Action', key: 'actions', sortable: false, align: 'end', width: '160px' },
+]
 
-const loadNotifications = async () => {
-  loading.value = true
-  errorMsg.value = ''
+const errorMsg = computed(() => localError.value || error.value || '')
+const tableItems = computed(() => notifications.value || [])
+const clearError = () => {
+  localError.value = ''
+  error.value = ''
+}
+
+// Vuetify 3 passes slot items slightly differently depending on version;
+// this helper normalizes to the raw row object.
+const asRow = (slotItem) => slotItem?.raw ?? slotItem ?? {}
+
+const formatDate = (value) => {
+  if (!value) return '—'
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+}
+
+const loadNotifications = async (force = false) => {
+  localError.value = ''
   try {
     const userId = user.value?.userID
     if (!userId) {
       throw new Error('Unable to resolve user for notifications.')
     }
-    const data = await apiFetch(`/notifications/?user_id=${encodeURIComponent(userId)}&skip=0&limit=100`)
-    notifications.value = data
-  } catch (error) {
-    console.error('Error fetching data:', error)
-    if (error?.status === 404) {
-      notifications.value = []
-      errorMsg.value = ''
-    } else {
-      errorMsg.value = error.message || 'Failed to load notifications'
-    }
+    await notificationsStore.loadForUser(userId, { force })
+  } catch (err) {
+    console.error('Error fetching data:', err)
+    localError.value = err.message || 'Failed to load notifications'
+  }
+}
+
+const toggleRead = async (notification) => {
+  if (!notification?.notificationID) return
+  updatingId.value = notification.notificationID
+  localError.value = ''
+  try {
+    await notificationsStore.setReadState(
+      notification.notificationID,
+      !notification.isRead
+    )
+  } catch (err) {
+    console.error('Failed to update notification', err)
+    localError.value = err.message || 'Failed to update notification status'
   } finally {
-    loading.value = false
+    updatingId.value = null
   }
 }
 
 onMounted(async () => {
   try {
     await loadUserContext()
-  } catch (error) {
-    errorMsg.value = error.message || 'Failed to load user'
+  } catch (err) {
+    localError.value = err.message || 'Failed to load user'
     return
   }
-  await loadNotifications()
+  await loadNotifications(true)
 })
 </script>
