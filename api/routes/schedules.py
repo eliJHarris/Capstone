@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -14,17 +14,66 @@ from schemas.schedule import (
     SectionSearchItem,
     ScheduleSuggestionRequest,
     ScheduleSuggestionResponse,
+    AIScheduleNotificationRequest,
 )
 from services.schedule_service import ScheduleService
 from services.schedule_ai_service import ScheduleAISuggestionService
 from services.openai_service import get_openai_service
-from dependencies.auth import require_user
+from dependencies.auth import JWT_ALGO, JWT_SECRET, require_user
 from schemas.user import UserRole
+from jose import JWTError, jwt
+from models.user import User
 
 router = APIRouter(
     prefix="/schedules",
     tags=["schedules"]
 )
+
+
+def _normalize_role_label(value: Optional[str]) -> str:
+    if not value or not isinstance(value, str):
+        return ""
+    normalized = value.strip().lower()
+    if normalized in {"advisor", "adviser", "admin"}:
+        return "advisor"
+    if normalized in {"advisee", "student"}:
+        return "student"
+    return ""
+
+
+def _decode_authorization_claims(authorization: Optional[str]) -> dict:
+    if not authorization or not authorization.startswith("Bearer "):
+        return {}
+    token = authorization.split(" ", 1)[1]
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+    except JWTError:
+        return {}
+
+
+def _resolve_actor_role_from_authorization(authorization: Optional[str]) -> str:
+    claims = _decode_authorization_claims(authorization)
+    for key in ("role", "roles"):
+        value = claims.get(key)
+        if isinstance(value, list):
+            for entry in value:
+                normalized = _normalize_role_label(entry)
+                if normalized:
+                    return normalized
+        else:
+            normalized = _normalize_role_label(value)
+            if normalized:
+                return normalized
+    return "student"
+
+
+def _resolve_actor_user_id(authorization: Optional[str], db: Session) -> Optional[int]:
+    claims = _decode_authorization_claims(authorization)
+    username = claims.get("uid") or claims.get("sub") or claims.get("cn")
+    if not username:
+        return None
+    user = db.query(User).filter(User.username == username).first()
+    return user.userID if user else None
 
 
 @router.get("/", response_model=List[ScheduleListResponse])
@@ -143,9 +192,33 @@ async def generate_schedule_suggestions(
         ) from exc
 
 
+@router.post("/{schedule_id}/suggestions/notify")
+def notify_ai_schedule_application(
+    schedule_id: int,
+    payload: AIScheduleNotificationRequest,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Trigger a notification after AI suggested classes have been applied to a schedule.
+
+    - **schedule_id**: ID of the schedule that was updated
+    - **optionNumber**: Which AI option was applied
+    - **courseNames**: Human-readable names of the courses that were added
+    """
+    ScheduleService.notify_ai_schedule_application(
+        db=db,
+        schedule_id=schedule_id,
+        payload=payload,
+        actor_user_id=_resolve_actor_user_id(authorization, db),
+    )
+    return {"message": "Notification queued."}
+
+
 @router.post("/", response_model=ScheduleResponse, status_code=201)
 def create_schedule(
     schedule: ScheduleCreate,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -156,13 +229,21 @@ def create_schedule(
     - **source**: Source of the schedule (USER, ADVISOR, SYSTEM) - defaults to USER
     - **status**: Status of the schedule (DRAFT, APPROVED, REJECTED) - defaults to DRAFT
     """
-    return ScheduleService.create_schedule(db=db, schedule_data=schedule)
+    actor_role = _resolve_actor_role_from_authorization(authorization)
+    actor_user_id = _resolve_actor_user_id(authorization, db)
+    return ScheduleService.create_schedule(
+        db=db,
+        schedule_data=schedule,
+        actor_role=actor_role,
+        actor_user_id=actor_user_id,
+    )
 
 
 @router.put("/{schedule_id}", response_model=ScheduleResponse)
 def update_schedule(
     schedule_id: int,
     schedule: ScheduleUpdate,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -174,7 +255,13 @@ def update_schedule(
 
     Note: Updating status to APPROVED/REJECTED will automatically set the corresponding timestamp.
     """
-    return ScheduleService.update_schedule(db=db, schedule_id=schedule_id, schedule_data=schedule)
+    actor_user_id = _resolve_actor_user_id(authorization, db)
+    return ScheduleService.update_schedule(
+        db=db,
+        schedule_id=schedule_id,
+        schedule_data=schedule,
+        actor_user_id=actor_user_id,
+    )
 
 
 @router.delete("/{schedule_id}")
@@ -210,6 +297,7 @@ def delete_schedule(
 def add_class_to_schedule(
     schedule_id: int,
     class_data: AddClassToSchedule,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -217,13 +305,19 @@ def add_class_to_schedule(
 
     - **schedule_id**: The ID of the schedule
     - **sectionID**: The ID of the section to add
+    - **aiAssisted**: Indicates whether this class addition came from an AI suggestion
 
     Note: The section must belong to the same term as the schedule.
     """
+    actor_role = _resolve_actor_role_from_authorization(authorization)
+    actor_user_id = _resolve_actor_user_id(authorization, db)
     return ScheduleService.add_class_to_schedule(
         db=db,
         schedule_id=schedule_id,
-        section_id=class_data.sectionID
+        section_id=class_data.sectionID,
+        actor_role=actor_role,
+        ai_assisted=class_data.aiAssisted,
+        actor_user_id=actor_user_id,
     )
 
 
@@ -231,6 +325,7 @@ def add_class_to_schedule(
 def remove_class_from_schedule(
     schedule_id: int,
     class_id: int,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -239,8 +334,12 @@ def remove_class_from_schedule(
     - **schedule_id**: The ID of the schedule
     - **class_id**: The ID of the class to remove
     """
+    actor_role = _resolve_actor_role_from_authorization(authorization)
+    actor_user_id = _resolve_actor_user_id(authorization, db)
     return ScheduleService.remove_class_from_schedule(
         db=db,
         schedule_id=schedule_id,
-        class_id=class_id
+        class_id=class_id,
+        actor_role=actor_role,
+        actor_user_id=actor_user_id,
     )

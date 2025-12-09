@@ -40,6 +40,10 @@ class ScheduleUpdate(BaseModel):
 # Schema for adding a class to a schedule
 class AddClassToSchedule(BaseModel):
     sectionID: int = Field(..., description="ID of the section to add")
+    aiAssisted: bool = Field(
+        False,
+        description="Whether this class was added as part of an AI-generated suggestion",
+    )
 
 
 # Schema for class/section info (nested in response)
@@ -120,6 +124,19 @@ class ScheduleSuggestionRequest(BaseModel):
     note: Optional[str] = Field(
         None,
         description="Preference or constraint to include in the suggestion prompt",
+    )
+
+
+class AIScheduleNotificationRequest(BaseModel):
+    """Payload for requesting an AI scheduling notification."""
+
+    optionNumber: int = Field(
+        ...,
+        description="The option number provided by the AI suggestion that was applied",
+    )
+    courseNames: List[str] = Field(
+        default_factory=list,
+        description="Names or codes of the courses added by this AI schedule option",
     )
 
 

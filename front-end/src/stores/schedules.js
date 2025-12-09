@@ -231,6 +231,21 @@ export const useScheduleStore = defineStore('schedules', {
           existingSectionIds.clear()
         }
 
+        const addedCourseNames = []
+        const addCourseName = (course) => {
+          const name =
+            course.course_name ||
+            course.courseCode ||
+            course.course_code ||
+            course.courseName ||
+            ''
+          const fallback = course.section ? `Section ${course.section}` : ''
+          const label = name || fallback
+          if (label) {
+            addedCourseNames.push(label)
+          }
+        }
+
         for (const course of option.courses) {
           const sectionId = Number(course.section)
           if (!sectionId || Number.isNaN(sectionId) || existingSectionIds.has(sectionId)) {
@@ -238,8 +253,18 @@ export const useScheduleStore = defineStore('schedules', {
           }
           await apiFetch(`/schedules/${scheduleId}/classes`, {
             method: 'POST',
-            body: { sectionID: sectionId },
+            body: { sectionID: sectionId, aiAssisted: true },
           })
+          existingSectionIds.add(sectionId)
+          addCourseName(course)
+        }
+
+        if (addedCourseNames.length) {
+          await this.notifyAiSuggestionApplication(
+            scheduleId,
+            option.option_number || option.optionNumber || option.number || 0,
+            addedCourseNames,
+          )
         }
 
         await this.fetchScheduleById(scheduleId)
@@ -250,6 +275,23 @@ export const useScheduleStore = defineStore('schedules', {
         throw error
       } finally {
         this.mutationLoading = false
+      }
+    },
+    async notifyAiSuggestionApplication(scheduleId, optionNumber, courseNames = []) {
+      if (!scheduleId || !optionNumber || !Array.isArray(courseNames) || courseNames.length === 0) {
+        return
+      }
+
+      try {
+        await apiFetch(`/schedules/${scheduleId}/suggestions/notify`, {
+          method: 'POST',
+          body: {
+            optionNumber,
+            courseNames,
+          },
+        })
+      } catch (error) {
+        console.warn('Failed to notify about AI-scheduled classes', error)
       }
     },
     async deleteSchedule(scheduleId) {

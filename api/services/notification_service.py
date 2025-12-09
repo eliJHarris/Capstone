@@ -67,7 +67,8 @@ class NotificationService:
         advisee_id: int,
         description: str,
         include_advisee: bool = True,
-        include_advisor: bool = True
+        include_advisor: bool = True,
+        actor_user_id: Optional[int] = None
     ) -> None:
         """
         Notify the advisee and/or their advisor.
@@ -88,6 +89,8 @@ class NotificationService:
             recipients.append(advisor_id)
 
         for recipient_id in set(recipients):
+            if actor_user_id and actor_user_id == recipient_id:
+                continue
             NotificationService.queue_notification(db, recipient_id, description)
 
     # ----------------------------------------
