@@ -181,11 +181,30 @@ def get_degree_plan_context(
         )
         validation_payload = DegreePlanValidationResponse.from_orm(normalized)
 
+    # Compute best-effort credits completed to avoid obviously inflated values
+    completed_courses = context.completedCourses if context else []
+    try:
+        computed_credits = sum(
+            float(course.get("credits") or 0)
+            for course in completed_courses
+            if isinstance(course, dict)
+            and (course.get("status") or "").upper() not in {"IN_PROGRESS", "PLANNED"}
+        )
+    except Exception:
+        computed_credits = None
+
+    credits_completed = profile.credits_completed
+    if computed_credits:
+        # If the profile value is missing or clearly higher than recorded completions, use computed
+        if credits_completed is None or credits_completed <= 0 or credits_completed > computed_credits:
+            credits_completed = computed_credits
+
     return {
         "adviseeID": advisee_id,
         "name": profile_name,
         "major": profile.major,
         "classification": getattr(profile.classification, "value", profile.classification),
+        "creditsCompleted": credits_completed,
         "catalogYear": catalog_year,
         "completedCourses": context.completedCourses if context else [],
         "requirementSet": requirement_payload,

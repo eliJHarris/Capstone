@@ -191,71 +191,23 @@
             </v-list-item>
 
             <v-list-item>
-              <v-list-item-title>Total Credits</v-list-item-title>
+              <v-list-item-title>Credits Completed</v-list-item-title>
               <v-list-item-subtitle>
-                {{ latestValidation.totalCredits ?? '—' }}
+                {{ creditsCompletedLabel }}
+              </v-list-item-subtitle>
+            </v-list-item>
+
+            <v-list-item>
+              <v-list-item-title>Total Credits Required</v-list-item-title>
+              <v-list-item-subtitle>
+                {{
+                  totalCreditsRequired !== null && totalCreditsRequired !== undefined
+                    ? `${totalCreditsRequired} hrs`
+                    : '—'
+                }}
               </v-list-item-subtitle>
             </v-list-item>
           </v-list>
-
-          <v-divider />
-
-          <!-- CATEGORY COMPLETION -->
-          <v-card-text class="pt-4">
-            <div class="text-subtitle-2 text-medium-emphasis mb-3">Category Completion</div>
-
-            <div class="mb-4">
-              <div class="text-body-2 font-weight-medium mb-1">Degree</div>
-              <v-progress-linear
-                :model-value="degreeCompletion"
-                height="6"
-                rounded
-                color="primary"
-              />
-              <div class="text-caption text-medium-emphasis">
-                {{ degreeCompletion.toFixed(1) }}% complete
-              </div>
-            </div>
-
-            <div class="mb-4">
-              <div class="text-body-2 font-weight-medium mb-1">Major</div>
-              <v-progress-linear
-                :model-value="majorPercent"
-                height="6"
-                rounded
-                color="primary"
-              />
-              <div class="text-caption text-medium-emphasis">
-                {{ majorPercent.toFixed(1) }}% complete
-              </div>
-            </div>
-
-            <div v-if="hasConcentration" class="mb-4">
-              <div class="text-body-2 font-weight-medium mb-1">Concentration</div>
-              <v-progress-linear
-                :model-value="concentrationPercent"
-                height="6"
-                rounded
-                color="secondary"
-              />
-              <div class="text-caption text-medium-emphasis">
-                {{ concentrationPercent.toFixed(1) }}% complete
-              </div>
-            </div>
-
-            <div v-if="hasMinor">
-              <div class="text-body-2 font-weight-medium mb-1">Minor</div>
-              <v-progress-linear
-                :model-value="minorPercent"
-                height="6"
-                rounded
-                color="secondary"
-              />
-              <div class="text-caption text-medium-emphasis">
-                {{ minorPercent.toFixed(1) }}% complete
-              </div>
-            </div>
-          </v-card-text>
         </v-card>
       </v-col>
 
@@ -455,12 +407,6 @@ const activeConcentrationIds = computed(() => {
   return ids
 })
 
-/* Category progress */
-const degreeCompletion = computed(() => latestValidation.value.completionPercent ?? degreePlanStore.completionPercent ?? 0)
-const majorPercent = computed(() => latestValidation.value.majorCompletionPercent ?? 0)
-const minorPercent = computed(() => latestValidation.value.minorCompletionPercent ?? 0)
-const concentrationPercent = computed(() => latestValidation.value.concentrationCompletionPercent ?? 0)
-
 /* ------------------------------------------
    FORMATTING
 ------------------------------------------ */
@@ -477,6 +423,17 @@ const statusColor = computed(() => {
     case "RUNNING": return "warning"
     default: return "primary"
   }
+})
+
+const totalCreditsRequired = computed(() => {
+  const fromValidation = latestValidation.value?.totalCredits
+  if (fromValidation !== undefined && fromValidation !== null) {
+    const parsed = Number(fromValidation)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  const fromRequirement = requirementSet.value?.totalCredits
+  const parsedRequirement = Number(fromRequirement)
+  return Number.isFinite(parsedRequirement) ? parsedRequirement : null
 })
 
 /* ------------------------------------------
@@ -554,6 +511,40 @@ const completedCourseDetailMap = computed(() => {
   })
 
   return detailMap
+})
+
+const creditsCompleted = computed(() => {
+  const explicit = context.value?.creditsCompleted
+  if (explicit !== undefined && explicit !== null) {
+    const parsed = Number(explicit)
+    if (Number.isFinite(parsed)) return parsed
+  }
+
+  const seen = new Set()
+  const sources = [
+    ...(degreePlanStore.completedCourses || []),
+    ...(latestValidation.value.completedCourseDetails || []),
+    ...(latestValidation.value.completedCourses || []),
+  ]
+
+  let total = 0
+  sources.forEach((entry) => {
+    if (!entry || typeof entry === "string") return
+    const code = normalizeCourseCode(entry.code)
+    if (!code || seen.has(code)) return
+    seen.add(code)
+    const credits = Number(entry.credits)
+    if (Number.isFinite(credits)) {
+      total += credits
+    }
+  })
+
+  return total
+})
+
+const creditsCompletedLabel = computed(() => {
+  const total = creditsCompleted.value
+  return Number.isFinite(total) ? `${total} hrs` : "—"
 })
 
 /* ------------------------------------------
