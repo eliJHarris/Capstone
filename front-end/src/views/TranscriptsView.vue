@@ -120,7 +120,7 @@
         <v-card rounded="xl" class="stat-card">
           <v-card-text>
             <div class="text-subtitle-2 text-medium-emphasis mb-1">Cumulative GPA</div>
-            <div class="text-h4 font-weight-medium">{{ formatGpa(transcript?.cumulativeGpa) }}</div>
+            <div class="text-h4 font-weight-medium">{{ formatGpa(selectedAdviseeGpa ?? transcript?.cumulativeGpa) }}</div>
             <div class="text-caption text-medium-emphasis">
               Weighted by completed credit hours
             </div>
