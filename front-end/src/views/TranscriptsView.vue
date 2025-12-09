@@ -47,7 +47,7 @@
                 {{ transcript?.studentName || 'Your transcript' }}
               </div>
               <div class="text-body-2 text-medium-emphasis mb-3">
-                Advisee #{{ selectedAdviseeId || '—' }} • {{ transcript?.major || 'Major not set' }}
+                Advisee #{{ selectedAdviseeId || '—' }} • {{ transcript?.major || 'Major not set' }} • GPA {{ formatGpa(selectedAdviseeGpa) }}
               </div>
               <v-alert
                 density="compact"
@@ -298,6 +298,24 @@ const formatGpa = (value) => {
   return num.toFixed(2)
 }
 
+const selectedAdviseeProfile = computed(() => {
+  if (isStudent.value) {
+    return currentAdvisee.value
+  }
+  return adviseeOptions.value.find((item) => item.value === selectedAdviseeId.value)?.raw || null
+})
+
+const selectedAdviseeGpa = computed(() => {
+  const profile = selectedAdviseeProfile.value
+  if (profile && profile.gpa !== null && profile.gpa !== undefined) {
+    return profile.gpa
+  }
+  if (transcript.value?.cumulativeGpa !== null && transcript.value?.cumulativeGpa !== undefined) {
+    return transcript.value.cumulativeGpa
+  }
+  return null
+})
+
 const loadAdvisees = async () => {
   if (!canBrowseAll.value) return
   adviseeLoading.value = true
@@ -305,8 +323,15 @@ const loadAdvisees = async () => {
     const records = await fetchAdvisees({ limit: 200 })
     adviseeOptions.value = records.map((item) => ({
       title: item.name || `Advisee #${item.adviseeID}`,
-      subtitle: `${item.major || 'Major not set'} • ${item.classification || '—'}`,
+      subtitle: [
+        item.major || 'Major not set',
+        item.classification || '—',
+        item.gpa !== null && item.gpa !== undefined ? `GPA ${formatGpa(item.gpa)}` : null,
+      ]
+        .filter(Boolean)
+        .join(' • '),
       value: item.adviseeID,
+      raw: item,
     }))
   } catch (err) {
     error.value = err.message || 'Failed to load advisees'

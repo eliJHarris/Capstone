@@ -25,7 +25,6 @@ class AdviseeBase(BaseModel):
     major: str
     degree_plan: Optional[str] = None
     classification: Classification
-    gpa: Optional[float] = None
     credits_completed: int = 0
     status: AdviseeStatus = AdviseeStatus.Active
 
@@ -42,7 +41,6 @@ class AdviseeUpdate(BaseModel):
     major: Optional[str] = None
     degree_plan: Optional[str] = None
     classification: Optional[Classification] = None
-    gpa: Optional[float] = None
     credits_completed: Optional[int] = None
     status: Optional[AdviseeStatus] = None
 
