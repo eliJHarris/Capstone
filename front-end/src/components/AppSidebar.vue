@@ -127,6 +127,19 @@ export default {
           { title: 'Schedules / Appointments', to: '/schedules' },
         ]
       }
+
+      if (this.normalizedRole === NORMALIZED_ROLES.ADVISOR) {
+        return [
+          { title: 'Dashboard', to: '/dashboard' },
+          { title: 'Notifications', to: '/notifications', badge: this.unreadCount },
+          { title: 'Student List', to: '/student-list' },
+          { title: 'Transcripts', to: '/transcripts' },
+          { title: 'Degree Plan', to: '/degree-plan' },
+          { title: 'Schedules / Appointments', to: '/schedules' },
+        ]
+      }
+
+      // Admins and other roles
       return [
         { title: 'Dashboard', to: '/dashboard' },
         { title: 'Profile', to: '/profile' },
