@@ -125,7 +125,6 @@ export default {
           { title: 'Transcripts', to: '/transcripts' },
           { title: 'Degree Plan', to: '/degree-plan' },
           { title: 'Schedules / Appointments', to: '/schedules' },
-          { title: 'PDF Scraper', to: '/pdf-scraper' },
         ]
       }
       return [
@@ -136,7 +135,6 @@ export default {
         { title: 'Transcripts', to: '/transcripts' },
         { title: 'Degree Plan', to: '/degree-plan' },
         { title: 'Schedules / Appointments', to: '/schedules' },
-        { title: 'PDF Scraper', to: '/pdf-scraper' },
       ]
     },
   }

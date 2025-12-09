@@ -40,24 +40,10 @@
     </v-row>
 
     <v-row v-if="isStudent" dense class="mb-6 dashboard-row" align="stretch">
-      <v-col cols="12" md="6">
-        <v-card elevation="2" class="dashboard-card">
-          <v-card-title class="text-h6">Today's Schedule</v-card-title>
-          <v-card-text>
-            <div v-if="scheduleToday.length">
-              <div v-for="item in scheduleToday" :key="item.course" class="schedule-item">
-                <div class="font-weight-medium">{{ item.course }} · {{ item.title }}</div>
-                <div class="text-caption">{{ item.time }} · {{ item.location }}</div>
-              </div>
-            </div>
-            <div v-else class="text-caption text-medium-emphasis">No classes scheduled today.</div>
-          </v-card-text>
-        </v-card>
-      </v-col>
 
       <v-col cols="12" md="6">
         <v-card elevation="2" class="dashboard-card">
-          <v-card-title class="text-h6">Upcoming Milestones</v-card-title>
+          <v-card-title class="text-h6">Notification Preview</v-card-title>
           <v-card-text>
             <div v-if="upcomingMilestones.length">
               <div v-for="milestone in upcomingMilestones" :key="milestone.title" class="milestone-item">
@@ -68,7 +54,7 @@
                 <div class="text-caption">{{ milestone.description }}</div>
               </div>
             </div>
-            <div v-else class="text-caption text-medium-emphasis">No upcoming milestones.</div>
+            <div v-else class="text-caption text-medium-emphasis">No notifications.</div>
           </v-card-text>
         </v-card>
       </v-col>
@@ -122,12 +108,16 @@ onMounted(async () => {
 
 <style scoped>
 .student-profile-card {
-  background-color: #f9f6ef;
+  background-color: #fff;
 }
 .dashboard-card {
   height: 100%;
   display: flex;
   flex-direction: column;
+  font-family: 'Poppins', sans-serif !important;
+}
+.dashboard-card :deep(.v-card-title) {
+  font-family: 'Poppins', sans-serif !important;
 }
 .dashboard-row > .v-col {
   display: flex;
@@ -136,6 +126,7 @@ onMounted(async () => {
   flex: 1;
 }
 .dashboard-card :deep(.v-card-text) {
+  font-family: 'Poppins', sans-serif !important;
   flex: 1;
   display: flex;
   flex-direction: column;

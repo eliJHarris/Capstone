@@ -11,28 +11,6 @@
       </div>
 
       <v-spacer />
-
-      <!-- IMPORT PDF -->
-      <v-btn
-        color="primary"
-        class="mr-3"
-        variant="tonal"
-        :loading="degreePlanStore.importing"
-        @click="showImportDialog = true"
-      >
-        Import Degree Audit PDF
-      </v-btn>
-
-      <!-- SAMPLE -->
-      <v-btn
-        color="primary"
-        class="mr-3"
-        variant="tonal"
-        :loading="seeding"
-        @click="seedDegreePlan"
-      >
-        Load Sample Plan
-      </v-btn>
     </div>
 
     <!-- ERRORS -->
