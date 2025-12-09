@@ -20,7 +20,6 @@ from routes.transcripts import router as transcripts_router
 from routes.emails import router as emails_router
 
 
-# Initialize FastAPI app
 app = FastAPI(
     title="AdviseMe API",
     description="Academic advising and scheduling platform API",
@@ -29,7 +28,6 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
 )
 
-# Configure CORS
 DEFAULT_ALLOWED = (
     "http://localhost,"
     "https://localhost,"
@@ -61,7 +59,6 @@ if ENABLE_CORS:
         allow_headers=["*"],
     )
 
-# Include routers (primary /api paths) and compatibility mounts without the prefix
 _ROUTERS = [
     schedules_router,
     pdf_scraper_router,
@@ -79,11 +76,9 @@ _ROUTERS = [
 
 for router in _ROUTERS:
     app.include_router(router, prefix="/api")
-    # Backwards-compatible mount for clients that previously hit core-api without the /api prefix
     app.include_router(router, include_in_schema=False)
 
 
-# Health check endpoints
 @app.get("/")
 async def read_root():
     return {"message": "AdviseMe API is running", "version": "1.0.0"}
@@ -95,7 +90,7 @@ def health_check():
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
         return {"status": "ok"}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc: 
         return {"status": "degraded", "error": str(exc)}
 
 

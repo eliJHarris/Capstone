@@ -31,7 +31,6 @@ class UserService:
         """
         query = db.query(User)
 
-        # Apply filters
         if user_id:
             query = query.filter(User.userID == user_id)
         if username:
@@ -43,7 +42,6 @@ class UserService:
 
         users = query.offset(skip).limit(limit).all()
 
-        # Build response with class count
         result = []
         for user in users:
             result.append(UserResponse(
@@ -59,9 +57,7 @@ class UserService:
 
     @staticmethod
     def get_user_by_id(db: Session, user_id: int) -> UserResponse:
-        """
-        Get a specific schedule by ID with all classes
-        """
+
         user = db.query(User).filter(User.userID == user_id).first()
 
         if not user:
@@ -83,11 +79,7 @@ class UserService:
 
     @staticmethod
     def create_user(db: Session, user_data: UserCreate) -> UserResponse:
-        """
-        Create a new schedule
-        """
 
-        # Create new schedule
         new_user = User(
             username=user_data.username,
             email=user_data.email,
@@ -104,9 +96,7 @@ class UserService:
 
     @staticmethod
     def update_user(db: Session, user_id: int, user_data: UserUpdate) -> UserResponse:
-        """
-        Update an existing schedule
-        """
+
         user = db.query(User).filter(User.userID == user_id).first()
 
         if not user:
@@ -126,9 +116,7 @@ class UserService:
 
     @staticmethod
     def delete_user(db: Session, user_id: int) -> dict:
-        """
-        Delete a schedule
-        """
+  
         user = db.query(User).filter(User.userID == user_id).first()
 
         if not user:

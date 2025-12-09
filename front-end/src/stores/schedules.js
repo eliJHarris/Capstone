@@ -218,7 +218,6 @@ export const useScheduleStore = defineStore('schedules', {
           currentClasses.map((cls) => Number(cls.sectionID)).filter((id) => !Number.isNaN(id))
         )
 
-        // If replacing, remove all current classes first
         if (strategy === 'replace' && currentClassIds.length) {
           for (const classId of currentClassIds) {
             try {

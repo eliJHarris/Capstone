@@ -12,7 +12,6 @@
 
     <template v-else>
       <v-row dense class="profile-row" align="stretch">
-        <!-- AT A GLANCE -->
         <v-col cols="12" md="6">
           <v-card elevation="2" class="profile-card at-a-glance-card">
             <v-card-title class="text-h6">At a Glance</v-card-title>
@@ -48,8 +47,6 @@
             </v-card-text>
           </v-card>
         </v-col>
-
-        <!-- ADVISOR -->
         <v-col cols="12" md="6">
           <v-card elevation="2" class="profile-card advisor-card">
             <v-card-title class="text-h6">Advisor</v-card-title>
@@ -63,8 +60,6 @@
           </v-card>
         </v-col>
       </v-row>
-
-      <!-- CURRENT CLASSES -->
       <v-row dense class="profile-row" align="stretch">
         <v-col cols="12">
           <v-card elevation="2" class="profile-card">
@@ -133,7 +128,6 @@ watch(isStudent, () => {
 </script>
 
 <style scoped>
-/* Ensure equal card height across columns */
 .profile-row > .v-col {
   display: flex;
 }

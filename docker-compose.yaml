@@ -46,12 +46,9 @@ services:
       - ldap-data:/var/lib/ldap
       - ldap-config:/etc/ldap/slapd.d
       - ./ldap/bootstrap:/container/service/slapd/assets/config/bootstrap/ldif/custom
-      # certs still mounted but not required anymore; safe to keep
       - ./ldap/certs:/container/service/slapd/assets/certs
     ports:
       - "389:389"
-      # 636 not needed without TLS, but ok if you want to keep it closed:
-      # - "636:636"
     networks:
       - adviseme-net
 
@@ -76,7 +73,6 @@ services:
       LDAP_PORT: 389
       LDAP_USE_SSL: "false"
       LDAP_TLS_VALIDATE: "false"
-      # LDAP_CA_CERT_FILE no longer needed
     expose:
       - "8080"
     depends_on:

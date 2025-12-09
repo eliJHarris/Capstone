@@ -3,7 +3,6 @@ from typing import Optional, List
 from datetime import datetime
 from enum import Enum
 
-#Describes API Paylods (Request/Response)
 
 class ScheduleStatus(str, Enum):
     DRAFT = "DRAFT"
@@ -17,7 +16,6 @@ class ScheduleSource(str, Enum):
     SYSTEM = "SYSTEM"
 
 
-# Schema for creating a new schedule
 class ScheduleCreate(BaseModel):
     adviseeID: int = Field(..., description="ID of the advisee")
     termID: int = Field(..., description="ID of the term")
@@ -28,7 +26,6 @@ class ScheduleCreate(BaseModel):
     )
 
 
-# Schema for updating a schedule
 class ScheduleUpdate(BaseModel):
     status: Optional[ScheduleStatus] = Field(None, description="Status of the schedule")
     source: Optional[ScheduleSource] = Field(None, description="Source of the schedule")
@@ -37,7 +34,6 @@ class ScheduleUpdate(BaseModel):
     )
 
 
-# Schema for adding a class to a schedule
 class AddClassToSchedule(BaseModel):
     sectionID: int = Field(..., description="ID of the section to add")
     aiAssisted: bool = Field(
@@ -46,7 +42,6 @@ class AddClassToSchedule(BaseModel):
     )
 
 
-# Schema for class/section info (nested in response)
 class ClassInSchedule(BaseModel):
     classID: int
     sectionID: int
@@ -77,8 +72,6 @@ class SectionSearchItem(BaseModel):
     seatsRemaining: int
     status: str
 
-
-# Schema for schedule response
 class ScheduleResponse(BaseModel):
     scheduleID: int
     adviseeID: int
@@ -98,7 +91,6 @@ class ScheduleResponse(BaseModel):
         from_attributes = True
 
 
-# Schema for schedule list response (without detailed classes)
 class ScheduleListResponse(BaseModel):
     scheduleID: int
     adviseeID: int
@@ -119,8 +111,6 @@ class ScheduleListResponse(BaseModel):
 
 
 class ScheduleSuggestionRequest(BaseModel):
-    """Optional note to steer AI-generated schedules."""
-
     note: Optional[str] = Field(
         None,
         description="Preference or constraint to include in the suggestion prompt",
@@ -128,9 +118,7 @@ class ScheduleSuggestionRequest(BaseModel):
 
 
 class AIScheduleNotificationRequest(BaseModel):
-    """Payload for requesting an AI scheduling notification."""
-
-    optionNumber: int = Field(
+   optionNumber: int = Field(
         ...,
         description="The option number provided by the AI suggestion that was applied",
     )

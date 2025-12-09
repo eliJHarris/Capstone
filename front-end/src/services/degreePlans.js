@@ -2,7 +2,6 @@ import { apiFetch } from '@/services/apiClient'
 
 const DEGREE_PLANS_PREFIX = '/degree-plans'
 
-/** Ensure an adviseeId is provided */
 const requireAdviseeId = (adviseeId) => {
   if (!adviseeId && adviseeId !== 0) {
     throw new Error('Missing advisee ID')
@@ -10,7 +9,6 @@ const requireAdviseeId = (adviseeId) => {
   return adviseeId
 }
 
-/** Convert a JS object into ?query=params */
 const buildQuery = (params = {}) => {
   const search = new URLSearchParams()
   Object.entries(params).forEach(([key, value]) => {
@@ -21,13 +19,10 @@ const buildQuery = (params = {}) => {
   return query ? `?${query}` : ''
 }
 
-/** Standard prefix for API paths */
 const adviseePath = (adviseeId, suffix) =>
   `${DEGREE_PLANS_PREFIX}/advisees/${adviseeId}${suffix}`
 
-/* -------------------------------------------------------
-   FETCH SUMMARY (old behavior, used by validator results)
--------------------------------------------------------- */
+
 export async function fetchAdviseeSummary(adviseeId, options = {}) {
   requireAdviseeId(adviseeId)
   const { allowBootstrap } = options
@@ -35,9 +30,7 @@ export async function fetchAdviseeSummary(adviseeId, options = {}) {
   return apiFetch(`${adviseePath(adviseeId, '/summary')}${query}`)
 }
 
-/* -------------------------------------------------------
-   UPSERT CONTEXT (completedCourses, requirementSet link, etc.)
--------------------------------------------------------- */
+
 export async function upsertAdviseeContext(adviseeId, payload = {}, options = {}) {
   requireAdviseeId(adviseeId)
   const { autoValidate, query: extraQuery = {} } = options
@@ -53,9 +46,7 @@ export async function upsertAdviseeContext(adviseeId, payload = {}, options = {}
   })
 }
 
-/* -------------------------------------------------------
-   MANUAL VALIDATION
--------------------------------------------------------- */
+
 export async function requestPlanValidation(adviseeId, payload = {}, options = {}) {
   requireAdviseeId(adviseeId)
   const query = buildQuery(options.query)
@@ -65,9 +56,7 @@ export async function requestPlanValidation(adviseeId, payload = {}, options = {
   })
 }
 
-/* -------------------------------------------------------
-   SAVE REQUIREMENT SET
--------------------------------------------------------- */
+
 export async function saveRequirementSet(payload) {
   if (!payload) {
     throw new Error('Missing requirement set payload')
@@ -78,9 +67,6 @@ export async function saveRequirementSet(payload) {
   })
 }
 
-/* -------------------------------------------------------
-   IMPORT DEGREE AUDIT PDF
--------------------------------------------------------- */
 export async function importDegreePlanPdf(adviseeId, pdfUrl) {
   requireAdviseeId(adviseeId)
 
@@ -94,20 +80,7 @@ export async function importDegreePlanPdf(adviseeId, pdfUrl) {
   })
 }
 
-/* -------------------------------------------------------
-   NEW: FETCH DEGREE PLAN CONTEXT (matches Transcript page)
-   Returns:
-   {
-     adviseeID,
-     name,
-     major,
-     classification,
-     catalogYear,
-     requirementSet,
-     completedCourses,
-     validation
-   }
--------------------------------------------------------- */
+
 export async function fetchDegreeContext(adviseeId, options = {}) {
   requireAdviseeId(adviseeId)
   const { allowBootstrap } = options

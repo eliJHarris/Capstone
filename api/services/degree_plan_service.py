@@ -1,15 +1,3 @@
-"""
-DEGREE PLAN VALIDATION SERVICE (CONCENTRATION-AWARE VERSION)
-------------------------------------------------------------
-Major Enhancements:
-- Full concentration detection
-- BBA requires 2 concentrations
-- Other degrees require 1 (if concentrations exist)
-- Concentration course matching
-- Hours satisfied calculation
-- Clean LLM-compatible output
-"""
-
 import math
 import re
 from datetime import datetime
@@ -37,16 +25,12 @@ from schemas.degree_plan import (
 from services.degree_plan.llm_course_breakdown import classify_course_breakdown
 
 
-# -------------------------------------------------------------
-# 1. Utility: Normalize course codes
-# -------------------------------------------------------------
 def normalize_code(c: str) -> str:
     if not c:
         return ""
     return c.replace(" ", "").upper().strip()
 
 
-# Display-friendly normalization (keeps a space between subject/number)
 def _normalize_course_code_display(code: Optional[str]) -> str:
     if not code:
         return ""
@@ -57,7 +41,6 @@ def _normalize_course_code_display(code: Optional[str]) -> str:
 
 
 def _normalize_catalog_year_display(catalog_year: Optional[str]) -> str:
-    """Strip advisee-specific suffixes such as ::ADV-123 used for imported sets."""
     if not catalog_year:
         return ""
     value = str(catalog_year)
@@ -67,15 +50,10 @@ def _normalize_catalog_year_display(catalog_year: Optional[str]) -> str:
 
 
 def normalize_catalog_display(catalog_year: Optional[str]) -> str:
-    """Public helper imported by routes to keep catalog year tidy."""
     return _normalize_catalog_year_display(catalog_year)
 
 
 def _infer_year_bucket(code: Optional[str]) -> str:
-    """
-    Roughly map a course code to a class year bucket based on leading digit.
-    1xxx -> Freshman, 2xxx -> Sophomore, 3xxx -> Junior, 4xxx/5xxx -> Senior.
-    """
     if not code:
         return "Other"
     digits = re.findall(r"\d+", code.replace(" ", ""))
@@ -374,7 +352,7 @@ def _summarize_course_requirements(groups: List[Dict], completed_codes: set) -> 
 
 
 # -------------------------------------------------------------
-# 2. Identify concentration requirement groups
+#  Identify concentration requirement groups
 # -------------------------------------------------------------
 def extract_concentration_groups(requirement_data: List[Dict]) -> List[Dict]:
     """Return all groups of type 'concentration'."""
@@ -386,7 +364,7 @@ def extract_concentration_groups(requirement_data: List[Dict]) -> List[Dict]:
 
 
 # -------------------------------------------------------------
-# 3. Compute course matches for one concentration
+#  Compute course matches for one concentration
 # -------------------------------------------------------------
 def match_concentration(
     concentration: Dict,
@@ -405,36 +383,28 @@ def match_concentration(
     taken = []
     missing = []
 
-    # Required courses
     for rc in required:
         if rc in completed_codes:
             taken.append(rc)
         else:
             missing.append(rc)
 
-    # Choose-courses logic:
-    # If concentration has chooseCourses, the hours requirement applies to required + choose bucket.
     hours_required = concentration.get("hoursRequired", 12)
     total_required_courses = len(required)
 
-    # How many 3-hour courses equal to hours required?
     needed_count = math.ceil(hours_required / 3)
 
-    # Already taken from required
     already_count = len(taken)
 
-    # Remaining need from choose list
     remaining_needed = max(0, needed_count - already_count)
 
-    # Evaluate choose courses
+
     choose_taken = [c for c in choose if c in completed_codes]
     choose_missing = [c for c in choose if c not in completed_codes]
 
     taken.extend(choose_taken)
 
-    # Add missing choose-courses only if needed
     if remaining_needed > 0:
-        # choose_missing list holds possible courses
         missing.extend(choose_missing)
 
     match_count = len(taken)
@@ -443,7 +413,7 @@ def match_concentration(
 
 
 # -------------------------------------------------------------
-# 4. Determine number of required concentrations for degree
+#  Determine number of required concentrations for degree
 # -------------------------------------------------------------
 def required_concentration_count(program_code: str) -> int:
     """
@@ -457,7 +427,7 @@ def required_concentration_count(program_code: str) -> int:
 
 
 # -------------------------------------------------------------
-# 5. Choose strongest-matching concentrations
+#  Choose strongest-matching concentrations
 # -------------------------------------------------------------
 def select_active_concentrations(
     concentration_groups: List[Dict],
@@ -473,17 +443,15 @@ def select_active_concentrations(
         match_count, _, _ = match_concentration(conc, completed_codes)
         scored.append((match_count, conc))
 
-    # Sort descending by match_count
     scored.sort(key=lambda x: x[0], reverse=True)
 
-    # If degree has concentrations but student completed none, still pick top N
     active = [c for (_, c) in scored[:count_required]]
 
     return active
 
 
 # -------------------------------------------------------------
-# 6. Build validator output for concentrations
+#  Build validator output for concentrations
 # -------------------------------------------------------------
 def build_concentration_validation_output(
     active: List[Dict],
@@ -518,17 +486,10 @@ def build_concentration_validation_output(
 
 
 # -------------------------------------------------------------
-# 7. MAIN VALIDATION SERVICE (patched)
+#  MAIN VALIDATION SERVICE 
 # -------------------------------------------------------------
 class DegreePlanService:
-    """
-    Provides CRUD helpers for requirement sets/contexts and performs
-    lightweight validation used by the Degree Plan UI.
-    """
 
-    # ------------------------------------------------------------------
-    # Requirement Set CRUD
-    # ------------------------------------------------------------------
     @staticmethod
     def create_requirement_set(db: Session, payload: DegreeRequirementSetCreate):
         data = payload.model_dump()
@@ -664,13 +625,12 @@ class DegreePlanService:
             payload.catalogYear = normalized_catalog
             return payload
         except ValidationError:
-            pass  # Fall back to manual coercion for loosely-structured imports
+            pass 
 
         groups = []
         for group in requirement.requirementData or []:
             coerced = dict(group)
 
-            # requiredCredits fallback
             required = (
                 coerced.get("requiredCredits")
                 or coerced.get("creditsRequired")
@@ -682,7 +642,6 @@ class DegreePlanService:
             except Exception:
                 coerced["requiredCredits"] = 0.0
 
-            # Normalize courses list to satisfy schema
             courses = []
             for course in coerced.get("courses") or []:
                 if not course:
@@ -723,9 +682,6 @@ class DegreePlanService:
         except ValidationError:
             return None
 
-    # ------------------------------------------------------------------
-    # Validation helpers
-    # ------------------------------------------------------------------
     @staticmethod
     def _normalize_validation_record(record: DegreePlanValidation, extras: Optional[Dict] = None):
         if not record:
@@ -773,7 +729,6 @@ class DegreePlanService:
         }
 
         extras = extras or {}
-        # Extract warnings from issues if present
         if not extras.get("warnings") and payload["issues"]:
             payload["warnings"] = [
                 issue for issue in payload["issues"] if str(issue.get("severity", "")).upper() == "WARNING"
@@ -869,7 +824,6 @@ class DegreePlanService:
             major_groups,
         ) = _categorize_requirement_groups(requirement_data)
 
-        # Fallback so legacy plans still show progress even if not categorized
         if not general_ed_groups:
             general_ed_groups = [
                 g
@@ -878,13 +832,11 @@ class DegreePlanService:
                 and str(g.get("type") or "").lower() not in {"concentration", "minor"}
             ]
 
-        # General education summary
         general_summary, gen_required, gen_satisfied = _build_general_education_summary(
             general_ed_groups, completed_display
         )
         general_percent = 0.0 if gen_required == 0 else round((gen_satisfied / gen_required) * 100, 2)
 
-        # Major/minor summaries
         major_summary, major_required, major_satisfied, major_percent, major_needed = _summarize_course_requirements(
             major_groups,
             completed_codes,
@@ -899,7 +851,6 @@ class DegreePlanService:
         if minor_required == 0:
             minor_percent = 0.0
 
-        # Concentration logic
         conc_required_count = (
             required_concentration_count(requirement.programCode or "")
             if concentration_groups
@@ -986,7 +937,6 @@ class DegreePlanService:
             else round((concentration_satisfied / conc_required_count) * 100, 2)
         )
 
-        # Prerequisite warnings
         assumed_coreqs = _collect_assumed_corequisites(requirement_data)
         prereq_warnings: List[Dict] = []
         for group in requirement_data or []:
@@ -1025,7 +975,6 @@ class DegreePlanService:
                 return
             outstanding_requirements.append(payload)
 
-        # General education gaps
         for group in general_summary:
             if (group.get("remainingSelections") or 0) <= 0:
                 continue
@@ -1050,7 +999,6 @@ class DegreePlanService:
                 }
             )
 
-        # Major requirement gaps
         for item in major_summary:
             missing_details = item.get("missingCourseDetails") or [_course_detail(c) for c in item.get("missingCourses", [])]
             _append_outstanding(
@@ -1069,7 +1017,6 @@ class DegreePlanService:
                 }
             )
 
-        # Minor requirement gaps
         for item in minor_summary:
             missing_details = item.get("missingCourseDetails") or [_course_detail(c) for c in item.get("missingCourses", [])]
             _append_outstanding(
@@ -1088,7 +1035,6 @@ class DegreePlanService:
                 }
             )
 
-        # Concentration gaps
         for conc in concentration_summaries:
             missing_details = conc.get("missingCourseDetails") or conc.get("options", [{}])[0].get("missingCourseDetails") or []
             _append_outstanding(
@@ -1183,7 +1129,7 @@ class DegreePlanService:
             db.commit()
 
             return DegreePlanService._normalize_validation_record(validation, extras=extras)
-        except Exception as exc:  # pragma: no cover - defensive
+        except Exception as exc: 
             validation.status = ValidationStatus.ERROR
             validation.message = str(exc)
             validation.finishedAt = datetime.utcnow()
@@ -1201,9 +1147,7 @@ class DegreePlanService:
         finally:
             db.close()
 
-    # ------------------------------------------------------------------
-    # Enqueue validation run
-    # ------------------------------------------------------------------
+
     @staticmethod
     def enqueue_validation(
         db: Session,

@@ -1,7 +1,5 @@
 <template>
   <div class="py-6 degree-plan-page">
-
-    <!-- HEADER -->
     <div class="d-flex align-center mb-4">
       <div>
         <h2 class="text-h4 mb-1">Degree Plan Validation</h2>
@@ -13,7 +11,6 @@
       <v-spacer />
     </div>
 
-    <!-- ERRORS -->
     <v-alert
       v-if="userContextError"
       type="warning"
@@ -34,11 +31,9 @@
       {{ degreePlanStore.error }}
     </v-alert>
 
-    <!-- ADVISEE SELECTION CARD -->
     <v-card rounded="xl" class="mb-4">
       <v-card-text>
         <div class="d-flex flex-column flex-md-row align-start" style="gap: 24px;">
-          <!-- ADVISEE SELECT -->
           <div class="flex-grow-1" style="min-width: 260px;">
             <div class="text-subtitle-2 text-medium-emphasis mb-2">Select Advisee</div>
 
@@ -75,7 +70,6 @@
             </template>
           </div>
 
-          <!-- SNAPSHOT -->
           <div v-if="context" class="flex-grow-1">
             <div class="text-subtitle-2 text-medium-emphasis mb-1">Snapshot</div>
 
@@ -96,7 +90,6 @@
       </v-card-text>
     </v-card>
 
-    <!-- IMPORT PDF DIALOG -->
     <v-dialog v-model="showImportDialog" max-width="500">
       <v-card>
         <v-card-title>Import Degree Audit PDF</v-card-title>
@@ -120,13 +113,8 @@
       </v-card>
     </v-dialog>
 
-    <!-- MAIN CONTENT -->
     <v-row dense v-if="context && latestValidation">
-
-      <!-- LEFT COLUMN -->
       <v-col cols="12" md="4">
-
-        <!-- COMPLETION CARD -->
         <v-card rounded="xl" class="mb-4">
           <v-card-text class="text-center">
             <div class="text-subtitle-2 text-medium-emphasis mb-2">Completion</div>
@@ -156,7 +144,6 @@
 
           <v-divider />
 
-          <!-- PROGRAM INFO -->
           <v-list density="comfortable">
             <v-list-item>
               <v-list-item-title>Program</v-list-item-title>
@@ -189,10 +176,7 @@
         </v-card>
       </v-col>
 
-      <!-- RIGHT COLUMN -->
       <v-col cols="12" md="8">
-
-        <!-- YEAR-BY-YEAR DEGREE PLAN BREAKDOWN -->
         <v-card rounded="xl" class="mb-4">
           <v-card-title class="d-flex align-center">
             Year-by-Year Degree Plan Breakdown
@@ -204,15 +188,11 @@
           </v-card-title>
 
           <v-card-text>
-
-            <!-- YEAR TABS -->
             <v-tabs v-model="yearTab" grow density="compact" class="mb-6">
               <v-tab v-for="y in yearTabs" :key="y" :value="y">
                 {{ y }}
               </v-tab>
             </v-tabs>
-
-            <!-- YEAR PROGRESS BAR -->
             <div class="mb-4">
               <v-progress-linear
                 :model-value="yearProgress(yearTab)"
@@ -224,8 +204,6 @@
                 {{ yearProgress(yearTab).toFixed(1) }}% complete
               </div>
             </div>
-
-            <!-- YEAR COURSE LIST -->
             <div class="d-flex align-center justify-space-between mb-3">
               <div class="text-subtitle-1 font-weight-medium">{{ formattedYearTitle }}</div>
               <v-chip size="small" color="grey-darken-1" variant="tonal">
@@ -281,8 +259,6 @@
 
           </v-card-text>
         </v-card>
-
-        <!-- NEEDED COURSES BY CATEGORY -->
         <v-card rounded="xl">
           <v-card-title class="d-flex align-center">
             Remaining Courses
@@ -323,25 +299,18 @@
       </v-col>
     </v-row>
 
-    <!-- DEFAULT EMPTY STATE -->
     <v-alert v-else type="info" variant="tonal" class="mt-4">
       Select an advisee to load degree plan data.
     </v-alert>
   </div>
 </template>
 <script setup>
-/* ------------------------------------------
-   IMPORTS
------------------------------------------- */
 import { ref, computed, watch, onMounted } from "vue"
 import { useCurrentUser } from "@/composables/useCurrentUser"
 import { useDegreePlanStore } from "@/stores/degreePlans"
 import { fetchAdvisees } from "@/services/advisees"
 import { NORMALIZED_ROLES } from "@/utils/auth"
 
-/* ------------------------------------------
-   STORE
------------------------------------------- */
 const degreePlanStore = useDegreePlanStore()
 const {
   role: userRole,
@@ -353,9 +322,7 @@ const {
 
 const isStudent = computed(() => userRole.value === NORMALIZED_ROLES.STUDENT)
 
-/* ------------------------------------------
-   STATE
------------------------------------------- */
+
 const selectedAdviseeId = ref(null)
 const advisees = ref([])
 const adviseeListLoading = ref(false)
@@ -364,13 +331,9 @@ const showImportDialog = ref(false)
 const pdfURL = ref("")
 const seeding = ref(false)
 
-// year tab state
 const yearTab = ref("All")
 const needTab = ref("Major")
 
-/* ------------------------------------------
-   CONTEXT & VALIDATION BINDINGS
------------------------------------------- */
 const context = computed(() => degreePlanStore.context)
 const requirementSet = computed(() => degreePlanStore.requirementSet)
 const latestValidation = computed(() => degreePlanStore.latestValidation || {})
@@ -385,9 +348,7 @@ const activeConcentrationIds = computed(() => {
   return ids
 })
 
-/* ------------------------------------------
-   FORMATTING
------------------------------------------- */
+
 const formattedLastRun = computed(() => {
   const dt = latestValidation.value?.finishedAt || latestValidation.value?.createdAt
   if (!dt) return "n/a"
@@ -414,9 +375,7 @@ const totalCreditsRequired = computed(() => {
   return Number.isFinite(parsedRequirement) ? parsedRequirement : null
 })
 
-/* ------------------------------------------
-   UTILS: Infer year bucket from course code
------------------------------------------- */
+
 function inferYearBucket(code = "", category = "") {
   const categoryText = (category || "").toLowerCase()
   if (categoryText.includes("elective")) return "Other"
@@ -452,9 +411,7 @@ function termLabel(course = {}) {
   return course.term || ""
 }
 
-/* ------------------------------------------
-   1. Extract completed course codes
------------------------------------------- */
+
 function normalizeCourseCode(entry) {
   if (!entry) return ""
   const raw = typeof entry === "string" ? entry : entry.code
@@ -525,9 +482,6 @@ const creditsCompletedLabel = computed(() => {
   return Number.isFinite(total) ? `${total} hrs` : "—"
 })
 
-/* ------------------------------------------
-   2. Extract planned courses from requirement sets
------------------------------------------- */
 function extractPlannedCourses() {
   const itemsMap = new Map()
 
@@ -594,7 +548,6 @@ function extractPlannedCourses() {
     return Array.from(itemsMap.values())
   }
 
-  // Fallback to validation payload if requirement set is unavailable
   const raw = latestValidation.value
 
   const pushGroup = (group, categoryLabel) => {
@@ -620,9 +573,6 @@ function extractPlannedCourses() {
 
 const plannedCourses = computed(() => extractPlannedCourses())
 
-/* ------------------------------------------
-   3. Bucket planned courses by year + taken flag
------------------------------------------- */
 function bucketPlannedCourses() {
   const buckets = {
     All: [],
@@ -655,9 +605,6 @@ function bucketPlannedCourses() {
 
 const degreePlanYearBuckets = computed(() => bucketPlannedCourses())
 
-/* ------------------------------------------
-   4. Year Tabs
------------------------------------------- */
 const yearTabs = ["All", "Freshman", "Sophomore", "Junior", "Senior", "Other"]
 
 function sortCourses(list = []) {
@@ -685,9 +632,6 @@ const formattedYearTitle = computed(() => {
   return `${yearTab.value} Year Plan`
 })
 
-/* ------------------------------------------
-   Needed courses per category (major/minor/concentration)
------------------------------------------- */
 const needTabs = computed(() => {
   const tabs = ["Major"]
   if (hasConcentration.value) tabs.push("Concentration")
@@ -716,7 +660,6 @@ const neededCourses = computed(() => {
   const buckets = { Major: [], Concentration: [], Minor: [] }
   const dedupe = { Major: new Set(), Concentration: new Set(), Minor: new Set() }
 
-  // Major requirements
   ;(latestValidation.value.majorRequirements || []).forEach((group) => {
     const label = `Major — ${group.title || group.groupId || "Requirement"}`
     const list = group.missingCourseDetails?.length
@@ -732,7 +675,6 @@ const neededCourses = computed(() => {
     })
   })
 
-  // Concentration requirements (only active ones)
   ;(latestValidation.value.concentrations || []).forEach((group) => {
     const key = (group.groupId || group.title || "").toString().toLowerCase()
     if (activeConcentrationIds.value.size && !activeConcentrationIds.value.has(key)) return
@@ -750,7 +692,6 @@ const neededCourses = computed(() => {
     })
   })
 
-  // Minor requirements
   ;(latestValidation.value.minorRequirements || []).forEach((group) => {
     const label = `Minor — ${group.title || group.groupId || "Requirement"}`
     const list = group.missingCourseDetails?.length
@@ -769,9 +710,7 @@ const neededCourses = computed(() => {
   return buckets
 })
 
-/* ------------------------------------------
-   5. Year Progress Calculations
------------------------------------------- */
+
 function yearProgress(year) {
   const list = degreePlanYearBuckets.value[year] || []
   if (list.length === 0) return 0
@@ -790,7 +729,6 @@ function yearColor(year) {
   }
 }
 
-/* Totals */
 const allPlannedCourses = computed(() => degreePlanYearBuckets.value.All || [])
 
 const totalCompleted = computed(() =>
@@ -799,9 +737,7 @@ const totalCompleted = computed(() =>
 
 const totalPlanned = computed(() => allPlannedCourses.value.length)
 
-/* ------------------------------------------
-   ADVISEE SELECT ITEMS
------------------------------------------- */
+
 const adviseeSelectItems = computed(() =>
   advisees.value.map((a) => ({
     value: a.adviseeID,
@@ -810,9 +746,7 @@ const adviseeSelectItems = computed(() =>
   }))
 )
 
-/* ------------------------------------------
-   LOAD ADVISEES
------------------------------------------- */
+
 async function loadAdvisees() {
   adviseeListLoading.value = true
   try {
@@ -823,9 +757,6 @@ async function loadAdvisees() {
   }
 }
 
-/* ------------------------------------------
-   WATCHER — LOAD CONTEXT + SUMMARY
------------------------------------------- */
 watch(selectedAdviseeId, async (id) => {
   if (!id) return
 
@@ -834,9 +765,7 @@ watch(selectedAdviseeId, async (id) => {
   await degreePlanStore.loadSummary(id, { allowBootstrap })
 })
 
-/* ------------------------------------------
-   IMPORT PDF
------------------------------------------- */
+
 async function importPdf() {
   if (!selectedAdviseeId.value) return
   await degreePlanStore.importDegreePlan(selectedAdviseeId.value, pdfURL.value)
@@ -844,9 +773,6 @@ async function importPdf() {
   pdfURL.value = ""
 }
 
-/* ------------------------------------------
-   INITIALIZATION
------------------------------------------- */
 onMounted(async () => {
   await loadUserContext()
 
@@ -872,9 +798,6 @@ onMounted(async () => {
   box-shadow: 0 12px 26px rgba(0, 0, 0, 0.1);
 }
 
-/* ----------------------------------------------
-   Year-by-Year Breakdown Styling
----------------------------------------------- */
 
 .year-header {
   font-weight: 600;
@@ -956,9 +879,6 @@ onMounted(async () => {
   }
 }
 
-/* ----------------------------------------------
-   Tabs & Progress
----------------------------------------------- */
 
 .v-tabs {
   background-color: transparent !important;

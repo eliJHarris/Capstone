@@ -228,7 +228,6 @@ class TranscriptService:
                 )
             )
 
-        # Sort newest first by attempting to parse term code fallback to insertion order
         transcript_terms.sort(key=lambda t: t.term, reverse=True)
         return transcript_terms
 

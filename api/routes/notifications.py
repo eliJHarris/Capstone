@@ -125,14 +125,6 @@ def create_notification(
     background: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    """
-    Create a new schedule.
-
-    - **adviseeID**: ID of the advisee/student
-    - **termID**: ID of the academic term
-    - **source**: Source of the schedule (USER, ADVISOR, SYSTEM) - defaults to USER
-    - **status**: Status of the schedule (DRAFT, APPROVED, REJECTED) - defaults to DRAFT
-    """
     user = get_user(notification.userID, db)
     email_data = EmailData(
         subject="New Notification",
@@ -151,12 +143,7 @@ def update_notification(
     payload: NotificationUpdate,
     db: Session = Depends(get_db)
 ):
-    """
-    Update an existing notification's read status.
 
-    - **notification_id**: The ID of the notification to update
-    - **isRead**: New read/unread flag
-    """
     return NotificationService.update_notification(db=db, notification_id=notification_id, is_read=payload.isRead)
 
 
@@ -165,11 +152,5 @@ def delete_notification(
     notification_id: int,
     db: Session = Depends(get_db)
 ):
-    """
-    Delete a schedule.
 
-    - **schedule_id**: The ID of the schedule to delete
-
-    Note: This will cascade delete all classes associated with the schedule.
-    """
     return NotificationService.delete_notification(db=db, notification_id=notification_id)

@@ -1,8 +1,5 @@
 #!/bin/bash
 
-# AdviseMe API Test Script
-# Tests the Schedule CRUD endpoints
-
 API_URL="https://localhost/api"
 CURL_OPTS="-k -s"
 GREEN='\033[0;32m'

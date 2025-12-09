@@ -11,10 +11,6 @@ router = APIRouter(prefix="/transcripts", tags=["transcripts"])
 
 @router.get("/me", response_model=TranscriptResponse)
 def get_my_transcript(user=Depends(require_user), db: Session = Depends(get_db)):
-    """
-    Return the current student's transcript. Advisors/admins can also call this to
-    fetch the transcript tied to their own account (if one exists).
-    """
     return TranscriptService.get_transcript_for_user(db=db, user_claims=user)
 
 
@@ -24,10 +20,6 @@ def get_transcript_for_advisee(
     user=Depends(require_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Return the transcript for a specific advisee. Advisors/admins can request any
-    advisee. Students can only request their own.
-    """
     return TranscriptService.get_transcript_for_advisee(
         db=db,
         advisee_id=advisee_id,

@@ -144,8 +144,6 @@ const clearError = () => {
   error.value = ''
 }
 
-// Vuetify 3 passes slot items slightly differently depending on version;
-// this helper normalizes to the raw row object.
 const asRow = (slotItem) => slotItem?.raw ?? slotItem ?? {}
 
 const formatDate = (value) => {

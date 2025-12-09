@@ -13,7 +13,6 @@ export async function fetchNotificationsForUser(userId, { skip = 0, limit = 100,
     params.append('is_read', String(isRead))
   }
 
-  // Avoid the trailing-slash redirect so proxies don't swallow the query string
   return apiFetch(`/notifications?${params.toString()}`)
 }
 

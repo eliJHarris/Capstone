@@ -70,10 +70,6 @@ async function fetchAdvisorContact(advisorId) {
   return { email: '', name: '' }
 }
 
-/**
- * Centralized store for the currently selected student profile.
- * Additional components can import this store to share and update profile data.
- */
 export const useStudentProfileStore = defineStore('studentProfile', {
   state: () => ({
     profile: null,

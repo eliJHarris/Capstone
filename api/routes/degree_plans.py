@@ -138,11 +138,9 @@ def get_degree_plan_context(
     if not profile:
         raise HTTPException(status_code=404, detail="Advisee profile not found")
 
-    # Student name
     user = db.query(User).filter(User.userID == profile.userID).first()
     profile_name = (user.username if user else None) or f"Advisee {advisee_id}"
 
-    # Requirement Set (raw dict, NOT Pydantic — avoids validation errors)
     requirement_payload = None
     catalog_year = None
 
@@ -160,7 +158,6 @@ def get_degree_plan_context(
         }
         catalog_year = requirement_payload["catalogYear"]
 
-    # Latest validation
     latest_validation = (
         db.query(DegreePlanValidation)
         .filter(DegreePlanValidation.adviseeID == advisee_id)
@@ -181,7 +178,6 @@ def get_degree_plan_context(
         )
         validation_payload = DegreePlanValidationResponse.from_orm(normalized)
 
-    # Compute best-effort credits completed to avoid obviously inflated values
     completed_courses = context.completedCourses if context else []
     try:
         computed_credits = sum(
@@ -195,7 +191,6 @@ def get_degree_plan_context(
 
     credits_completed = profile.credits_completed
     if computed_credits:
-        # If the profile value is missing or clearly higher than recorded completions, use computed
         if credits_completed is None or credits_completed <= 0 or credits_completed > computed_credits:
             credits_completed = computed_credits
 

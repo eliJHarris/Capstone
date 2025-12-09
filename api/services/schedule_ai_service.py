@@ -146,8 +146,6 @@ class ScheduleAISuggestionService:
             .first()
         )
 
-        # Fallback: if the advisee has no saved context, pull the most recent requirement set
-        # for their major/degree plan so schedules still align to the correct program.
         if not requirement:
             advisee = (
                 self.db.query(AdviseeProfile)
@@ -245,7 +243,6 @@ class ScheduleAISuggestionService:
             status_value = section.status.value if hasattr(section.status, "value") else str(section.status)
             seats_remaining = max((section.capacity or 0) - (section.enrolled or 0), 0)
             if seats_remaining <= 0:
-                # Skip sections that are already full to avoid unusable suggestions
                 continue
             prereqs = prereq_map.get(section.courseID, [])
             missing_prereqs: List[str] = []
@@ -472,7 +469,7 @@ class ScheduleAISuggestionService:
 
         try:
             payload = json.loads(text)
-        except json.JSONDecodeError as exc:  # noqa: BLE001
+        except json.JSONDecodeError as exc:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="OpenAI response was not valid JSON.",

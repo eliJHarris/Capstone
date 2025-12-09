@@ -1,12 +1,7 @@
-# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
-
-# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -23,41 +18,26 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
-# Virtual environments
 venv/
 ENV/
 env/
-
-# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-
-# Environment variables
 .env
 .env.local
-
-# Database
 *.db
 *.sqlite3
-
-# Logs
 *.log
 *.log
-
-
 secrets/
 !secrets/.gitkeep
-# LDAP cert scaffolding
 ldap/certs/*
 !ldap/certs/.gitkeep
 !ldap/certs/*.sh
 !ldap/certs/*.cnf
-
-# Reverse proxy self-signed cert scaffolding
 reverse-proxy/certs/*
 !reverse-proxy/certs/.gitkeep
 !reverse-proxy/certs/*.sh

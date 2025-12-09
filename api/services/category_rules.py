@@ -1,8 +1,6 @@
-# category_rules.py
 import re
 from typing import Optional
 
-# Category rule definitions
 CATEGORY_RULES = {
     "lab_science": {
         "label": "Lab Science Requirement",

@@ -9,16 +9,13 @@ from schemas.notification import (
     notificationResponse
 )
 from models.advisee import AdviseeProfile
-from models.user import User  # <-- Make sure this import matches your project
+from models.user import User
 from services.email_service import send_email, EmailData
 
 
 class NotificationService:
     """Service layer for notification CRUD operations"""
 
-    # ----------------------------------------
-    # INTERNAL HELPER — send email for a notification
-    # ----------------------------------------
     @staticmethod
     def _send_email_for_notification(db: Session, user_id: int, description: str):
         """Send an email to the user tied to this notification."""
@@ -34,14 +31,9 @@ class NotificationService:
 
         send_email(email_data)
 
-    # ----------------------------------------
-    # Called when staging a notification
-    # ----------------------------------------
+
     @staticmethod
     def queue_notification(db: Session, user_id: Optional[int], description: str) -> Optional[Notification]:
-        """
-        Stage a notification for a single user without committing the session.
-        """
         if not user_id:
             return None
 
@@ -53,14 +45,11 @@ class NotificationService:
         )
         db.add(notification)
 
-        # Send email immediately (non-committed notifications are still valid triggers)
+
         NotificationService._send_email_for_notification(db, user_id, description)
 
         return notification
 
-    # ----------------------------------------
-    # Called when notifying both advisee + advisor
-    # ----------------------------------------
     @staticmethod
     def notify_advisee_and_advisor(
         db: Session,
@@ -93,9 +82,7 @@ class NotificationService:
                 continue
             NotificationService.queue_notification(db, recipient_id, description)
 
-    # ----------------------------------------
-    # GET all
-    # ----------------------------------------
+
     @staticmethod
     def get_all_notifications(
         db: Session,
@@ -105,12 +92,9 @@ class NotificationService:
         skip: int = 0,
         limit: int = 100
     ) -> List[notificationResponse]:
-        """
-        Get all schedules with optional filtering
-        """
+      
         query = db.query(Notification)
 
-        # Apply filters
         if notification_id:
             query = query.filter(Notification.notificationID == notification_id)
         if user_id:
@@ -137,9 +121,6 @@ class NotificationService:
 
         return result
 
-    # ----------------------------------------
-    # GET by ID
-    # ----------------------------------------
     @staticmethod
     def get_notification_by_id(db: Session, notification_id: int) -> notificationResponse:
         notification = db.query(Notification).filter(Notification.notificationID == notification_id).first()
@@ -158,14 +139,8 @@ class NotificationService:
             createdAt=notification.createdAt
         )
 
-    # ----------------------------------------
-    # CREATE (also triggers email)
-    # ----------------------------------------
     @staticmethod
     def create_notification(db: Session, notification_data: notificationCreate) -> notificationResponse:
-        """
-        Create a new notification
-        """
 
         new_notification = Notification(
             userID=notification_data.userID,
@@ -178,7 +153,6 @@ class NotificationService:
         db.commit()
         db.refresh(new_notification)
 
-        # Send email when a new notification is created
         NotificationService._send_email_for_notification(
             db,
             new_notification.userID,
@@ -187,9 +161,7 @@ class NotificationService:
 
         return NotificationService.get_notification_by_id(db, new_notification.notificationID)
 
-    # ----------------------------------------
-    # UPDATE (no email)
-    # ----------------------------------------
+
     @staticmethod
     def update_notification(db: Session, notification_id: int, is_read: bool) -> notificationResponse:
         notification = db.query(Notification).filter(Notification.notificationID == notification_id).first()
@@ -212,9 +184,6 @@ class NotificationService:
             createdAt=notification.createdAt
         )
 
-    # ----------------------------------------
-    # DELETE (no email)
-    # ----------------------------------------
     @staticmethod
     def delete_notification(db: Session, notification_id: int) -> dict:
         notification = db.query(Notification).filter(Notification.notificationID == notification_id).first()

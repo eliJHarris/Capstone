@@ -840,7 +840,6 @@ onMounted(async () => {
   await loadTerms()
 })
 
-// Prerequisite fallback UX
 const prereqDialog = ref(false)
 const prereqLoading = ref(false)
 const prereqError = ref('')

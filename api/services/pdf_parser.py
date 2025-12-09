@@ -1,4 +1,3 @@
-# services/pdf_parser.py
 import re
 import json
 from typing import Optional
@@ -69,7 +68,6 @@ def _infer_status_from_line(line: str) -> str:
 
 
 def extract_courses(text: str):
-    """Return list: [{ code, title?, credits?, status }] from PDF text"""
     lines = text.splitlines()
     unique = {}
 

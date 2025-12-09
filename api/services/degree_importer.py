@@ -1,16 +1,3 @@
-"""
-COMPLETE STRUCTURED DEGREE PLAN IMPORTER (CONCENTRATION-ENABLED VERSION)
-------------------------------------------------------------------------
-This importer produces FULLY VALIDATED requirement structures that the
-degree validator + LLM can safely reason about.
-
-Major additions:
-- Automatic extraction of Concentrations from PDF text
-- Support for required hours and choose hours
-- Normalized course list construction
-- Deep-copy protection against cross-student mutation
-"""
-
 import re
 import copy
 from typing import List, Dict, Optional
@@ -23,7 +10,7 @@ from services.pdf_parser import extract_program_info
 
 
 # --------------------------------------------
-# 1. Regex for course codes (UAFS format)
+# 1. Regex for course codes
 # --------------------------------------------
 COURSE_REGEX = re.compile(r"\b([A-Z]{2,4}\s?\d{3,4}[A-Z]?)\b")
 
@@ -55,13 +42,11 @@ def extract_course_titles(text: str) -> Dict[str, str]:
 
     title_map: Dict[str, str] = {}
 
-    # Pattern:
-    #   CODE   TITLE   (stop at next code OR newline OR EOF)
     pattern = re.compile(
-        r"\b([A-Z]{2,4}\s?\d{3,4}[A-Z]?)\b"          # Course code (e.g., CS 1013)
-        r"\s+"                                      # Space(s)
-        r"([A-Za-z][A-Za-z0-9&.,'()\-/\s]+?)"       # The course title
-        r"(?=\n|$|\b[A-Z]{2,4}\s?\d{3,4}[A-Z]?\b)", # Lookahead = stop conditions
+        r"\b([A-Z]{2,4}\s?\d{3,4}[A-Z]?)\b"         
+        r"\s+"                                      
+        r"([A-Za-z][A-Za-z0-9&.,'()\-/\s]+?)"       
+        r"(?=\n|$|\b[A-Z]{2,4}\s?\d{3,4}[A-Z]?\b)", 
         re.MULTILINE,
     )
 
@@ -70,17 +55,11 @@ def extract_course_titles(text: str) -> Dict[str, str]:
 
         code = _normalize_code(raw_code)
         title = raw_title.strip(" -–—\n\t")
-
-        # Remove trailing parenthetical strings such as:
-        #   (ACTS Equivalency ...)
-        #   (Prerequisite: ...)
         title = re.sub(r"\([^)]*\)$", "", title).strip()
-
-        # Remove trailing credit notations or weird artifacts
         title = re.sub(r"\b\d+\s*Hours?$", "", title).strip()
 
         if code and title:
-            if code not in title_map:  # keep first occurrence
+            if code not in title_map:  
                 title_map[code] = title
 
     return title_map
@@ -197,12 +176,10 @@ def _extract_hours_from_text(text: str) -> Optional[int]:
         "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
     }
 
-    # numeric first
     m = re.search(r"(\d+)\s+hours?", text)
     if m:
         return int(m.group(1))
 
-    # number words
     for word, val in num_map.items():
         if f"{word} hour" in text:
             return val
@@ -300,7 +277,7 @@ def _apply_title_map_to_group(group: Dict, title_map: Dict[str, str]) -> Dict:
 # 7. CONCENTRATION PARSING LOGIC
 # -------------------------------------------------------------
 CONC_TITLE_PATTERN = re.compile(
-    r"(?P<title>.+?)\s*(?:concentration\s*)?(?:code[:\-]?)?\s*C0\d{2,3}",  # e.g., "Core Accounting Concepts C059" or "Concentration Code: C021"
+    r"(?P<title>.+?)\s*(?:concentration\s*)?(?:code[:\-]?)?\s*C0\d{2,3}", 
     re.IGNORECASE
 )
 
@@ -329,7 +306,6 @@ def _extract_concentration_blocks(pdf_text: str, default_title: Optional[str] = 
             continue
         lower = line.lower()
 
-        # Detect concentration title
         title = None
         if "concentration code" in lower:
             prefix = line.split("concentration code", 1)[0].strip(" :-")
@@ -343,9 +319,7 @@ def _extract_concentration_blocks(pdf_text: str, default_title: Optional[str] = 
             clean_title = re.sub(r"\bconcentration\s*code\b", "", title, flags=re.IGNORECASE).strip(" :-")
             clean_title = clean_title or default_title or "Concentration"
             if "concentration code" in lower or "concentration codes" in lower:
-                # This is a header listing options, not a real concentration block
                 continue
-            # Save previous
             if current:
                 concentrations.append(current)
 
@@ -354,25 +328,22 @@ def _extract_concentration_blocks(pdf_text: str, default_title: Optional[str] = 
                 "hoursRequired": None,
                 "requiredCourses": [],
                 "chooseCourses": [],
-                "mode": None,   # "required" or "choose"
+                "mode": None, 
             }
             continue
 
         if not current:
             continue
 
-        # Detect hours in this line
         hours = _extract_hours_from_text(line)
         if hours:
             current["hoursRequired"] = hours
 
-        # Detect REQUIRED or CHOOSE mode
         if "requires" in lower or "required" in lower:
             current["mode"] = "required"
         if "choose" in lower:
             current["mode"] = "choose"
 
-        # Detect course codes
         courses = COURSE_LINE_PATTERN.findall(line)
         if courses:
             mode = current["mode"] or "required"
@@ -383,7 +354,6 @@ def _extract_concentration_blocks(pdf_text: str, default_title: Optional[str] = 
             elif mode == "choose":
                 current["chooseCourses"].extend(normalized)
 
-    # Append last block
     if current:
         concentrations.append(current)
 
@@ -399,13 +369,12 @@ def _convert_concentration_blocks_to_groups(blocks: List[Dict]):
 
     for block in blocks:
         title = block["title"]
-        hours = block["hoursRequired"] or 12  # fallback
+        hours = block["hoursRequired"] or 12  
 
         required_courses = [{"code": c, "credits": 3.0} for c in block["requiredCourses"]]
         choose_courses = [{"code": c, "credits": 3.0} for c in block["chooseCourses"]]
         all_courses = required_courses + choose_courses
 
-        # If the detected hours look too low compared to listed courses, bump to a sensible default.
         if hours < 9 and required_courses:
             inferred_hours = min(12, len(required_courses) * 3)
             hours = max(hours, inferred_hours)
@@ -429,7 +398,7 @@ def _convert_concentration_blocks_to_groups(blocks: List[Dict]):
 # 7b. MINOR PARSING LOGIC
 # -------------------------------------------------------------
 MINOR_TITLE_PATTERN = re.compile(
-    r"(?P<title>.+?)\s*-?\s*Minor\s*Code\s*:\s*A\d{3}",  # e.g., "Anthropology-Minor Code: A022"
+    r"(?P<title>.+?)\s*-?\s*Minor\s*Code\s*:\s*A\d{3}",  
     re.IGNORECASE,
 )
 
@@ -454,7 +423,6 @@ def _extract_minor_blocks(pdf_text: str) -> List[Dict]:
             continue
         lower = line.lower()
 
-        # Detect minor title
         title = None
         if "minor code" in lower:
             title = line.split("minor code", 1)[0]
@@ -556,7 +524,6 @@ def import_degree_plan_from_pdf_url(
     if not pdf_text:
         raise HTTPException(400, "Unable to read PDF content")
 
-    # Optional PDF keyword validation
     if required_keywords:
         lower = pdf_text.lower()
         if not any(k.lower() in lower for k in required_keywords):
@@ -564,7 +531,6 @@ def import_degree_plan_from_pdf_url(
 
     program_hint, catalog_hint = extract_program_info(pdf_text)
 
-    # Fetch profile early so we can tailor major requirements
     profile = db.query(AdviseeProfile).filter(AdviseeProfile.adviseeID == advisee_id).first()
     if not profile:
         raise HTTPException(404, "Advisee profile not found")
@@ -572,7 +538,6 @@ def import_degree_plan_from_pdf_url(
     program_code = (program_hint or profile.major or "AUTO").strip() or "AUTO"
     program_code = program_code.upper()
 
-    # Extract all course codes from entire PDF
     found_codes = extract_course_codes(pdf_text)
     title_map = extract_course_titles(pdf_text)
 
@@ -586,14 +551,12 @@ def import_degree_plan_from_pdf_url(
         for rule in CATEGORY_RULES.values()
     ]
 
-    # Lab science
     requirement_groups.append(
         _normalize_group(
             _apply_title_map_to_group(copy.deepcopy(LAB_SCIENCE), title_map)
         )
     )
 
-    # Major core fallback for CS programs to populate major bucket
     core_codes = {c.get("code") for g in requirement_groups for c in g.get("courses", []) if c.get("code")}
     if "CS" in program_code or "COMPUTER" in program_code:
         cs_core = _normalize_group(
@@ -602,7 +565,6 @@ def import_degree_plan_from_pdf_url(
         requirement_groups.append(cs_core)
         core_codes.update({c.get("code") for c in cs_core.get("courses", []) if c.get("code")})
 
-    # Elective pool
     elective_codes = sorted(c for c in found_codes if c not in core_codes)
 
     requirement_groups.append(
@@ -617,21 +579,14 @@ def import_degree_plan_from_pdf_url(
         )
     )
 
-    # ---------------------------------------------------------
-    # NEW: Concentration extraction
-    # ---------------------------------------------------------
     concentration_blocks = _extract_concentration_blocks(pdf_text, default_title=program_hint)
     concentration_groups = _convert_concentration_blocks_to_groups(concentration_blocks)
 
-    # Append concentration groups at BOTTOM
     for g in concentration_groups:
         requirement_groups.append(
             _normalize_group(_apply_title_map_to_group(copy.deepcopy(g), title_map))
         )
 
-    # ---------------------------------------------------------
-    # NEW: Minor extraction
-    # ---------------------------------------------------------
     minor_blocks = _extract_minor_blocks(pdf_text)
     minor_groups = _convert_minor_blocks_to_groups(minor_blocks)
     for g in minor_groups:
@@ -639,13 +594,11 @@ def import_degree_plan_from_pdf_url(
             _normalize_group(_apply_title_map_to_group(copy.deepcopy(g), title_map))
         )
 
-    # Catalog year marking with ADV suffix
     suffix = f"ADV-{advisee_id}"
     catalog_year = f"{(catalog_hint or 'AUTO').strip()}::{suffix}"
 
     scope = f"advisee:{advisee_id}"
 
-    # Check if overwritten
     requirement = (
         db.query(DegreeRequirementSet)
         .filter(DegreeRequirementSet.sourceDocument == scope)

@@ -140,8 +140,6 @@ def crawl_for_pdfs(
                 if allowed:
                     pdfs.add(resolved)
                 continue
-
-            # Enqueue HTML pages within domain
             if (
                 allowed and
                 is_same_domain(resolved, domain) and

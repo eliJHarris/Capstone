@@ -1,16 +1,3 @@
-"""
-UI DEGREE VALIDATION FORMATTER
-------------------------------
-Converts validator + LLM results into a clean UI-ready structure for the
-Advisor Dashboard (Vue/Vuetify).
-
-This file ensures:
- - Predictable, stable output
- - Front-end does not need to understand validation internals
- - Concentrations/minors appear as separate cards
- - Each requirement group generates a UI-friendly block
-"""
-
 from typing import Dict, Any, List
 
 
@@ -101,11 +88,9 @@ def build_ui_degree_payload(
     concentration_results = validation_result.get("concentrations") or []
     minor_results = validation_result.get("minors") or []
 
-    # LLM generic degree-level results
     taken = llm_result.get("takenCourses", [])
     needed = llm_result.get("neededCourses", [])
 
-    # Build UI structure
     ui_payload = {
         "summary": {
             "completionPercent": validation_result.get("completionPercent"),

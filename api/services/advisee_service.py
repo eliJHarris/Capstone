@@ -20,8 +20,6 @@ from schemas.advisee import (
 
 
 class AdviseeService:
-    """Service helpers for advisee CRUD and listing logic."""
-
     @staticmethod
     def list_advisees(
         db: Session,

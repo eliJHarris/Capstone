@@ -42,14 +42,8 @@ def _build_context_payload(
     completed_courses: List[Dict[str, Any]],
     validation_result: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """
-    Provides ONLY the data needed for generic taken/needed evaluation.
-    Concentration + Minor are NOT included (they are resolved internally).
-    """
-
     raw_groups = getattr(requirement_set, "requirementData", []) or []
 
-    # Strip concentration groups before sending to LLM
     filtered_groups = [
         g for g in raw_groups
         if str(g.get("type", "")).lower() != "concentration"
@@ -69,7 +63,6 @@ def _build_context_payload(
             if isinstance(c, dict)
         ],
 
-        # Send validation status ONLY for non-concentration groups
         "groupResults": [
             {
                 "id": g.get("id"),
@@ -82,7 +75,6 @@ def _build_context_payload(
             if g.get("id") not in {cg.get("id") for cg in raw_groups if str(cg.get("type","")).lower()=="concentration"}
         ],
 
-        # Requirement definitions — excluding concentration/minor
         "requirementRules": [
             {
                 "id": group.get("id"),
@@ -143,7 +135,6 @@ def classify_course_breakdown(
     validation_result: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
 
-    # Pull concentration + minor already computed by validator
     concentration_block = validation_result.get("activeConcentrations") or []
     minor_block = validation_result.get("activeMinors") or []
 

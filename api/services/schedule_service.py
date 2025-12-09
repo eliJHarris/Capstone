@@ -162,7 +162,6 @@ class ScheduleService:
             .order_by(Schedule.createdWhen.desc())
         )
 
-        # Apply filters
         if advisee_id:
             query = query.filter(Schedule.adviseeID == advisee_id)
         if advisee_name:
@@ -187,7 +186,6 @@ class ScheduleService:
             )
             advisee_name_map = {advisee_id: username for advisee_id, username in rows}
 
-        # Build response with class count
         result = []
         for schedule in schedules:
             class_count = db.query(Class).filter(Class.scheduleID == schedule.scheduleID).count()
@@ -211,9 +209,6 @@ class ScheduleService:
 
     @staticmethod
     def get_schedule_by_id(db: Session, schedule_id: int) -> ScheduleResponse:
-        """
-        Get a specific schedule by ID with all classes
-        """
         schedule = (
             db.query(Schedule)
             .options(
@@ -283,10 +278,7 @@ class ScheduleService:
         actor_role: str = "student",
         actor_user_id: Optional[int] = None,
     ) -> ScheduleResponse:
-        """
-        Create a new schedule
-        """
-        # Verify term exists
+
         term = db.query(Term).filter(Term.termID == schedule_data.termID).first()
         if not term:
             raise HTTPException(
@@ -294,7 +286,6 @@ class ScheduleService:
                 detail=f"Term with ID {schedule_data.termID} not found"
             )
 
-        # Create new schedule
         new_schedule = Schedule(
             adviseeID=schedule_data.adviseeID,
             termID=schedule_data.termID,
@@ -334,9 +325,7 @@ class ScheduleService:
         schedule_data: ScheduleUpdate,
         actor_user_id: Optional[int] = None,
     ) -> ScheduleResponse:
-        """
-        Update an existing schedule
-        """
+
         schedule = db.query(Schedule).filter(Schedule.scheduleID == schedule_id).first()
 
         if not schedule:
@@ -346,7 +335,6 @@ class ScheduleService:
         )
 
         status_changed = False
-        # Update fields if provided
         if schedule_data.status is not None:
             if (
                 schedule_data.status == ScheduleStatus.APPROVED
@@ -362,7 +350,6 @@ class ScheduleService:
                 status_changed = True
             schedule.status = new_status
 
-            # Update timestamp based on status
             if schedule_data.status == ScheduleStatus.APPROVED:
                 schedule.approvedWhen = datetime.utcnow()
                 schedule.rejectedWhen = None
@@ -399,9 +386,6 @@ class ScheduleService:
 
     @staticmethod
     def delete_schedule(db: Session, schedule_id: int) -> dict:
-        """
-        Delete a schedule
-        """
         schedule = db.query(Schedule).filter(Schedule.scheduleID == schedule_id).first()
 
         if not schedule:
@@ -424,10 +408,7 @@ class ScheduleService:
         ai_assisted: bool = False,
         actor_user_id: Optional[int] = None,
     ) -> ScheduleResponse:
-        """
-        Add a class (section) to a schedule
-        """
-        # Verify schedule exists
+
         schedule = db.query(Schedule).filter(Schedule.scheduleID == schedule_id).first()
         if not schedule:
             raise HTTPException(
@@ -441,7 +422,6 @@ class ScheduleService:
                 detail="Only DRAFT schedules can be modified",
             )
 
-        # Verify section exists
         section = db.query(Section).filter(Section.sectionID == section_id).first()
         if not section:
             raise HTTPException(
@@ -449,7 +429,7 @@ class ScheduleService:
                 detail=f"Section with ID {section_id} not found"
             )
 
-        # Check if section belongs to the same term as schedule
+
         if section.termID != schedule.termID:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -468,7 +448,6 @@ class ScheduleService:
                 detail=f"Section {section_id} is full",
             )
 
-        # Check if class already exists in schedule
         existing_class = db.query(Class).filter(
             Class.scheduleID == schedule_id,
             Class.sectionID == section_id
@@ -480,14 +459,12 @@ class ScheduleService:
                 detail=f"Section {section_id} is already in schedule {schedule_id}"
             )
 
-        # Validate that the advisee has completed required prerequisites before scheduling
         ScheduleService._validate_prerequisites(
             db=db,
             advisee_id=schedule.adviseeID,
             target_course_id=section.courseID,
         )
 
-        # Create new class
         new_class = Class(
             sectionID=section_id,
             scheduleID=schedule_id,
@@ -498,7 +475,6 @@ class ScheduleService:
         db.add(new_class)
         section.enrolled = min(section.capacity, section.enrolled + 1)
 
-        # Mirror the scheduled class into enrollments so the transcript view reflects in-progress courses
         existing_enrollment = (
             db.query(Enrollment)
             .filter(
@@ -542,7 +518,6 @@ class ScheduleService:
             db.commit()
         except IntegrityError:
             db.rollback()
-            # Surface a clear message instead of a 500 when constraints are hit
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Unable to add class due to a database constraint (likely duplicate section for this schedule)",
@@ -558,9 +533,7 @@ class ScheduleService:
         actor_role: str = "student",
         actor_user_id: Optional[int] = None,
     ) -> ScheduleResponse:
-        """
-        Remove a class from a schedule
-        """
+
         cls = (
             db.query(Class)
             .options(joinedload(Class.section), joinedload(Class.schedule))
@@ -580,11 +553,9 @@ class ScheduleService:
                 detail="Only DRAFT schedules can be modified",
         )
 
-        # Keep capacity accounting accurate
         if cls.section and cls.section.enrolled > 0:
             cls.section.enrolled -= 1
 
-        # Remove the mirrored enrollment so the transcript no longer lists the course
         enrollment = (
             db.query(Enrollment)
             .filter(

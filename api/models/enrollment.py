@@ -25,6 +25,4 @@ class Enrollment(Base):
     creditsEarned = Column(Integer, nullable=False, default=0)
     attemptedNumber = Column(Integer, nullable=False, default=1)
     createdWhen = Column(DateTime, nullable=False)
-
-    # Relationships
     section = relationship("Section", primaryjoin="Enrollment.sectionID == Section.sectionID")

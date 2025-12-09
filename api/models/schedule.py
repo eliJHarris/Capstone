@@ -5,8 +5,6 @@ import enum
 
 from .base import Base
 
-#Describes database entities. Represents how data is stored and loaded.
-
 class ScheduleStatusEnum(str, enum.Enum):
     DRAFT = "DRAFT"
     APPROVED = "APPROVED"
@@ -32,8 +30,6 @@ class Term(Base):
     code = Column(String(32), nullable=False, unique=True)
     startDate = Column(DateTime, nullable=False)
     endDate = Column(DateTime, nullable=False)
-
-    # Relationships
     schedules = relationship("Schedule", back_populates="term")
     sections = relationship("Section", back_populates="term")
 
@@ -45,8 +41,6 @@ class Course(Base):
     courseName = Column(String(160), nullable=False)
     description = Column(Text)
     credits = Column(Integer, nullable=False)
-
-    # Relationships
     sections = relationship("Section", back_populates="course")
 
 
@@ -56,8 +50,6 @@ class CoursePrerequisite(Base):
     courseID = Column(Integer, ForeignKey("courses.courseID"), primary_key=True)
     prerequisiteCourseID = Column(Integer, ForeignKey("courses.courseID"), primary_key=True)
     minimumGrade = Column(String(2))
-
-    # Relationships
     course = relationship("Course", foreign_keys=[courseID])
     prerequisite = relationship("Course", foreign_keys=[prerequisiteCourseID])
 
@@ -74,8 +66,6 @@ class Section(Base):
     professorName = Column(String(160))
     status = Column(Enum(SectionStatusEnum), nullable=False, default=SectionStatusEnum.OPEN)
     description = Column(Text)
-
-    # Relationships
     course = relationship("Course", back_populates="sections")
     term = relationship("Term", back_populates="sections")
     classes = relationship("Class", back_populates="section")
@@ -93,8 +83,6 @@ class Schedule(Base):
     approvedWhen = Column(DateTime)
     rejectedWhen = Column(DateTime)
     advisorFeedback = Column(Text)
-
-    # Relationships
     term = relationship("Term", back_populates="schedules")
     classes = relationship("Class", back_populates="schedule", cascade="all, delete-orphan")
 
@@ -107,7 +95,5 @@ class Class(Base):
     scheduleID = Column(Integer, ForeignKey("schedules.scheduleID"), nullable=False)
     termID = Column(Integer, nullable=False)
     createdDate = Column(DateTime, nullable=False)
-
-    # Relationships
     section = relationship("Section", back_populates="classes")
     schedule = relationship("Schedule", back_populates="classes")

@@ -5,12 +5,11 @@ import {
   upsertAdviseeContext,
   saveRequirementSet,
   importDegreePlanPdf,
-  fetchDegreeContext,       // <-- NEW SERVICE
+  fetchDegreeContext,       
 } from '@/services/degreePlans'
 
-// Normalize requirement set payload so we always have requirementGroups
-// regardless of whether the API returns requirementData (Pydantic alias)
-// or the context snapshot uses requirementGroups directly.
+// normalize requirement set payload so we always have requirementGroups just in case api fails
+
 const normalizeRequirementSet = (rs) => {
   if (!rs) return null
   const groups = rs.requirementGroups || rs.requirementData || []
@@ -20,10 +19,10 @@ const normalizeRequirementSet = (rs) => {
 export const useDegreePlanStore = defineStore('degreePlan', {
   state: () => ({
     summary: null,
-    context: null,          // <-- NEW (stores advisee snapshot like Transcript page)
-    requirementSet: null,   // <-- NEW
-    completedCourses: [],   // <-- NEW
-    latestValidation: null, // <-- NEW cached validation
+    context: null,          
+    requirementSet: null,   
+    completedCourses: [],   
+    latestValidation: null, 
 
     loading: false,
     validationLoading: false,
@@ -53,10 +52,6 @@ export const useDegreePlanStore = defineStore('degreePlan', {
   },
 
   actions: {
-    // --------------------------------------------------
-    // NEW — Fetch the full degree plan context
-    // Mirrors Transcript behavior
-    // --------------------------------------------------
     async fetchContext(adviseeId, options = {}) {
       if (!adviseeId) {
         this.error = "Missing advisee ID"
@@ -83,9 +78,7 @@ export const useDegreePlanStore = defineStore('degreePlan', {
       }
     },
 
-    // --------------------------------------------------
-    // LOAD SUMMARY (still needed for validation results)
-    // --------------------------------------------------
+
     async loadSummary(adviseeId, options = {}) {
       if (!adviseeId) {
         this.error = 'Missing advisee ID'
@@ -99,7 +92,7 @@ export const useDegreePlanStore = defineStore('degreePlan', {
         const summary = await fetchAdviseeSummary(adviseeId, { allowBootstrap })
         this.summary = summary
 
-        // Keep synced with context
+  
         this.latestValidation = summary.latestValidation ?? this.latestValidation
         this.requirementSet = normalizeRequirementSet(summary.requirementSet) ?? this.requirementSet
 
@@ -111,15 +104,11 @@ export const useDegreePlanStore = defineStore('degreePlan', {
       }
     },
 
-    // --------------------------------------------------
-    // CONTEXT UPSERT
-    // --------------------------------------------------
     async syncContext(adviseeId, payload, options = {}) {
       this.error = null
       try {
         await upsertAdviseeContext(adviseeId, payload, options)
 
-        // Always refresh context afterwards
         await this.fetchContext(adviseeId)
         await this.loadSummary(adviseeId)
 
@@ -129,9 +118,6 @@ export const useDegreePlanStore = defineStore('degreePlan', {
       }
     },
 
-    // --------------------------------------------------
-    // TRIGGER VALIDATION
-    // --------------------------------------------------
     async triggerValidation(adviseeId, triggeredBy) {
       if (!adviseeId) return
       this.validationLoading = true
@@ -140,7 +126,6 @@ export const useDegreePlanStore = defineStore('degreePlan', {
       try {
         await requestPlanValidation(adviseeId, { triggeredBy })
 
-        // Refresh after validator finishes
         setTimeout(() => {
           this.loadSummary(adviseeId)
           this.fetchContext(adviseeId)
@@ -174,9 +159,7 @@ export const useDegreePlanStore = defineStore('degreePlan', {
       }
     },
 
-    // --------------------------------------------------
-    // IMPORT PDF → attaches requirementSet → triggers validation
-    // --------------------------------------------------
+
     async importDegreePlan(adviseeId, pdfUrl) {
       if (!adviseeId) return
       this.importing = true
@@ -185,7 +168,6 @@ export const useDegreePlanStore = defineStore('degreePlan', {
       try {
         await importDegreePlanPdf(adviseeId, pdfUrl)
 
-        // Reload everything
         await this.fetchContext(adviseeId)
         await this.loadSummary(adviseeId)
 

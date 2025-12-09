@@ -8,7 +8,6 @@ from jose import jwt
 
 app = FastAPI(title="Adviseme Auth API")
 
-# CORS so frontend (Vuetify or whatever) can call us locally
 ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
@@ -37,33 +36,25 @@ def _read_secret(env_name: str, default: str = "") -> str:
             with open(file_path, "r", encoding="utf-8") as f:
                 return f.read().strip()
         except OSError:
-            # fall back to env/default if file can't be read
             pass
     return os.getenv(env_name, default)
 
-# ------------ config from env -------------
 LDAP_HOST       = os.getenv("LDAP_HOST", "adviseme-openldap")
 LDAP_PORT       = int(os.getenv("LDAP_PORT", "389"))
 LDAP_USE_SSL    = os.getenv("LDAP_USE_SSL", "false").lower() == "true"
 LDAP_TLS_VALIDATE = os.getenv("LDAP_TLS_VALIDATE", "false").lower() == "true"
 LDAP_CA_CERT_FILE = os.getenv("LDAP_CA_CERT_FILE", "")
 
-# This is the ROOT of the directory (naming context)
 LDAP_BASE_DN    = os.getenv("LDAP_BASE_DN", "dc=adviseme,dc=local")
 
-# This is specifically where your users live
 LDAP_PEOPLE_DN  = os.getenv("LDAP_PEOPLE_DN", "ou=People,dc=adviseme,dc=local")
 
 ADVISOR_GROUP_DN = os.getenv("ADVISOR_GROUP_DN", f"cn=advisors,ou=Groups,{LDAP_BASE_DN}")
 ADVISEE_GROUP_DN = os.getenv("ADVISEE_GROUP_DN", f"cn=advisees,ou=Groups,{LDAP_BASE_DN}")
 DEFAULT_USER_ROLE = os.getenv("DEFAULT_USER_ROLE", "advisor")
 
-# Service bind account (the "app account")
 LDAP_BIND_DN    = os.getenv("LDAP_BIND_DN", "cn=adviseme-app,ou=Service,dc=adviseme,dc=local")
 
-# IMPORTANT: normalize the password var name.
-# We'll look for LDAP_BIND_PASSWORD first (what docker-compose typically sets),
-# and fall back to LDAP_BIND_PW as a backup.
 LDAP_BIND_PASSWORD = (
     _read_secret("LDAP_BIND_PASSWORD") or
     os.getenv("LDAP_BIND_PW") or
@@ -74,9 +65,7 @@ JWT_SECRET      = _read_secret("JWT_SECRET", "change-me")
 JWT_ALGO        = "HS256"
 JWT_EXPIRE_MIN  = int(os.getenv("JWT_EXPIRE_MINUTES", "60"))
 
-# ------------ helpers -------------
 def _server():
-    # get_info=ALL lets ldap3 cache schema, so you'll see those "cn=Subschema" queries in the logs
     tls_config = None
     if LDAP_USE_SSL:
         if LDAP_TLS_VALIDATE and not LDAP_CA_CERT_FILE:
@@ -94,10 +83,6 @@ def _server():
     )
 
 def _bind_service() -> Connection:
-    """
-    Bind as the service account to search LDAP.
-    Returns an active ldap3 Connection object that you MUST close.
-    """
     try:
         conn = Connection(
             _server(),
@@ -107,7 +92,6 @@ def _bind_service() -> Connection:
         )
         return conn
     except Exception as e:
-        # If we can't bind as service, the auth API is basically unusable
         raise HTTPException(status_code=500, detail=f"Service bind failed: {e}")
 
 def _find_user(username: str):
@@ -117,11 +101,10 @@ def _find_user(username: str):
     """
     svc = _bind_service()
     try:
-        # match uid=aadvisor OR cn=aadvisor
         search_filter = f"(|(uid={username})(cn={username}))"
 
         ok = svc.search(
-            search_base=LDAP_PEOPLE_DN,     # <-- key change here
+            search_base=LDAP_PEOPLE_DN,    
             search_filter=search_filter,
             search_scope=SUBTREE,
             attributes=ALL_ATTRIBUTES,
@@ -169,10 +152,6 @@ def _resolve_role(conn: Connection, user_dn: str) -> str:
     return DEFAULT_USER_ROLE
 
 def _verify_password(user_dn: str, password: str):
-    """
-    Try binding as the user with the supplied password.
-    If bind fails -> invalid credentials.
-    """
     try:
         with Connection(_server(), user=user_dn, password=password, auto_bind=True):
             return True
@@ -193,16 +172,12 @@ def _issue_jwt(user_info: dict) -> str:
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
 
-# ------------ routes -------------
 @app.post("/login")
 def login(username: str = Form(...), password: str = Form(...)):
-    # 1. find them in LDAP (by uid or cn)
     user_info = _find_user(username)
 
-    # 2. bind-as-user to verify password
     _verify_password(user_info["dn"], password)
 
-    # 3. issue JWT
     token = _issue_jwt(user_info)
     return {
         "access_token": token,
@@ -222,14 +197,12 @@ def root():
 
 @app.get("/health")
 def health():
-    # Super lightweight health: just prove service bind works
     _ = _bind_service()
     _.unbind()
     return {"status": "ok"}
 
 @app.get("/debug/users")
 def debug_users():
-    # Show what the service account can SEE under ou=People
     svc = _bind_service()
     try:
         svc.search(

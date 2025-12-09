@@ -87,17 +87,7 @@ def get_schedules(
     limit: int = Query(100, ge=1, le=500, description="Maximum number of records to return"),
     db: Session = Depends(get_db)
 ):
-    """
-    Get all schedules with optional filtering.
 
-    - **advisee_id**: Filter by advisee ID
-    - **advisee_name**: Filter by advisee username
-    - **term_id**: Filter by term ID
-    - **term_name**: Filter by term code/name
-    - **status**: Filter by schedule status (DRAFT, APPROVED, REJECTED)
-    - **skip**: Pagination - number of records to skip
-    - **limit**: Pagination - maximum number of records to return
-    """
     return ScheduleService.get_all_schedules(
         db=db,
         advisee_id=advisee_id,
@@ -121,9 +111,7 @@ def get_schedules_no_slash(
     limit: int = Query(100, ge=1, le=500, description="Maximum number of records to return"),
     db: Session = Depends(get_db)
 ):
-    """
-    Compatibility handler to avoid redirecting /schedules -> /schedules/ when callers omit the trailing slash.
-    """
+
     return get_schedules(
         advisee_id=advisee_id,
         advisee_name=advisee_name,
@@ -140,11 +128,7 @@ def get_schedule(
     schedule_id: int,
     db: Session = Depends(get_db)
 ):
-    """
-    Get a specific schedule by ID including all classes/sections.
 
-    - **schedule_id**: The ID of the schedule to retrieve
-    """
     return ScheduleService.get_schedule_by_id(db=db, schedule_id=schedule_id)
 
 
@@ -155,10 +139,7 @@ def search_sections_for_schedule(
     limit: Optional[int] = Query(None, ge=1, description="Optional max results"),
     db: Session = Depends(get_db)
 ):
-    """
-    List sections in the same term as the schedule, filtered by search, only OPEN sections.
-    Passing no limit returns all matching sections.
-    """
+
     return ScheduleService.list_sections_for_schedule(
         db=db,
         schedule_id=schedule_id,
@@ -173,9 +154,7 @@ async def generate_schedule_suggestions(
     payload: ScheduleSuggestionRequest = ScheduleSuggestionRequest(),
     db: Session = Depends(get_db),
 ):
-    """
-    Generate AI-assisted schedule suggestions using current degree context and open sections.
-    """
+
     try:
         openai_service = get_openai_service()
     except RuntimeError as exc:
@@ -186,7 +165,7 @@ async def generate_schedule_suggestions(
         return await run_in_threadpool(service.generate, schedule_id, payload.note)
     except HTTPException:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc: 
         raise HTTPException(
             status_code=502, detail=f"Failed to generate schedule suggestions: {exc}"
         ) from exc
@@ -199,13 +178,7 @@ def notify_ai_schedule_application(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-    """
-    Trigger a notification after AI suggested classes have been applied to a schedule.
 
-    - **schedule_id**: ID of the schedule that was updated
-    - **optionNumber**: Which AI option was applied
-    - **courseNames**: Human-readable names of the courses that were added
-    """
     ScheduleService.notify_ai_schedule_application(
         db=db,
         schedule_id=schedule_id,
@@ -221,14 +194,7 @@ def create_schedule(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
-    """
-    Create a new schedule.
 
-    - **adviseeID**: ID of the advisee/student
-    - **termID**: ID of the academic term
-    - **source**: Source of the schedule (USER, ADVISOR, SYSTEM) - defaults to USER
-    - **status**: Status of the schedule (DRAFT, APPROVED, REJECTED) - defaults to DRAFT
-    """
     actor_role = _resolve_actor_role_from_authorization(authorization)
     actor_user_id = _resolve_actor_user_id(authorization, db)
     return ScheduleService.create_schedule(
@@ -246,15 +212,7 @@ def update_schedule(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
-    """
-    Update an existing schedule.
 
-    - **schedule_id**: The ID of the schedule to update
-    - **status**: New status (DRAFT, APPROVED, REJECTED)
-    - **source**: New source (USER, ADVISOR, SYSTEM)
-
-    Note: Updating status to APPROVED/REJECTED will automatically set the corresponding timestamp.
-    """
     actor_user_id = _resolve_actor_user_id(authorization, db)
     return ScheduleService.update_schedule(
         db=db,
@@ -270,13 +228,7 @@ def delete_schedule(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_user),
 ):
-    """
-    Delete a schedule.
 
-    - **schedule_id**: The ID of the schedule to delete
-
-    Note: This will cascade delete all classes associated with the schedule.
-    """
     role = str(current_user.get("role", "")).strip().lower()
     roles = current_user.get("roles") or []
     normalized_roles = {role}
@@ -300,15 +252,7 @@ def add_class_to_schedule(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
-    """
-    Add a class (section) to a schedule.
 
-    - **schedule_id**: The ID of the schedule
-    - **sectionID**: The ID of the section to add
-    - **aiAssisted**: Indicates whether this class addition came from an AI suggestion
-
-    Note: The section must belong to the same term as the schedule.
-    """
     actor_role = _resolve_actor_role_from_authorization(authorization)
     actor_user_id = _resolve_actor_user_id(authorization, db)
     return ScheduleService.add_class_to_schedule(
@@ -328,12 +272,7 @@ def remove_class_from_schedule(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
-    """
-    Remove a class from a schedule.
 
-    - **schedule_id**: The ID of the schedule
-    - **class_id**: The ID of the class to remove
-    """
     actor_role = _resolve_actor_role_from_authorization(authorization)
     actor_user_id = _resolve_actor_user_id(authorization, db)
     return ScheduleService.remove_class_from_schedule(
