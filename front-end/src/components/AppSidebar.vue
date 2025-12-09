@@ -133,7 +133,6 @@ export default {
         { title: 'Profile', to: '/profile' },
         { title: 'Notifications', to: '/notifications', badge: this.unreadCount },
         { title: 'Student List', to: '/student-list' },
-        { title: 'Security', to: '/security' },
         { title: 'Transcripts', to: '/transcripts' },
         { title: 'Degree Plan', to: '/degree-plan' },
         { title: 'Schedules / Appointments', to: '/schedules' },
