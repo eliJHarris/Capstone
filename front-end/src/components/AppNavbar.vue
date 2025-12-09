@@ -29,7 +29,6 @@
       </template>
 
       <v-list>
-        <v-list-item>Profile</v-list-item>
         <v-list-item class="logout-item" @click="handleLogout">
           <template #prepend>
             <v-icon color="red">mdi-logout</v-icon>
