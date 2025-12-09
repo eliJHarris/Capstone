@@ -67,7 +67,6 @@ export const useDegreePlanStore = defineStore('degreePlan', {
 
         this.context = ctx
         this.requirementSet = normalizeRequirementSet(ctx.requirementSet)
-        this.completedCourses = ctx.completedCourses || []
         this.latestValidation = ctx.validation || null
 
       } catch (err) {

@@ -435,15 +435,72 @@ function normalizeTranscriptStatus(status = "", grade = "") {
   return normalized || "COMPLETED"
 }
 
+const transcriptCourseDetails = computed(() => degreePlanStore.completedCourses || [])
+const TERM_SEASON_ORDER = ["WINTER", "SPRING", "SUMMER", "FALL"]
+
+function normalizeTermKey(term = "") {
+  return term.toString().trim().toUpperCase()
+}
+
+function parseTerm(term = "") {
+  const normalized = normalizeTermKey(term)
+  if (!normalized) return null
+  const yearMatch = normalized.match(/(20\d{2}|19\d{2})/)
+  const year = yearMatch ? Number(yearMatch[1]) : null
+  const seasonMatch = normalized.match(/(SPRING|SUMMER|FALL|WINTER)/)
+  const seasonIndex = seasonMatch ? TERM_SEASON_ORDER.indexOf(seasonMatch[1]) : TERM_SEASON_ORDER.length
+  return { normalized, year, seasonIndex }
+}
+
+const transcriptTermBuckets = computed(() => {
+  const seen = new Map()
+
+  transcriptCourseDetails.value.forEach((course) => {
+    const parsed = parseTerm(course?.term)
+    if (!parsed) return
+    if (!seen.has(parsed.normalized)) {
+      seen.set(parsed.normalized, parsed)
+    }
+  })
+
+  const sorted = Array.from(seen.values()).sort((a, b) => {
+    const yearA = Number.isFinite(a.year) ? a.year : Infinity
+    const yearB = Number.isFinite(b.year) ? b.year : Infinity
+    if (yearA !== yearB) return yearA - yearB
+    return a.seasonIndex - b.seasonIndex
+  })
+
+  const labels = ["Freshman", "Sophomore", "Junior", "Senior"]
+  const map = new Map()
+  sorted.forEach((parsed, idx) => {
+    map.set(parsed.normalized, labels[idx] || "Other")
+  })
+  return map
+})
+
+function yearBucketFromTerm(term = "") {
+  const key = normalizeTermKey(term)
+  if (!key) return ""
+  return transcriptTermBuckets.value.get(key) || ""
+}
+
+const validationCompletedSources = computed(() => [
+  ...(latestValidation.value.completedCourseDetails || []),
+  ...(latestValidation.value.completedCourses || []),
+  ...(latestValidation.value.completed || []),
+  ...(latestValidation.value.takenCourses || []),
+  ...(latestValidation.value.llmCourseBreakdown?.takenCourses || []),
+])
+
+const completedCourseSources = computed(() => {
+  if (transcriptCourseDetails.value.length) {
+    return transcriptCourseDetails.value
+  }
+  return validationCompletedSources.value
+})
+
 const completedCodes = computed(() => {
-  const all = [
-    ...(degreePlanStore.completedCourses || []),
-    ...(latestValidation.value.completedCourseDetails || []),
-    ...(latestValidation.value.completedCourses || []),
-    ...(latestValidation.value.completed || []),
-    ...(latestValidation.value.takenCourses || []),
-    ...(latestValidation.value.llmCourseBreakdown?.takenCourses || [])
-  ]
+  const all = completedCourseSources.value
 
   const completed = new Set()
 
@@ -468,11 +525,7 @@ const completedCodes = computed(() => {
 
 const completedCourseDetailMap = computed(() => {
   const detailMap = new Map()
-  const sources = [
-    ...(degreePlanStore.completedCourses || []),
-    ...(latestValidation.value.completedCourseDetails || []),
-    ...(latestValidation.value.completedCourses || []),
-  ]
+  const sources = completedCourseSources.value
 
   sources.forEach((entry) => {
     if (!entry || typeof entry === "string") return
@@ -492,11 +545,7 @@ const creditsCompleted = computed(() => {
   }
 
   const seen = new Set()
-  const sources = [
-    ...(degreePlanStore.completedCourses || []),
-    ...(latestValidation.value.completedCourseDetails || []),
-    ...(latestValidation.value.completedCourses || []),
-  ]
+  const sources = completedCourseSources.value
 
   let total = 0
   sources.forEach((entry) => {
@@ -607,7 +656,32 @@ function extractPlannedCourses() {
   return Array.from(itemsMap.values())
 }
 
-const plannedCourses = computed(() => extractPlannedCourses())
+const plannedCourses = computed(() => {
+  if (transcriptCourseDetails.value.length) {
+    const itemsMap = new Map()
+
+    transcriptCourseDetails.value.forEach((course) => {
+      if (!course) return
+      const code = normalizeCourseCode(course.code || course.courseCode)
+      if (!code || itemsMap.has(code)) return
+      const rawYear = course.yearBucket || course.year || course.termBucket
+      const derivedYear = normalizeYearLabel(rawYear || "") || yearBucketFromTerm(course.term)
+      itemsMap.set(code, {
+        code,
+        title: course.title || course.courseTitle || code,
+        credits: course.credits,
+        term: course.term,
+        status: course.status,
+        category: course.category || "Transcript Course",
+        yearBucket: derivedYear,
+      })
+    })
+
+    return Array.from(itemsMap.values())
+  }
+
+  return extractPlannedCourses()
+})
 
 function bucketPlannedCourses() {
   const buckets = {
@@ -620,7 +694,7 @@ function bucketPlannedCourses() {
   }
 
   plannedCourses.value.forEach((c) => {
-    const explicitYear = normalizeYearLabel(c.yearBucket || "")
+    const explicitYear = normalizeYearLabel(c.yearBucket || "") || yearBucketFromTerm(c.term)
     const year = explicitYear || inferYearBucket(c.code, c.category)
     const entry = {
       ...c,
@@ -747,19 +821,6 @@ const neededCourses = computed(() => {
 })
 
 
-function mergeCompletedCourses(existing = [], additions = []) {
-  const map = new Map()
-  const push = (entry = {}) => {
-    const code = normalizeCourseCode(entry.code)
-    if (!code) return
-    const key = `${code}-${entry.term || ""}-${entry.grade || ""}-${entry.status || ""}`
-    map.set(key, { ...entry, code })
-  }
-  existing.forEach(push)
-  additions.forEach(push)
-  return Array.from(map.values())
-}
-
 function transcriptCoursesToCompleted(data) {
   const items = []
   data?.terms?.forEach((term) => {
@@ -780,6 +841,10 @@ function transcriptCoursesToCompleted(data) {
 }
 
 function yearProgress(year) {
+  if (year === "All") {
+    const percent = Number(degreePlanStore.completionPercent)
+    if (Number.isFinite(percent)) return percent
+  }
   const list = degreePlanYearBuckets.value[year] || []
   if (list.length === 0) return 0
   const taken = list.filter((c) => c.taken).length
@@ -851,12 +916,7 @@ async function loadTranscriptData(adviseeId) {
       data = await fetchTranscriptByAdvisee(adviseeId)
     }
     const mapped = transcriptCoursesToCompleted(data)
-    if (mapped.length) {
-      degreePlanStore.completedCourses = mergeCompletedCourses(
-        degreePlanStore.completedCourses,
-        mapped
-      )
-    }
+    degreePlanStore.completedCourses = mapped
   } catch (err) {
     transcriptError.value = err?.message || "Failed to load transcript data"
   } finally {
@@ -867,9 +927,11 @@ async function loadTranscriptData(adviseeId) {
 async function loadDegreePlanData(adviseeId) {
   if (!adviseeId) return
   const allowBootstrap = false
+  degreePlanStore.completedCourses = []
+  transcriptError.value = null
   try {
-    await degreePlanStore.fetchContext(adviseeId, { allowBootstrap })
     await loadTranscriptData(adviseeId)
+    await degreePlanStore.fetchContext(adviseeId, { allowBootstrap })
     await degreePlanStore.loadSummary(adviseeId, { allowBootstrap })
   } catch (err) {
     // Errors are surfaced via degreePlanStore.error or transcriptError; prevent unhandled rejections

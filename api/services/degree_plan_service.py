@@ -17,12 +17,14 @@ from models.degree_plan import (
     ValidationRunType,
     ValidationStatus,
 )
+from models.enrollment import EnrollmentStatus
 from schemas.degree_plan import (
     AdviseeContextUpsert,
     DegreeRequirementSetCreate,
     DegreeRequirementSetResponse,
 )
 from services.degree_plan.llm_course_breakdown import classify_course_breakdown
+from services.transcript_service import TranscriptService
 
 
 def normalize_code(c: str) -> str:
@@ -132,6 +134,44 @@ def _merge_completed_course_sources(*sources: List[Dict]) -> List[Dict]:
             )
 
     return merged
+
+
+def _transcript_completed_courses(db: Session, advisee_id: int) -> List[Dict]:
+    """
+    Convert transcript enrollment data into the completed course format
+    expected by degree validation.
+    """
+    try:
+        enrollments = TranscriptService._load_enrollments(db, advisee_id)
+    except Exception:
+        return []
+
+    courses: List[Dict] = []
+    for enrollment, section, course, term in enrollments:
+        status_value = TranscriptService._status_value(enrollment)
+        if status_value != EnrollmentStatus.COMPLETED:
+            continue
+
+        code_display = _normalize_course_code_display(course.courseName or f"Course {course.courseID}")
+        if not code_display:
+            continue
+
+        try:
+            credits_val = float(course.credits or 0)
+        except Exception:
+            credits_val = 0.0
+
+        courses.append(
+            {
+                "code": code_display,
+                "credits": credits_val,
+                "term": term.code,
+                "title": course.description or course.courseName or code_display,
+                "status": "COMPLETED",
+            }
+        )
+
+    return courses
 
 
 def _collect_assumed_corequisites(requirement_data: List[Dict]) -> set:
@@ -772,6 +812,13 @@ class DegreePlanService:
             .first()
         )
 
+        transcript_courses = _transcript_completed_courses(db, advisee_id) if context else []
+        if context and transcript_courses:
+            context.completedCourses = _merge_completed_course_sources(
+                context.completedCourses or [],
+                transcript_courses,
+            )
+
         normalized_validation = None
         if latest_validation:
             computed_results = None
@@ -812,7 +859,11 @@ class DegreePlanService:
             raise HTTPException(status_code=404, detail="Requirement set not found")
 
         requirement_data = requirement.requirementData or []
-        completed_courses = context.completedCourses or []
+        transcript_courses = _transcript_completed_courses(db, advisee_id)
+        completed_courses = _merge_completed_course_sources(
+            context.completedCourses or [],
+            transcript_courses,
+        )
 
         completed_display = {_normalize_course_code_display(c.get("code")) for c in completed_courses}
         completed_codes = {normalize_code(code) for code in completed_display}

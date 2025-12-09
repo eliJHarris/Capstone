@@ -15,7 +15,12 @@ from schemas.degree_plan import (
     ValidationRequest,
     ValidationRunTypeEnum,
 )
-from services.degree_plan_service import DegreePlanService, normalize_catalog_display
+from services.degree_plan_service import (
+    DegreePlanService,
+    normalize_catalog_display,
+    _merge_completed_course_sources,
+    _transcript_completed_courses,
+)
 
 router = APIRouter(prefix="/degree-plans", tags=["degree plans"])
 
@@ -165,6 +170,14 @@ def get_degree_plan_context(
         .first()
     )
 
+    transcript_courses = _transcript_completed_courses(db, advisee_id)
+    merged_completed_courses = _merge_completed_course_sources(
+        context.completedCourses if context else [],
+        transcript_courses,
+    )
+    if context:
+        context.completedCourses = merged_completed_courses
+
     validation_payload = None
     if latest_validation:
         computed = None
@@ -178,7 +191,7 @@ def get_degree_plan_context(
         )
         validation_payload = DegreePlanValidationResponse.from_orm(normalized)
 
-    completed_courses = context.completedCourses if context else []
+    completed_courses = merged_completed_courses
     try:
         computed_credits = sum(
             float(course.get("credits") or 0)
