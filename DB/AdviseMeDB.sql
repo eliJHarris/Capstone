@@ -185,7 +185,7 @@ INSERT INTO users (userID, username, email, role, isActive, createdDate) VALUES
 (14, 'advisor_cho', 'cho@college.edu', 'ADVISOR', 1, '2025-04-11 15:20:00'),
 (15, 'advisor_williams', 'williams@college.edu', 'ADVISOR', 1, '2025-04-30 12:40:00'),
 
-(16, 'student_01', 'andrewcaydence@gmail.com', 'STUDENT', 1, '2024-11-15 09:00:00'),
+(16, 'student_01', 's01@college.edu', 'STUDENT', 1, '2024-11-15 09:00:00'),
 (17, 'student_02', 's02@college.edu', 'STUDENT', 1, '2024-11-17 09:10:00'),
 (18, 'student_03', 's03@college.edu', 'STUDENT', 1, '2024-11-20 10:00:00'),
 (19, 'student_04', 's04@college.edu', 'STUDENT', 1, '2024-11-25 10:45:00'),
