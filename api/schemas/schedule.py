@@ -3,7 +3,6 @@ from typing import Optional, List
 from datetime import datetime
 from enum import Enum
 
-#Describes API Paylods (Request/Response)
 
 class ScheduleStatus(str, Enum):
     DRAFT = "DRAFT"
@@ -17,26 +16,32 @@ class ScheduleSource(str, Enum):
     SYSTEM = "SYSTEM"
 
 
-# Schema for creating a new schedule
 class ScheduleCreate(BaseModel):
     adviseeID: int = Field(..., description="ID of the advisee")
     termID: int = Field(..., description="ID of the term")
     source: ScheduleSource = Field(default=ScheduleSource.USER, description="Source of the schedule")
     status: ScheduleStatus = Field(default=ScheduleStatus.DRAFT, description="Status of the schedule")
+    advisorFeedback: Optional[str] = Field(
+        default=None, description="Optional advisor feedback explaining schedule decisions"
+    )
 
 
-# Schema for updating a schedule
 class ScheduleUpdate(BaseModel):
     status: Optional[ScheduleStatus] = Field(None, description="Status of the schedule")
     source: Optional[ScheduleSource] = Field(None, description="Source of the schedule")
+    advisorFeedback: Optional[str] = Field(
+        default=None, description="Optional advisor feedback explaining schedule decisions"
+    )
 
 
-# Schema for adding a class to a schedule
 class AddClassToSchedule(BaseModel):
     sectionID: int = Field(..., description="ID of the section to add")
+    aiAssisted: bool = Field(
+        False,
+        description="Whether this class was added as part of an AI-generated suggestion",
+    )
 
 
-# Schema for class/section info (nested in response)
 class ClassInSchedule(BaseModel):
     classID: int
     sectionID: int
@@ -67,8 +72,6 @@ class SectionSearchItem(BaseModel):
     seatsRemaining: int
     status: str
 
-
-# Schema for schedule response
 class ScheduleResponse(BaseModel):
     scheduleID: int
     adviseeID: int
@@ -81,13 +84,13 @@ class ScheduleResponse(BaseModel):
     createdWhen: datetime
     approvedWhen: Optional[datetime]
     rejectedWhen: Optional[datetime]
+    advisorFeedback: Optional[str] = None
     classes: List[ClassInSchedule] = []
 
     class Config:
         from_attributes = True
 
 
-# Schema for schedule list response (without detailed classes)
 class ScheduleListResponse(BaseModel):
     scheduleID: int
     adviseeID: int
@@ -101,17 +104,27 @@ class ScheduleListResponse(BaseModel):
     approvedWhen: Optional[datetime]
     rejectedWhen: Optional[datetime]
     classCount: int = 0
+    advisorFeedback: Optional[str] = None
 
     class Config:
         from_attributes = True
 
 
 class ScheduleSuggestionRequest(BaseModel):
-    """Optional note to steer AI-generated schedules."""
-
     note: Optional[str] = Field(
         None,
         description="Preference or constraint to include in the suggestion prompt",
+    )
+
+
+class AIScheduleNotificationRequest(BaseModel):
+    optionNumber: int = Field(
+        ...,
+        description="The option number provided by the AI suggestion that was applied",
+    )
+    courseNames: List[str] = Field(
+        default_factory=list,
+        description="Names or codes of the courses added by this AI schedule option",
     )
 
 

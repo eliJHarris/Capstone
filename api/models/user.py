@@ -5,7 +5,6 @@ import enum
 
 from .base import Base
 
-# Define the ENUM type to mirror your SQL CHECK constraint
 class UserRole(str, enum.Enum):
     STUDENT = "STUDENT"
     ADVISOR = "ADVISOR"

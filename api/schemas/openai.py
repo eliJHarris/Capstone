@@ -9,8 +9,6 @@ class ChatHistoryItem(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
-    """Only accept the user prompt; everything else is fixed server-side."""
-
     prompt: str = Field(..., min_length=1)
     advisee_id: Optional[int] = Field(default=None, description="Advisee ID to load context for")
     schedule_id: Optional[int] = Field(default=None, description="Schedule ID to load context for")

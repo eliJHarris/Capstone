@@ -9,19 +9,13 @@ from schemas.pdf_scraper import PDFScrapeRequest, PDFScrapeResponse
 
 
 def _resolve_output_path(output_path: Path) -> Path:
-    """
-    Resolve an output path ensuring that relative paths live under the working directory.
-    """
     if not output_path.is_absolute():
-        # Default to the FastAPI application directory when relative paths are given.
         base_dir = Path(os.environ.get("API_WORKDIR", "/code")).resolve()
         output_path = base_dir / output_path
     return output_path.resolve()
 
 
 class PDFScraperService:
-    """Service wrapper for invoking the PDF scraper utility within the container."""
-
     @classmethod
     def run_scraper(cls, request: PDFScrapeRequest) -> PDFScrapeResponse:
         output_path_input = Path(request.output_path) if request.output_path else Path(
@@ -50,7 +44,7 @@ class PDFScraperService:
                 stderr="",
                 duration_seconds=duration,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc: 
             duration = time.monotonic() - start_time
             return PDFScrapeResponse(
                 success=False,

@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS schedules (
   createdWhen  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   approvedWhen DATETIME NULL,
   rejectedWhen DATETIME NULL,
+  advisorFeedback TEXT NULL,
   UNIQUE KEY uq_advisee_term (adviseeID, termID),
   UNIQUE KEY uq_schedule_term_pair (scheduleID, termID),
   CONSTRAINT scheduleAdvisee FOREIGN KEY (adviseeID) REFERENCES adviseeProfile(adviseeID) ON DELETE CASCADE,
@@ -184,7 +185,7 @@ INSERT INTO users (userID, username, email, role, isActive, createdDate) VALUES
 (14, 'advisor_cho', 'cho@college.edu', 'ADVISOR', 1, '2025-04-11 15:20:00'),
 (15, 'advisor_williams', 'williams@college.edu', 'ADVISOR', 1, '2025-04-30 12:40:00'),
 
-(16, 'student_01', 'andrewcaydence@gmail.com', 'STUDENT', 1, '2024-11-15 09:00:00'),
+(16, 'student_01', 's01@college.edu', 'STUDENT', 1, '2024-11-15 09:00:00'),
 (17, 'student_02', 's02@college.edu', 'STUDENT', 1, '2024-11-17 09:10:00'),
 (18, 'student_03', 's03@college.edu', 'STUDENT', 1, '2024-11-20 10:00:00'),
 (19, 'student_04', 's04@college.edu', 'STUDENT', 1, '2024-11-25 10:45:00'),
@@ -323,6 +324,26 @@ INSERT INTO courses (courseID, courseName, description, credits) VALUES
 (20, 'Biology I', 'Cell biology and genetics with lab', 4),
 (21, 'Calculus II', 'Integration techniques and series', 4);
 
+-- Business core courses for BBA advisees
+INSERT INTO courses (courseID, courseName, description, credits) VALUES
+(9001, 'Foundations of Business', 'MGMT 1203 – Foundations of Business', 3),
+(9002, 'Introduction to Speech Communication', 'SPCH 1203 – Introduction to Speech Communication', 3),
+(9003, 'Introduction to International Business', 'MGMT 2203 – Introduction to International Business', 3),
+(9004, 'Principles of Macroeconomics', 'ECON 2803 – Principles of Macroeconomics', 3),
+(9005, 'Legal Environment of Business', 'LAW 2003 – Legal Environment of Business', 3),
+(9006, 'Business Information Systems', 'MGMT 2303 – Business Information Systems', 3),
+(9007, 'Principles of Microeconomics', 'ECON 2813 – Principles of Microeconomics', 3),
+(9008, 'Principles of Financial Accounting', 'ACCT 2803 – Principles of Financial Accounting', 3),
+(9009, 'Principles of Marketing Management', 'MKTG 3013 – Principles of Marketing Management', 3),
+(9010, 'Social Responsibility and Ethics in Business', 'MGMT 3133 – Social Responsibility and Ethics in Business', 3),
+(9011, 'Organizational Behavior', 'MGMT 3153 – Organizational Behavior', 3),
+(9012, 'Business Finance', 'FIN 3713 – Business Finance', 3),
+(9013, 'Business Analytics', 'MGMT 3513 – Business Analytics', 3),
+(9014, 'Operations Management', 'MGMT 3523 – Operations Management', 3)
+ON DUPLICATE KEY UPDATE
+  courseName = VALUES(courseName),
+  description = VALUES(description),
+  credits = VALUES(credits);
 -- Correct table name here: sections (not section)
 INSERT INTO sections (sectionID, courseID, termID, crn, capacity, enrolled, professorName, status, description) VALUES
 (1, 1, 2, 'CS101-SP', 30, 25, 'Dr. Alan Turing', 'OPEN', 'Introductory CS course'),
@@ -347,7 +368,9 @@ INSERT INTO sections (sectionID, courseID, termID, crn, capacity, enrolled, prof
 (17, 3, 1, 'MATH101-FA', 40, 39, 'Dr. Isaac Newton', 'CLOSED', 'Fall Calculus I'),
 (18, 4, 1, 'ENG201-FA', 35, 34, 'Dr. Jane Austen', 'CLOSED', 'Fall English Literature survey'),
 (19, 5, 1, 'ECO101-FA', 50, 47, 'Dr. Adam Smith', 'CLOSED', 'Fall Economics principles'),
-(20, 6, 1, 'PHY101-FA', 40, 36, 'Dr. Albert Einstein', 'CLOSED', 'Fall Physics mechanics');
+(20, 6, 1, 'PHY101-FA', 40, 36, 'Dr. Albert Einstein', 'CLOSED', 'Fall Physics mechanics'),
+(71, 2, 1, 'CS201-FA24', 30, 27, 'Dr. Grace Hopper', 'CLOSED', 'Data Structures for CS majors'),
+(72, 16, 1, 'MATH210-FA24', 35, 32, 'Dr. George Boole', 'CLOSED', 'Discrete Mathematics for CS majors');
 
 -- Spring 2024 sections (termID 4)
 INSERT INTO sections (sectionID, courseID, termID, crn, capacity, enrolled, professorName, status, description) VALUES
@@ -389,6 +412,23 @@ INSERT INTO sections (sectionID, courseID, termID, crn, capacity, enrolled, prof
 (50, 18,6, 'BUSL201-SP23', 35, 28, 'Dr. Oliver Wendell Holmes', 'CLOSED', 'Business Law'),
 (51, 21,6, 'MATH201-SP23', 35, 30, 'Dr. Emmy Noether', 'CLOSED', 'Calculus II'),
 (52, 11,6, 'CS301-SP23', 30, 24, 'Dr. Donald Knuth', 'CLOSED', 'Algorithms');
+
+-- Dedicated sections for student 08's business requirements (Fall 2023 term)
+INSERT INTO sections (sectionID, courseID, termID, crn, capacity, enrolled, professorName, status, description) VALUES
+(9050, 9001, 5, 'MGMT1203-FA23', 30, 25, 'Prof. Business Core', 'CLOSED', 'Foundations of Business (BBA core)'),
+(9051, 9002, 5, 'SPCH1203-FA23', 30, 25, 'Prof. Business Core', 'CLOSED', 'Speech Communication for business majors'),
+(9052, 9003, 5, 'MGMT2203-FA23', 30, 25, 'Prof. Business Core', 'CLOSED', 'International Business overview'),
+(9053, 9004, 5, 'ECON2803-FA23', 40, 30, 'Prof. Business Core', 'CLOSED', 'Macroeconomics principles'),
+(9054, 9005, 5, 'LAW2003-FA23', 40, 30, 'Prof. Business Core', 'CLOSED', 'Legal Environment of Business'),
+(9055, 9006, 5, 'MGMT2303-FA23', 35, 28, 'Prof. Business Core', 'CLOSED', 'Business Information Systems'),
+(9056, 9007, 5, 'ECON2813-FA23', 40, 30, 'Prof. Business Core', 'CLOSED', 'Microeconomics principles'),
+(9057, 9008, 5, 'ACCT2803-FA23', 35, 28, 'Prof. Business Core', 'CLOSED', 'Financial Accounting'),
+(9058, 9009, 5, 'MKTG3013-FA23', 35, 28, 'Prof. Business Core', 'CLOSED', 'Marketing Management'),
+(9059, 9010, 5, 'MGMT3133-FA23', 30, 24, 'Prof. Business Core', 'CLOSED', 'Social Responsibility and Ethics'),
+(9060, 9011, 5, 'MGMT3153-FA23', 30, 24, 'Prof. Business Core', 'CLOSED', 'Organizational Behavior'),
+(9061, 9012, 5, 'FIN3713-FA23', 35, 26, 'Prof. Business Core', 'CLOSED', 'Business Finance'),
+(9062, 9013, 5, 'MGMT3513-FA23', 30, 24, 'Prof. Business Core', 'CLOSED', 'Business Analytics'),
+(9063, 9014, 5, 'MGMT3523-FA23', 30, 24, 'Prof. Business Core', 'CLOSED', 'Operations Management');
 
 -- Fall 2022 sections (termID 7)
 INSERT INTO sections (sectionID, courseID, termID, crn, capacity, enrolled, professorName, status, description) VALUES
@@ -433,7 +473,7 @@ INSERT INTO schedules (scheduleID, adviseeID, termID, source, status, createdWhe
 
 INSERT INTO classes (classID, sectionID, scheduleID, termID, createdDate) VALUES
 (1, 1, 1,  2, '2025-01-05 09:05:00'),
-(2, 3, 1,  2, '2025-01-05 09:05:00'),
+(2, 7, 1,  2, '2025-01-05 09:05:00'),
 (3, 4, 2,  2, '2025-01-06 09:05:00'),
 (4, 5, 3,  2, '2025-01-07 09:05:00'),
 (5, 2, 4,  2, '2025-01-08 09:05:00'),
@@ -446,117 +486,132 @@ INSERT INTO classes (classID, sectionID, scheduleID, termID, createdDate) VALUES
 -- Map adviseeIDs 16..25 -> 1..10
 INSERT INTO enrollments (enrollmentID, adviseeID, sectionID, courseID, status, grade, creditsEarned, attemptedNumber, createdWhen) VALUES
 (1,  1, 1, 1, 'ENROLLED', 'A',  3, 1, '2025-01-05 09:10:00'),
-(2,  1, 3, 3, 'ENROLLED', 'B+', 4, 1, '2025-01-05 09:12:00'),
-(3,  2, 1, 1, 'ENROLLED', 'A-', 3, 1, '2025-01-06 09:10:00'),
+(2,  1, 3, 3, 'ENROLLED', 'B', 4, 1, '2025-01-05 09:12:00'),
+(3,  2, 1, 1, 'ENROLLED', 'A', 3, 1, '2025-01-06 09:10:00'),
 (4,  2, 2, 2, 'ENROLLED', 'B',  3, 1, '2025-01-06 09:12:00'),
-(5,  3, 4, 4, 'ENROLLED', 'B+', 3, 1, '2025-01-07 09:15:00'),
+(5,  3, 4, 4, 'ENROLLED', 'B', 3, 1, '2025-01-07 09:15:00'),
 (6,  3, 5, 5, 'ENROLLED', 'A',  3, 1, '2025-01-07 09:17:00'),
-(7,  4, 2, 2, 'ENROLLED', 'C+', 3, 1, '2025-01-08 09:10:00'),
+(7,  4, 2, 2, 'ENROLLED', 'C', 3, 1, '2025-01-08 09:10:00'),
 (8,  4, 6, 6, 'ENROLLED', 'B',  4, 1, '2025-01-08 09:12:00'),
 (9,  5, 7, 7, 'ENROLLED', 'A',  3, 1, '2025-01-09 09:10:00'),
-(10, 5, 8, 8, 'ENROLLED', 'A-', 3, 1, '2025-01-09 09:12:00'),
+(10, 5, 8, 8, 'ENROLLED', 'A', 3, 1, '2025-01-09 09:12:00'),
 (11, 6, 1, 1, 'ENROLLED', NULL, 0, 1, '2025-01-10 09:10:00'),
 (12, 6, 3, 3, 'ENROLLED', NULL, 0, 1, '2025-01-10 09:12:00'),
 (13, 7, 4, 4, 'ENROLLED', NULL, 0, 1, '2025-01-11 09:10:00'),
 (14, 7, 5, 5, 'ENROLLED', NULL, 0, 1, '2025-01-11 09:12:00'),
-(15, 8, 6, 6, 'ENROLLED', 'B+', 4, 1, '2025-01-12 09:10:00'),
+(15, 8, 6, 6, 'ENROLLED', 'B', 4, 1, '2025-01-12 09:10:00'),
 (16, 8, 7, 7, 'ENROLLED', 'A',  3, 1, '2025-01-12 09:12:00'),
-(17, 9, 8, 8, 'ENROLLED', 'A-', 3, 1, '2025-01-13 09:10:00'),
-(18, 9, 9, 9, 'ENROLLED', 'B+', 3, 1, '2025-01-13 09:12:00'),
+(17, 9, 8, 8, 'ENROLLED', 'A', 3, 1, '2025-01-13 09:10:00'),
+(18, 9, 9, 9, 'ENROLLED', 'B', 3, 1, '2025-01-13 09:12:00'),
 (19,10,10,10,'ENROLLED', 'B',  3, 1, '2025-01-14 09:10:00'),
-(20,10,2, 2, 'ENROLLED', 'A-', 3, 1, '2025-01-14 09:12:00');
+(20,10,2, 2, 'ENROLLED', 'A', 3, 1, '2025-01-14 09:12:00');
 
 -- Historical Fall 2024 enrollments so transcripts show prior terms
 INSERT INTO enrollments (enrollmentID, adviseeID, sectionID, courseID, status, grade, creditsEarned, attemptedNumber, createdWhen) VALUES
-(21, 1, 16, 1, 'COMPLETED', 'A',  3, 1, '2024-09-05 09:10:00'),
-(22, 1, 17, 3, 'COMPLETED', 'B+', 4, 1, '2024-09-06 09:12:00'),
-(23, 2, 18, 4, 'COMPLETED', 'A-', 3, 1, '2024-09-07 09:10:00'),
+(21, 1, 71, 2, 'COMPLETED', 'A', 3, 1, '2024-09-05 09:10:00'),
+(22, 1, 72, 16, 'COMPLETED', 'A', 3, 1, '2024-09-06 09:12:00'),
+(23, 2, 18, 4, 'COMPLETED', 'A', 3, 1, '2024-09-07 09:10:00'),
 (24, 2, 19, 5, 'COMPLETED', 'B',  3, 1, '2024-09-07 09:12:00'),
 (25, 3, 17, 3, 'COMPLETED', 'A',  4, 1, '2024-09-08 09:10:00'),
-(26, 3, 20, 6, 'COMPLETED', 'B+', 4, 1, '2024-09-08 09:12:00');
+(26, 3, 20, 6, 'COMPLETED', 'B', 4, 1, '2024-09-08 09:12:00');
 
 -- Additional historical enrollments per advisee for richer transcripts
 INSERT INTO enrollments (enrollmentID, adviseeID, sectionID, courseID, status, grade, creditsEarned, attemptedNumber, createdWhen) VALUES
-(27, 1, 33, 1, 'COMPLETED', 'A', 3, 1, '2023-09-05 09:10:00'),
-(28, 1, 34, 3, 'COMPLETED', 'A-',4, 1, '2023-09-06 09:12:00'),
-(29, 1, 35, 4, 'COMPLETED', 'B+',3, 1, '2023-09-07 09:15:00'),
-(30, 2, 26,14, 'COMPLETED', 'B+',3, 1, '2024-02-01 09:10:00'),
-(31, 2, 24,21, 'COMPLETED', 'A-',4, 1, '2024-02-02 09:12:00'),
+(29, 1, 35, 4, 'COMPLETED', 'B',3, 1, '2023-09-07 09:15:00'),
+(30, 2, 26,14, 'COMPLETED', 'B',3, 1, '2024-02-01 09:10:00'),
+(31, 2, 24,21, 'COMPLETED', 'A',4, 1, '2024-02-02 09:12:00'),
 (32, 2, 40,15, 'COMPLETED', 'A', 3, 1, '2023-09-10 09:10:00'),
-(33, 3, 50,18, 'COMPLETED', 'B+',3, 1, '2023-02-12 09:10:00'),
+(33, 3, 50,18, 'COMPLETED', 'B',3, 1, '2023-02-12 09:10:00'),
 (34, 3, 42,9,  'COMPLETED', 'B', 3, 1, '2023-09-12 09:12:00'),
 (35, 3, 39,14, 'COMPLETED', 'B', 3, 1, '2023-09-13 09:15:00'),
-(36, 4, 24,21, 'COMPLETED', 'B+',4, 1, '2024-02-05 09:10:00'),
-(37, 4, 31,6,  'COMPLETED', 'A-',4, 1, '2024-02-06 09:12:00'),
+(36, 4, 24,21, 'COMPLETED', 'B',4, 1, '2024-02-05 09:10:00'),
+(37, 4, 31,6,  'COMPLETED', 'A',4, 1, '2024-02-06 09:12:00'),
 (38, 4, 26,14, 'COMPLETED', 'B', 3, 1, '2024-02-07 09:15:00'),
-(39, 5, 27,11, 'COMPLETED', 'A-',3, 1, '2024-02-08 09:10:00'),
+(39, 5, 27,11, 'COMPLETED', 'A',3, 1, '2024-02-08 09:10:00'),
 (40, 5, 30,17, 'COMPLETED', 'A',  3, 1, '2024-02-09 09:12:00'),
-(41, 5, 28,12, 'COMPLETED', 'B+',3, 1, '2024-02-10 09:15:00'),
-(42, 6, 31,6,  'COMPLETED', 'B+',4, 1, '2024-02-11 09:10:00'),
-(43, 6, 24,21, 'COMPLETED', 'A-',4, 1, '2024-02-12 09:12:00'),
+(41, 5, 28,12, 'COMPLETED', 'B',3, 1, '2024-02-10 09:15:00'),
+(42, 6, 31,6,  'COMPLETED', 'B',4, 1, '2024-02-11 09:10:00'),
+(43, 6, 24,21, 'COMPLETED', 'A',4, 1, '2024-02-12 09:12:00'),
 (44, 6, 27,11, 'COMPLETED', 'B', 3, 1, '2024-02-13 09:15:00'),
 (45, 7, 25,16, 'COMPLETED', 'B', 3, 1, '2024-02-14 09:10:00'),
-(46, 7, 30,17, 'COMPLETED', 'B+',3, 1, '2024-02-15 09:12:00'),
+(46, 7, 30,17, 'COMPLETED', 'B',3, 1, '2024-02-15 09:12:00'),
 (47, 7, 27,11, 'COMPLETED', 'B', 3, 1, '2024-02-16 09:15:00'),
 (48, 8, 36,5,  'COMPLETED', 'B', 3, 1, '2023-09-14 09:10:00'),
-(49, 8, 35,4,  'COMPLETED', 'B+',3, 1, '2023-09-15 09:12:00'),
-(50, 8, 49,10, 'COMPLETED', 'A-',3, 1, '2023-02-18 09:15:00'),
+(49, 8, 35,4,  'COMPLETED', 'B',3, 1, '2023-09-15 09:12:00'),
+(50, 8, 49,10, 'COMPLETED', 'A',3, 1, '2023-02-18 09:15:00'),
 (51, 9, 46,5,  'COMPLETED', 'A', 3, 1, '2023-02-20 09:10:00'),
-(52, 9, 40,15, 'COMPLETED', 'B+',3, 1, '2023-09-18 09:12:00'),
-(53, 9, 36,5,  'COMPLETED', 'A-',3, 1, '2023-09-19 09:15:00'),
-(54, 9, 50,18, 'COMPLETED', 'B+',3, 1, '2023-02-22 09:10:00'),
+(52, 9, 40,15, 'COMPLETED', 'B',3, 1, '2023-09-18 09:12:00'),
+(53, 9, 36,5,  'COMPLETED', 'A',3, 1, '2023-09-19 09:15:00'),
+(54, 9, 50,18, 'COMPLETED', 'B',3, 1, '2023-02-22 09:10:00'),
 (55,10, 42,9,  'COMPLETED', 'A', 3, 1, '2023-09-20 09:12:00'),
-(56,10, 50,18, 'COMPLETED', 'B+',3, 1, '2023-02-24 09:15:00'),
+(56,10, 50,18, 'COMPLETED', 'B',3, 1, '2023-02-24 09:15:00'),
 (57,10, 49,10, 'COMPLETED', 'B', 3, 1, '2023-02-25 09:17:00'),
 (58,10, 36,5,  'COMPLETED', 'B', 3, 1, '2023-09-21 09:19:00'),
-(59,11, 42,9,  'COMPLETED', 'A-',3, 1, '2023-09-22 09:10:00'),
-(60,11, 49,10, 'COMPLETED', 'B+',3, 1, '2023-02-27 09:12:00'),
+(59,11, 42,9,  'COMPLETED', 'A',3, 1, '2023-09-22 09:10:00'),
+(60,11, 49,10, 'COMPLETED', 'B',3, 1, '2023-02-27 09:12:00'),
 (61,11, 46,5,  'COMPLETED', 'B', 3, 1, '2023-02-28 09:15:00'),
-(62,12, 49,10, 'COMPLETED', 'A-',3, 1, '2023-02-12 09:10:00'),
-(63,12, 50,18, 'COMPLETED', 'B+',3, 1, '2023-02-13 09:12:00'),
+(62,12, 49,10, 'COMPLETED', 'A',3, 1, '2023-02-12 09:10:00'),
+(63,12, 50,18, 'COMPLETED', 'B',3, 1, '2023-02-13 09:12:00'),
 (64,12, 36,5,  'COMPLETED', 'B', 3, 1, '2023-09-12 09:15:00'),
 (65,13, 47,7,  'COMPLETED', 'A', 3, 1, '2023-02-14 09:10:00'),
-(66,13, 48,8,  'COMPLETED', 'B+',3, 1, '2023-02-15 09:12:00'),
+(66,13, 48,8,  'COMPLETED', 'B',3, 1, '2023-02-15 09:12:00'),
 (67,13, 35,4,  'COMPLETED', 'B', 3, 1, '2023-09-14 09:15:00'),
-(68,14, 48,8,  'COMPLETED', 'A-',3, 1, '2023-02-16 09:10:00'),
-(69,14, 47,7,  'COMPLETED', 'B+',3, 1, '2023-02-17 09:12:00'),
+(68,14, 48,8,  'COMPLETED', 'A',3, 1, '2023-02-16 09:10:00'),
+(69,14, 47,7,  'COMPLETED', 'B',3, 1, '2023-02-17 09:12:00'),
 (70,14, 40,15, 'COMPLETED', 'B', 3, 1, '2023-09-16 09:15:00'),
-(71,15, 45,4,  'COMPLETED', 'A-',3, 1, '2023-02-18 09:10:00'),
-(72,15, 50,18, 'COMPLETED', 'A-',3, 1, '2023-02-19 09:12:00'),
-(73,15, 36,5,  'COMPLETED', 'B+',3, 1, '2023-09-18 09:15:00'),
+(71,15, 45,4,  'COMPLETED', 'A',3, 1, '2023-02-18 09:10:00'),
+(72,15, 50,18, 'COMPLETED', 'A',3, 1, '2023-02-19 09:12:00'),
+(73,15, 36,5,  'COMPLETED', 'B',3, 1, '2023-09-18 09:15:00'),
 (74,15, 54,15, 'COMPLETED', 'B', 3, 1, '2022-09-20 09:15:00'),
-(75,16, 45,4,  'COMPLETED', 'A-',3, 1, '2023-02-21 09:10:00'),
-(76,16, 36,5,  'COMPLETED', 'B+',3, 1, '2023-09-19 09:12:00'),
-(77,16, 50,18, 'COMPLETED', 'A-',3, 1, '2023-02-22 09:15:00'),
+(75,16, 45,4,  'COMPLETED', 'A',3, 1, '2023-02-21 09:10:00'),
+(76,16, 36,5,  'COMPLETED', 'B',3, 1, '2023-09-19 09:12:00'),
+(77,16, 50,18, 'COMPLETED', 'A',3, 1, '2023-02-22 09:15:00'),
 (78,17, 35,4,  'COMPLETED', 'A', 3, 1, '2023-09-21 09:10:00'),
-(79,17, 45,4,  'COMPLETED', 'A-',3, 1, '2023-02-24 09:12:00'),
+(79,17, 45,4,  'COMPLETED', 'A',3, 1, '2023-02-24 09:12:00'),
 (80,17, 46,5,  'COMPLETED', 'B', 3, 1, '2023-02-25 09:15:00'),
-(81,18, 45,4,  'COMPLETED', 'B+',3, 1, '2023-02-26 09:10:00'),
+(81,18, 45,4,  'COMPLETED', 'B',3, 1, '2023-02-26 09:10:00'),
 (82,18, 46,5,  'COMPLETED', 'B', 3, 1, '2023-02-27 09:12:00'),
-(83,18, 47,7,  'COMPLETED', 'A-',3, 1, '2023-02-28 09:15:00'),
+(83,18, 47,7,  'COMPLETED', 'A',3, 1, '2023-02-28 09:15:00'),
 (84,18, 54,15, 'COMPLETED', 'B', 3, 1, '2022-09-22 09:15:00'),
-(85,19, 58,19, 'COMPLETED', 'A-',4, 1, '2022-09-23 09:10:00'),
+(85,19, 58,19, 'COMPLETED', 'A',4, 1, '2022-09-23 09:10:00'),
 (86,19, 37,6,  'COMPLETED', 'B', 4, 1, '2023-09-23 09:12:00'),
 (87,19, 34,3,  'COMPLETED', 'A', 4, 1, '2023-09-24 09:15:00'),
-(88,20, 41,20, 'COMPLETED', 'A-',4, 1, '2023-09-25 09:10:00'),
-(89,20, 58,19, 'COMPLETED', 'B+',4, 1, '2022-09-24 09:12:00'),
+(88,20, 41,20, 'COMPLETED', 'A',4, 1, '2023-09-25 09:10:00'),
+(89,20, 58,19, 'COMPLETED', 'B',4, 1, '2022-09-24 09:12:00'),
 (90,20, 40,15, 'COMPLETED', 'B', 3, 1, '2023-09-26 09:15:00'),
 (91,21, 31,6,  'COMPLETED', 'A', 4, 1, '2024-02-25 09:10:00'),
-(92,21, 34,3,  'COMPLETED', 'A-',4, 1, '2023-09-27 09:12:00'),
-(93,21, 24,21, 'COMPLETED', 'B+',4, 1, '2024-02-26 09:15:00'),
-(94,21, 54,15, 'COMPLETED', 'B+',3, 1, '2022-09-26 09:15:00'),
-(95,22, 35,4,  'COMPLETED', 'B+',3, 1, '2023-09-28 09:10:00'),
-(96,22, 47,7,  'COMPLETED', 'A-',3, 1, '2023-02-27 09:12:00'),
+(92,21, 34,3,  'COMPLETED', 'A',4, 1, '2023-09-27 09:12:00'),
+(93,21, 24,21, 'COMPLETED', 'B',4, 1, '2024-02-26 09:15:00'),
+(94,21, 54,15, 'COMPLETED', 'B',3, 1, '2022-09-26 09:15:00'),
+(95,22, 35,4,  'COMPLETED', 'B',3, 1, '2023-09-28 09:10:00'),
+(96,22, 47,7,  'COMPLETED', 'A',3, 1, '2023-02-27 09:12:00'),
 (97,22, 48,8,  'COMPLETED', 'B', 3, 1, '2023-02-28 09:15:00'),
-(98,23, 34,3,  'COMPLETED', 'B+',4, 1, '2023-09-29 09:10:00'),
+(98,23, 34,3,  'COMPLETED', 'B',4, 1, '2023-09-29 09:10:00'),
 (99,23, 37,6,  'COMPLETED', 'B', 4, 1, '2023-09-30 09:12:00'),
-(100,23, 35,4, 'COMPLETED', 'A-',3, 1, '2023-09-30 09:15:00'),
-(101,24, 35,4, 'COMPLETED', 'B+',3, 1, '2023-09-15 09:10:00'),
-(102,24, 47,7, 'COMPLETED', 'A-',3, 1, '2023-02-20 09:12:00'),
+(100,23, 35,4, 'COMPLETED', 'A',3, 1, '2023-09-30 09:15:00'),
+(101,24, 35,4, 'COMPLETED', 'B',3, 1, '2023-09-15 09:10:00'),
+(102,24, 47,7, 'COMPLETED', 'A',3, 1, '2023-02-20 09:12:00'),
 (103,24, 48,8, 'COMPLETED', 'B', 3, 1, '2023-02-21 09:15:00'),
 (104,25, 41,20,'COMPLETED', 'A', 4, 1, '2023-09-20 09:10:00'),
-(105,25, 37,6, 'COMPLETED', 'B+',4, 1, '2023-09-21 09:12:00'),
+(105,25, 37,6, 'COMPLETED', 'B',4, 1, '2023-09-21 09:12:00'),
 (106,25, 40,15,'COMPLETED', 'B', 3, 1, '2023-09-22 09:15:00');
+
+-- Additional BBA core history for advisee 8
+INSERT INTO enrollments (enrollmentID, adviseeID, sectionID, courseID, status, grade, creditsEarned, attemptedNumber, createdWhen) VALUES
+(107, 8, 9050, 9001, 'COMPLETED', 'A', 3, 1, '2023-09-01 08:00:00'),
+(108, 8, 9051, 9002, 'COMPLETED', 'A', 3, 1, '2023-09-03 08:05:00'),
+(109, 8, 9052, 9003, 'COMPLETED', 'A', 3, 1, '2023-09-05 08:10:00'),
+(110, 8, 9053, 9004, 'COMPLETED', 'B', 3, 1, '2023-09-07 08:15:00'),
+(111, 8, 9054, 9005, 'COMPLETED', 'A', 3, 1, '2023-09-09 08:20:00'),
+(112, 8, 9055, 9006, 'COMPLETED', 'A', 3, 1, '2023-09-11 08:25:00'),
+(113, 8, 9056, 9007, 'COMPLETED', 'B', 3, 1, '2023-09-13 08:30:00'),
+(114, 8, 9057, 9008, 'COMPLETED', 'A', 3, 1, '2023-09-15 08:35:00'),
+(115, 8, 9058, 9009, 'COMPLETED', 'A', 3, 1, '2023-09-17 08:40:00'),
+(116, 8, 9059, 9010, 'COMPLETED', 'B', 3, 1, '2023-09-19 08:45:00'),
+(117, 8, 9060, 9011, 'COMPLETED', 'A', 3, 1, '2023-09-21 08:50:00'),
+(118, 8, 9061, 9012, 'COMPLETED', 'A', 3, 1, '2023-09-23 08:55:00'),
+(119, 8, 9062, 9013, 'COMPLETED', 'B', 3, 1, '2023-09-25 09:00:00'),
+(120, 8, 9063, 9014, 'COMPLETED', 'A', 3, 1, '2023-09-27 09:05:00');
 
 -- Use correct enum casing for status ('Active')
 INSERT INTO degreePlan (degreePlanID, adviseeID, name, catalog, status, createdWhen, updatedWhen) VALUES
@@ -630,6 +685,7 @@ CREATE TABLE IF NOT EXISTS degree_plan_validations (
   runType           ENUM('MANUAL','AUTOMATIC') NOT NULL DEFAULT 'MANUAL',
   completionPercent DECIMAL(5,2) NOT NULL DEFAULT 0,
   issues            JSON NULL,
+  llmCourseBreakdown JSON NULL,
   message           VARCHAR(255),
   triggeredBy       INT NULL,
   startedAt         DATETIME NULL,
@@ -658,20 +714,23 @@ INSERT INTO degree_requirement_sets
   (requirementSetID, programCode, catalogYear, programName, totalCredits, requirementData, sourceDocument, createdAt, updatedAt)
 VALUES
   (101, 'BS-CS', 'CAT2024', 'B.S. Computer Science', 120,
-    '[{"id":"core","title":"Core Curriculum","requiredCredits":36,"courses":[{"code":"ENG 1013","title":"Composition I","credits":3},{"code":"MATH 2804","title":"Calculus I","credits":4},{"code":"CS 1013","title":"Intro to Programming","credits":3},{"code":"CS 2023","title":"Data Structures","credits":3}]},{"id":"advanced","title":"Advanced Major Requirements","requiredCredits":24,"courses":[{"code":"CS 3013","title":"Algorithms","credits":3},{"code":"CS 3223","title":"Operating Systems","credits":3},{"code":"CS 3413","title":"Database Systems","credits":3},{"code":"CS 4XX3","title":"Upper-Level Elective","credits":3}]}]'
+    '[{"id":"core","title":"Core Curriculum","requiredCredits":36,"courses":[{"code":"ENG 1013","title":"Composition I","credits":3},{"code":"MATH 2804","title":"Calculus I","credits":4},{"code":"CS 1013","title":"Intro to Programming","credits":3},{"code":"CS 2023","title":"Data Structures","credits":3}]},{"id":"advanced","title":"Advanced Major Requirements","requiredCredits":24,"courses":[{"code":"CS 3013","title":"Algorithms","credits":3},{"code":"CS 3223","title":"Operating Systems","credits":3},{"code":"CS 3413","title":"Database Systems","credits":3},{"code":"CS 4XX3","title":"Upper-Level Elective","credits":3}]},{"id":"cs_concentrations","title":"CS Concentrations","activeConcentrations":["DATA ANALYTICS","MATHEMATICS MINOR"],"concentrations":[{"name":"Data Analytics","choose_any":[{"code":"CS 3333","title":"Big Data","credits":3},{"code":"CS 4323","title":"Data Analytics","credits":3},{"code":"CS 4333","title":"Machine Learning","credits":3}],"hours_needed":9,"selected":true},{"name":"Cybersecurity","choose_any":[{"code":"CS 3513","title":"Applied Cryptography","credits":3},{"code":"CS 3523","title":"Computer Forensics","credits":3},{"code":"CS 4503","title":"CyberOps","credits":3}],"hours_needed":9},{"name":"Mathematics Minor","choose_any":[{"code":"MATH 3303","title":"Discrete Mathematics II","credits":3},{"code":"MATH 3403","title":"Real Analysis","credits":3},{"code":"STAT 2503","title":"Statistics","credits":3}],"hours_needed":6}]}]'
   , 'https://adviseme.example.edu/bs-cs', '2025-03-20 09:00:00', '2025-03-20 09:00:00'),
   (102, 'BS-MATH', 'CAT2023', 'B.S. Mathematics', 120,
     '[{"id":"foundation","title":"Foundational Math","requiredCredits":30,"courses":[{"code":"MATH 1603","title":"Trig","credits":3},{"code":"MATH 2004","title":"Calculus II","credits":4},{"code":"STAT 2503","title":"Statistics","credits":3}]},{"id":"major","title":"Upper-Level Math","requiredCredits":24,"courses":[{"code":"MATH 3103","title":"Linear Algebra","credits":3},{"code":"MATH 3303","title":"Abstract Algebra","credits":3},{"code":"MATH 3403","title":"Real Analysis","credits":3}]}]'
   , 'https://adviseme.example.edu/bs-math', '2025-03-20 09:10:00', '2025-03-20 09:10:00'),
   (103, 'BS-IS', 'CAT2022', 'B.S. Information Systems', 120,
     '[{"id":"core","title":"Business Core","requiredCredits":30,"courses":[{"code":"ACCT 2003","title":"Accounting","credits":3},{"code":"ECON 2103","title":"Economics","credits":3}]},{"id":"technology","title":"Technology Core","requiredCredits":30,"courses":[{"code":"IS 2003","title":"Systems Analysis","credits":3},{"code":"IS 3203","title":"Enterprise Architecture","credits":3}]}]'
-  , 'https://adviseme.example.edu/bs-is', '2025-03-20 09:20:00', '2025-03-20 09:20:00');
+  , 'https://adviseme.example.edu/bs-is', '2025-03-20 09:20:00', '2025-03-20 09:20:00'),
+  (104, 'BBA-Business Administration', 'CAT2024::ADV-8', 'B.B.A. Business Administration (Advisee 8)', 120,
+    '[{"id":"business_core","title":"Business Core","requiredCredits":36,"courses":[{"code":"MGMT 1203","title":"Foundations of Business","credits":3},{"code":"SPCH 1203","title":"Introduction to Speech Communication","credits":3},{"code":"ECON 2803","title":"Principles of Macroeconomics","credits":3},{"code":"ECON 2813","title":"Principles of Microeconomics","credits":3}]},{"id":"bba_concentrations","title":"BBA Concentrations","activeConcentrations":["MANAGEMENT"],"concentrations":[{"name":"Management","choose_any":[{"code":"MGMT 3613","title":"Leadership","credits":3},{"code":"MGMT 4133","title":"Project Management","credits":3},{"code":"MGMT 4153","title":"Strategic Compensation","credits":3}],"hours_needed":9,"selected":true},{"name":"Marketing","choose_any":[{"code":"MKTG 3003","title":"Introduction to Professional Selling","credits":3},{"code":"MKTG 3123","title":"Consumer Behavior","credits":3},{"code":"MKTG 3133","title":"Marketing Research","credits":3}],"hours_needed":9}]},{"id":"minor_requirement","title":"Minor Requirement","activeConcentrations":["ECONOMICS MINOR"],"concentrations":[{"name":"Economics Minor","choose_any":[{"code":"ECON 3313","title":"Microeconomic Analysis","credits":3},{"code":"ECON 3353","title":"Macroeconomic Analysis","credits":3},{"code":"ECON 4343","title":"Managerial Economics","credits":3}],"hours_needed":6,"selected":true},{"name":"Finance Minor","choose_any":[{"code":"FIN 3723","title":"Investments","credits":3},{"code":"FIN 3733","title":"Financial Statement Analysis","credits":3},{"code":"FIN 4743","title":"Advanced Financial Management","credits":3}],"hours_needed":6}]}]'
+  , 'advisee:8', '2025-03-21 09:30:00', '2025-03-21 09:30:00');
 
 INSERT INTO advisee_degree_context
   (contextID, adviseeID, requirementSetID, completedCourses, overrides, notes, createdAt, updatedAt)
 VALUES
   (201, 1, 101,
-    '[{"code":"ENG 1013","title":"Composition I","credits":3,"term":"Fall 2023","status":"COMPLETED"},{"code":"MATH 2804","title":"Calculus I","credits":4,"term":"Fall 2023","status":"COMPLETED"},{"code":"CS 1013","title":"Intro to Programming","credits":3,"term":"Fall 2023","status":"COMPLETED"}]',
+    '[{"code":"ENG 1013","title":"Composition I","credits":3,"term":"Fall 2023","status":"COMPLETED"},{"code":"MATH 2804","title":"Calculus I","credits":4,"term":"Fall 2023","status":"COMPLETED"},{"code":"CS 1013","title":"Intro to Programming","credits":3,"term":"Fall 2023","status":"COMPLETED"},{"code":"CS 3333","title":"Big Data","credits":3,"term":"Spring 2024","status":"COMPLETED"},{"code":"CS 4323","title":"Data Analytics","credits":3,"term":"Fall 2024","status":"COMPLETED"},{"code":"CS 4333","title":"Machine Learning","credits":3,"term":"Spring 2025","status":"IN_PROGRESS"},{"code":"MATH 3303","title":"Discrete Mathematics II","credits":3,"term":"Fall 2024","status":"COMPLETED"},{"code":"STAT 2503","title":"Statistics","credits":3,"term":"Spring 2024","status":"COMPLETED"}]',
     NULL,
     'Seeded from degree audit import.',
     '2025-03-21 08:30:00', '2025-03-21 08:30:00'),
@@ -684,7 +743,12 @@ VALUES
     '[{"code":"ACCT 2003","title":"Accounting","credits":3,"term":"Fall 2023","status":"COMPLETED"},{"code":"ECON 2103","title":"Economics","credits":3,"term":"Fall 2023","status":"COMPLETED"},{"code":"IS 2003","title":"Systems Analysis","credits":3,"term":"Spring 2024","status":"COMPLETED"}]',
     NULL,
     'Imported from PDF scrape demo.',
-    '2025-03-21 09:00:00', '2025-03-21 09:00:00');
+    '2025-03-21 09:00:00', '2025-03-21 09:00:00'),
+  (204, 8, 104,
+    '[{"code":"MGMT 1203","title":"Foundations of Business","credits":3,"term":"Fall 2023","status":"COMPLETED"},{"code":"SPCH 1203","title":"Introduction to Speech Communication","credits":3,"term":"Fall 2023","status":"COMPLETED"},{"code":"ECON 2803","title":"Principles of Macroeconomics","credits":3,"term":"Spring 2024","status":"COMPLETED"},{"code":"ECON 2813","title":"Principles of Microeconomics","credits":3,"term":"Spring 2024","status":"COMPLETED"},{"code":"MGMT 3613","title":"Leadership","credits":3,"term":"Fall 2024","status":"COMPLETED"},{"code":"MGMT 4133","title":"Project Management","credits":3,"term":"Spring 2025","status":"IN_PROGRESS"},{"code":"MGMT 4153","title":"Strategic Compensation","credits":3,"term":"Spring 2025","status":"COMPLETED"},{"code":"ECON 3313","title":"Microeconomic Analysis","credits":3,"term":"Fall 2024","status":"COMPLETED"},{"code":"ECON 3353","title":"Macroeconomic Analysis","credits":3,"term":"Spring 2025","status":"COMPLETED"}]',
+    NULL,
+    'Manual degree audit context for advisee 8 concentration/minor demo.',
+    '2025-03-21 09:35:00', '2025-03-21 09:35:00');
 
 INSERT INTO degree_plan_validations
   (validationID, adviseeID, contextID, requirementSetID, status, runType, completionPercent, issues, message, triggeredBy, startedAt, finishedAt, createdAt, updatedAt)
@@ -703,12 +767,18 @@ VALUES
     '[]',
     'Manual validation currently running.',
     8,
-    '2025-03-21 09:01:00', NULL, '2025-03-21 09:01:00', '2025-03-21 09:01:00');
+    '2025-03-21 09:01:00', NULL, '2025-03-21 09:01:00', '2025-03-21 09:01:00'),
+  (304, 8, 204, 104, 'PASSED', 'MANUAL', 78.0,
+    '[]',
+    'Manual validation shows Management concentration + Economics minor selections.',
+    6,
+    '2025-03-21 09:36:00', '2025-03-21 09:36:40', '2025-03-21 09:36:00', '2025-03-21 09:36:40');
 
 INSERT INTO advisee_requirements (adviseeID, requirementSetID) VALUES
   (1, 101),
   (2, 102),
-  (3, 103)
+  (3, 103),
+  (8, 104)
 ON DUPLICATE KEY UPDATE requirementSetID = VALUES(requirementSetID);
 
 
@@ -1993,7 +2063,6 @@ FROM (
 ) AS prereq_mappings
 ON DUPLICATE KEY UPDATE
   minimumGrade = VALUES(minimumGrade);
-
 
 -- Auto-generate sections for roughly half of all seeded courses (every even courseID after the initial 10)
 INSERT INTO sections (courseID, termID, crn, capacity, enrolled, professorName, status, description)

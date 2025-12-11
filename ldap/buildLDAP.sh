@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 # scripts/bootstrap_ldap.sh
 
-########################
-# ====== config ====== #
-########################
 
 LDAP_CONTAINER="${LDAP_CONTAINER:-adviseme-openldap}"
 LDAP_URL="${LDAP_URL:-ldap://localhost:389}"
@@ -11,8 +8,8 @@ LDAP_URL="${LDAP_URL:-ldap://localhost:389}"
 ADMIN_DN="${ADMIN_DN:-cn=admin,dc=adviseme,dc=local}"
 ADMIN_PASS="${ADMIN_PASS:-admin_pass}"
 
-VERBOSE="${VERBOSE:-1}"             # 1 = trace commands
-BIND_TIMEOUT="${BIND_TIMEOUT:-120}" # seconds
+VERBOSE="${VERBOSE:-1}"            
+BIND_TIMEOUT="${BIND_TIMEOUT:-120}" 
 
 # Users / DNs we'll insert
 OU_BASE="dc=adviseme,dc=local"

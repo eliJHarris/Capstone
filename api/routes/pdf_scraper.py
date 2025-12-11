@@ -37,3 +37,15 @@ async def trigger_pdf_scraper(
         )
 
     return result
+
+
+@router.post("", response_model=PDFScrapeResponse, include_in_schema=False)
+async def trigger_pdf_scraper_no_slash(
+    payload: PDFScrapeRequest,
+    user=Depends(require_user),
+) -> PDFScrapeResponse:
+    """
+    Compatibility handler so callers hitting /pdf-scraper without the trailing slash
+    don't get redirected (which breaks CORS preflight in browsers).
+    """
+    return await trigger_pdf_scraper(payload, user)

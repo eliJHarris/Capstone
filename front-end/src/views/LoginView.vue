@@ -55,22 +55,6 @@
             </v-btn>
           </v-form>
 
-          <div class="text-center mb-4">
-            <v-btn
-              variant="text"
-              color="primary"
-              size="small"
-              class="text-capitalize"
-              @click="forgotPassword"
-            >
-              Forgot Password?
-            </v-btn>
-          </div>
-
-          <div class="text-body-2 text-center" style="color: #6C6B67;">
-            Need an account?
-            <v-btn variant="text" color="primary" size="small">Sign Up</v-btn>
-          </div>
         </v-card>
       </v-container>
     </v-main>
@@ -89,10 +73,6 @@ const password = ref("");
 const showPassword = ref(false);
 const loading = ref(false);
 const errorMsg = ref("");
-
-function forgotPassword() {
-  console.log("Forgot password clicked");
-}
 
 async function handleLogin() {
   errorMsg.value = "";

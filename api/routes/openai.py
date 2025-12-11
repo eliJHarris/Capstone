@@ -91,7 +91,7 @@ async def create_chat_completion(
             messages=_build_messages(payload, context_payload),
             temperature=0.25,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc: 
         raise HTTPException(
             status_code=502, detail=f"OpenAI API call failed: {exc}"
         ) from exc

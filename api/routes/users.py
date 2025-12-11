@@ -50,16 +50,6 @@ def get_users(
     limit: int = Query(100, ge=1, le=500, description="Maximum number of records to return"),
     db: Session = Depends(get_db)
 ):
-    """
-    Get all users with optional filtering.
-
-    - **user_id**: Filter by user ID
-    - **username**: Filter by username
-    - **email**: Filter by email
-    - **role**: Filter by role
-    - **skip**: Pagination - number of records to skip
-    - **limit**: Pagination - maximum number of records to return
-    """
     return _list_users(
         user_id=user_id,
         username=username,
@@ -83,7 +73,6 @@ def get_users_no_trailing_slash(
     limit: int = Query(100, ge=1, le=500, description="Maximum number of records to return"),
     db: Session = Depends(get_db)
 ):
-    """Alias to serve /api/users without a trailing slash (avoids 307 redirects from FastAPI)."""
     return _list_users(
         user_id=user_id,
         username=username,
@@ -101,11 +90,6 @@ def get_user(
     user_id: int,
     db: Session = Depends(get_db)
 ):
-    """
-    Get a specific schedule by ID including all classes/sections.
-
-    - **schedule_id**: The ID of the schedule to retrieve
-    """
     return UserService.get_user_by_id(db=db, user_id=user_id)
 
 
@@ -114,14 +98,6 @@ def create_user(
     user: UserCreate,
     db: Session = Depends(get_db)
 ):
-    """
-    Create a new schedule.
-
-    - **adviseeID**: ID of the advisee/student
-    - **termID**: ID of the academic term
-    - **source**: Source of the schedule (USER, ADVISOR, SYSTEM) - defaults to USER
-    - **status**: Status of the schedule (DRAFT, APPROVED, REJECTED) - defaults to DRAFT
-    """
     return UserService.create_user(db=db, user_data=user)
 
 
@@ -131,15 +107,6 @@ def update_user(
     user: UserUpdate,
     db: Session = Depends(get_db)
 ):
-    """
-    Update an existing schedule.
-
-    - **schedule_id**: The ID of the schedule to update
-    - **status**: New status (DRAFT, APPROVED, REJECTED)
-    - **source**: New source (USER, ADVISOR, SYSTEM)
-
-    Note: Updating status to APPROVED/REJECTED will automatically set the corresponding timestamp.
-    """
     return UserService.update_user(db=db, user_id=user_id, user_data=user)
 
 
@@ -148,11 +115,4 @@ def delete_user(
     user_id: int,
     db: Session = Depends(get_db)
 ):
-    """
-    Delete a schedule.
-
-    - **schedule_id**: The ID of the schedule to delete
-
-    Note: This will cascade delete all classes associated with the schedule.
-    """
     return UserService.delete_user(db=db, user_id=user_id)

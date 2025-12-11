@@ -38,7 +38,6 @@ services:
       LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD?Set LDAP_ADMIN_PASSWORD in .env}
       LDAP_CONFIG_PASSWORD: ${LDAP_ADMIN_PASSWORD?Set LDAP_ADMIN_PASSWORD in .env}
 
-      # 🔓 Turn OFF TLS for now (plain LDAP on 389 inside Docker network)
       LDAP_TLS: "false"
 
       LDAP_REMOVE_CONFIG_AFTER_SETUP: "false"
@@ -47,12 +46,9 @@ services:
       - ldap-data:/var/lib/ldap
       - ldap-config:/etc/ldap/slapd.d
       - ./ldap/bootstrap:/container/service/slapd/assets/config/bootstrap/ldif/custom
-      # certs still mounted but not required anymore; safe to keep
       - ./ldap/certs:/container/service/slapd/assets/certs
     ports:
       - "389:389"
-      # 636 not needed without TLS, but ok if you want to keep it closed:
-      # - "636:636"
     networks:
       - adviseme-net
 
@@ -66,8 +62,7 @@ services:
       LDAP_HOST: adviseme-openldap
       LDAP_BASE_DN: dc=adviseme,dc=local
       LDAP_PEOPLE_DN: ou=People,dc=adviseme,dc=local
-
-      # 🔑 Bind directly as admin (using existing secret)
+      
       LDAP_BIND_DN: cn=admin,dc=adviseme,dc=local
       LDAP_BIND_PASSWORD: ${LDAP_ADMIN_PASSWORD?Set LDAP_ADMIN_PASSWORD in .env}
 
@@ -75,11 +70,9 @@ services:
       JWT_EXPIRE_MINUTES: "60"
       ALLOWED_ORIGINS: "https://localhost,https://localhost:5173,https://localhost:3000,https://adviseme.local"
 
-      # 🔓 Use plain LDAP on 389 (no SSL)
       LDAP_PORT: 389
       LDAP_USE_SSL: "false"
       LDAP_TLS_VALIDATE: "false"
-      # LDAP_CA_CERT_FILE no longer needed
     expose:
       - "8080"
     depends_on:

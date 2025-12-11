@@ -107,6 +107,7 @@ class DegreePlanValidation(Base):
     )
     completionPercent = Column(Float, nullable=False, default=0.0)
     issues = Column(MySQLJSON, nullable=True)
+    llmCourseBreakdown = Column(MySQLJSON, nullable=True)
     message = Column(String(255))
     triggeredBy = Column(Integer, nullable=True)
     startedAt = Column(DateTime)

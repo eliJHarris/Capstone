@@ -31,78 +31,81 @@
           type="error"
           class="mb-4"
           variant="tonal"
+          closable
+          @click:close="clearError"
         >
           {{ errorMsg }}
         </v-alert>
 
-        <v-alert
-          v-else-if="loading"
-          type="info"
-          variant="tonal"
-          class="mb-4"
-        >
-          Loading notifications...
-        </v-alert>
+        <v-card rounded="xl" class="notification-card">
+          <v-data-table
+            :headers="headers"
+            :items="tableItems"
+            :sort-by="sortBy"
+            :loading="loading"
+            item-value="notificationID"
+            hover
+            density="comfortable"
+            class="notification-table"
+          >
+            <template #item.isRead="{ item }">
+              <v-chip
+                size="small"
+                :color="asRow(item).isRead ? 'success' : 'error'"
+                variant="tonal"
+              >
+                {{ asRow(item).isRead ? 'Read' : 'Unread' }}
+              </v-chip>
+            </template>
 
-        <v-data-table
-          v-else-if="notifications.length > 0"
-          :headers="headers"
-          :items="notifications"
-          item-key="notificationID"
-          v-model:sort-by="sortBy"
-          :items-per-page="10"
-          hover
-          density="comfortable"
-          class="rounded-lg"
-        >
-          <template #item.description="{ item }">
-            <div class="font-weight-medium">
-              {{ item.raw?.description || item.description }}
-            </div>
-          </template>
+            <template #item.description="{ item }">
+              <div class="text-body-2">{{ asRow(item).description }}</div>
+              <div class="text-caption text-medium-emphasis">
+                ID: {{ asRow(item).notificationID }}
+              </div>
+            </template>
 
-          <template #item.isRead="{ item }">
-            <v-chip
-              size="small"
-              :color="(item.raw?.isRead ?? item.isRead) ? 'success' : 'secondary'"
-              variant="tonal"
-            >
-              {{ (item.raw?.isRead ?? item.isRead) ? 'Read' : 'Unread' }}
-            </v-chip>
-          </template>
+            <template #item.createdAt="{ item }">
+              {{ formatDate(asRow(item).createdAt) }}
+            </template>
 
-          <template #item.createdAt="{ item }">
-            <div class="text-caption text-medium-emphasis">
-              {{ formatTimestamp(item.raw?.createdAt || item.createdAt) }}
-            </div>
-          </template>
+            <template #item.actions="{ item }">
+              <div class="text-right">
+                <v-btn
+                  size="small"
+                  variant="text"
+                  color="primary"
+                  :loading="updatingId === asRow(item).notificationID"
+                  @click="toggleRead(asRow(item))"
+                >
+                  Mark {{ asRow(item).isRead ? 'unread' : 'read' }}
+                </v-btn>
+              </div>
+            </template>
 
-          <template #item.actions="{ item }">
-            <v-btn
-              size="small"
-              variant="text"
-              :color="(item.raw?.isRead ?? item.isRead) ? 'secondary' : 'primary'"
-              :loading="updatingId === (item.raw?.notificationID ?? item.notificationID)"
-              :disabled="updatingId === (item.raw?.notificationID ?? item.notificationID)"
-              @click="
-                toggleReadState(
-                  item.raw || item,
-                  !(item.raw?.isRead ?? item.isRead)
-                )
-              "
-            >
-              {{ (item.raw?.isRead ?? item.isRead) ? 'Mark as unread' : 'Mark as read' }}
-            </v-btn>
-          </template>
+            <template #loading>
+              <tr>
+                <td :colspan="headers.length">
+                  <v-progress-linear indeterminate color="primary" class="ma-4" />
+                </td>
+              </tr>
+            </template>
 
-          <template #no-data>
-            <v-alert type="info" border="start" variant="tonal" class="ma-4">
-              No notifications found.
-            </v-alert>
-          </template>
-        </v-data-table>
-
-        <v-alert v-else type="info">No notifications found.</v-alert>
+            <template #no-data>
+              <v-alert type="info" variant="tonal" class="ma-4">
+                No notifications found.
+                <v-btn
+                  class="ml-2"
+                  size="small"
+                  variant="text"
+                  @click="loadNotifications(true)"
+                >
+                  Reload
+                </v-btn>
+              </v-alert>
+            </template>
+          </v-data-table>
+        </v-card>
       </v-container>
     </v-main>
   </v-app>
@@ -110,68 +113,79 @@
 
 <script setup>
 import { computed, ref, onMounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import AppNavbar from '@/components/AppNavbar.vue'
 import AppSidebar from '@/components/AppSidebar.vue'
 import { useCurrentUser } from '@/composables/useCurrentUser'
 import { useNotificationsStore } from '@/stores/notifications'
 
-const errorMsg = ref('')
+const localError = ref('')
 const updatingId = ref(null)
-const sortBy = ref([{ key: 'createdAt', order: 'desc' }])
-const notificationsStore = useNotificationsStore()
-const notifications = computed(() => notificationsStore.notifications)
-const unreadCount = computed(() => notificationsStore.unreadCount)
-const loading = computed(() => notificationsStore.loading)
-const { role, user, loadUserContext } = useCurrentUser()
 
 defineProps({
   tabName: String
 })
 
-const formatTimestamp = (value) => {
-  if (!value) return ''
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString()
-}
-
+const { role, user, loadUserContext } = useCurrentUser()
+const notificationsStore = useNotificationsStore()
+const { notifications, unreadCount, loading, error } = storeToRefs(notificationsStore)
+const sortBy = ref([{ key: 'createdAt', order: 'desc' }])
 const headers = [
-  { title: 'Description', key: 'description', sortable: false },
-  { title: 'Status', key: 'isRead', sortable: false, width: 140 },
-  { title: 'Time', key: 'createdAt' },
-  { title: 'Actions', key: 'actions', sortable: false, width: 160 },
+  { title: 'Status', key: 'isRead', sortable: false, width: '120px' },
+  { title: 'Description', key: 'description', sortable: false, minWidth: '280px' },
+  { title: 'Time', key: 'createdAt', sortable: true, width: '220px' },
+  { title: 'Action', key: 'actions', sortable: false, align: 'end', width: '160px' },
 ]
 
+const errorMsg = computed(() => localError.value || error.value || '')
+const tableItems = computed(() => notifications.value || [])
+const clearError = () => {
+  localError.value = ''
+  error.value = ''
+}
+
+const asRow = (slotItem) => slotItem?.raw ?? slotItem ?? {}
+
+const formatDate = (value) => {
+  if (!value) return '—'
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+}
+
 const loadNotifications = async (force = false) => {
-  errorMsg.value = ''
+  localError.value = ''
   try {
-    let userId = user.value?.userID
-    if (!userId) {
-      await loadUserContext()
-      userId = user.value?.userID
-    }
+    const userId = user.value?.userID
     if (!userId) {
       throw new Error('Unable to resolve user for notifications.')
     }
     await notificationsStore.loadForUser(userId, { force })
-  } catch (error) {
-    console.error('Error fetching data:', error)
-    if (error?.status === 404) {
-      errorMsg.value = ''
-    } else {
-      errorMsg.value = error.message || 'Failed to load notifications'
-    }
+  } catch (err) {
+    console.error('Error fetching data:', err)
+    localError.value = err.message || 'Failed to load notifications'
   }
 }
 
-const toggleReadState = async (notification, isRead) => {
+const toggleRead = async (notification) => {
   if (!notification?.notificationID) return
   updatingId.value = notification.notificationID
-  errorMsg.value = ''
+  localError.value = ''
   try {
-    await notificationsStore.setReadState(notification.notificationID, isRead)
-  } catch (error) {
-    console.error('Error updating notification:', error)
-    errorMsg.value = error.message || 'Failed to update notification status'
+    await notificationsStore.setReadState(
+      notification.notificationID,
+      !notification.isRead
+    )
+  } catch (err) {
+    console.error('Failed to update notification', err)
+    localError.value = err.message || 'Failed to update notification status'
   } finally {
     updatingId.value = null
   }
@@ -180,8 +194,8 @@ const toggleReadState = async (notification, isRead) => {
 onMounted(async () => {
   try {
     await loadUserContext()
-  } catch (error) {
-    errorMsg.value = error.message || 'Failed to load user'
+  } catch (err) {
+    localError.value = err.message || 'Failed to load user'
     return
   }
   await loadNotifications(true)

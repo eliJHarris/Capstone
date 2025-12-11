@@ -1,8 +1,7 @@
 <template>
   <v-navigation-drawer
-    model-value="true"
+    v-model="drawerOpen"
     width="260"
-    variant="permanent"
     class="pa-2"
     style="background-color:#ccccc6;"
   >
@@ -38,10 +37,11 @@
 </template>
 
 <script>
-import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { normalizeRole, NORMALIZED_ROLES } from '@/utils/auth'
 import { AUTH_ROLE_EVENT } from '@/composables/useUserRole'
 import { useCurrentUser } from '@/composables/useCurrentUser'
+import { useLayoutStore } from '@/stores/layout'
 import { useNotificationsStore } from '@/stores/notifications'
 
 export default {
@@ -50,23 +50,26 @@ export default {
     role: { type: String, default: NORMALIZED_ROLES.STUDENT }
   },
   setup() {
-    const { displayName, username, refreshIdentity, user, loadUserContext } = useCurrentUser()
-    const notificationsStore = useNotificationsStore()
+    const { displayName, username, user, refreshIdentity, loadUserContext } = useCurrentUser()
     const userLabel = computed(() => displayName.value || username.value || 'User')
+    const layoutStore = useLayoutStore()
+    const notificationsStore = useNotificationsStore()
     const unreadCount = computed(() => notificationsStore.unreadCount)
-
-    const loadNotificationsForSidebar = async () => {
+    const drawerOpen = computed({
+      get: () => layoutStore.sidebarOpen,
+      set: (value) => layoutStore.setSidebar(value),
+    })
+    const loadNotifications = async () => {
       try {
-        let userId = user.value?.userID
-        if (!userId) {
+        if (!user.value) {
           await loadUserContext()
-          userId = user.value?.userID
         }
+        const userId = user.value?.userID
         if (userId) {
           await notificationsStore.loadForUser(userId)
         }
-      } catch (error) {
-        console.error('Failed to load notifications for sidebar', error)
+      } catch (err) {
+        console.warn('Failed to load notifications for sidebar', err)
       }
     }
 
@@ -88,7 +91,7 @@ export default {
         window.addEventListener('storage', handleIdentityChange)
         window.addEventListener(AUTH_ROLE_EVENT, handleIdentityChange)
       }
-      loadNotificationsForSidebar()
+      loadNotifications()
     })
 
     onBeforeUnmount(() => {
@@ -98,14 +101,9 @@ export default {
       }
     })
 
-    watch(user, (next, prev) => {
-      if (next?.userID && next.userID !== prev?.userID) {
-        loadNotificationsForSidebar()
-      }
-    })
-
     return {
       userLabel,
+      drawerOpen,
       unreadCount,
     }
   },
@@ -122,22 +120,34 @@ export default {
       if (this.normalizedRole === NORMALIZED_ROLES.STUDENT) {
         return [
           { title: 'Dashboard', to: '/dashboard' },
+          { title: 'Profile', to: '/profile' },
           { title: 'Notifications', to: '/notifications', badge: this.unreadCount },
           { title: 'Transcripts', to: '/transcripts' },
           { title: 'Degree Plan', to: '/degree-plan' },
           { title: 'Schedules / Appointments', to: '/schedules' },
-          { title: 'PDF Scraper', to: '/pdf-scraper' },
         ]
       }
+
+      if (this.normalizedRole === NORMALIZED_ROLES.ADVISOR) {
+        return [
+          { title: 'Dashboard', to: '/dashboard' },
+          { title: 'Notifications', to: '/notifications', badge: this.unreadCount },
+          { title: 'Student List', to: '/student-list' },
+          { title: 'Transcripts', to: '/transcripts' },
+          { title: 'Degree Plan', to: '/degree-plan' },
+          { title: 'Schedules / Appointments', to: '/schedules' },
+        ]
+      }
+
+      // Admins and other roles
       return [
         { title: 'Dashboard', to: '/dashboard' },
+        { title: 'Profile', to: '/profile' },
         { title: 'Notifications', to: '/notifications', badge: this.unreadCount },
         { title: 'Student List', to: '/student-list' },
-        { title: 'Security', to: '/security' },
         { title: 'Transcripts', to: '/transcripts' },
         { title: 'Degree Plan', to: '/degree-plan' },
         { title: 'Schedules / Appointments', to: '/schedules' },
-        { title: 'PDF Scraper', to: '/pdf-scraper' },
       ]
     },
   }

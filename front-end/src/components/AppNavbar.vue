@@ -1,28 +1,18 @@
 <template>
   <v-app-bar flat elevate-on-scroll style="background-color:#ccccc6;">
+    <v-btn
+      icon
+      variant="text"
+      class="mr-2"
+      @click="toggleSidebar"
+    >
+      <v-icon>mdi-menu</v-icon>
+    </v-btn>
     <v-app-bar-title class="d-flex align-center">
-      <v-img
-        src="/src/assets/mockup/Logo.png"
-        alt="logo"
-        max-width="40"
-        class="mr-3"
-      />
-      <span>Advise Me</span>
+      <span>AdviseMe™</span>
     </v-app-bar-title>
 
     <v-spacer />
-
-    <v-text-field
-      hide-details
-      dense
-      placeholder="Search"
-      append-inner-icon="mdi-magnify"
-      style="max-width:320px"
-    />
-
-    <v-btn icon>
-      <v-icon>mdi-bell</v-icon>
-    </v-btn>
 
     <v-menu>
       <template #activator="{ props }">
@@ -39,8 +29,6 @@
       </template>
 
       <v-list>
-        <v-list-item>Profile</v-list-item>
-        <v-list-item>Settings</v-list-item>
         <v-list-item class="logout-item" @click="handleLogout">
           <template #prepend>
             <v-icon color="red">mdi-logout</v-icon>
@@ -57,11 +45,14 @@ import { computed, onBeforeUnmount, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { AUTH_ROLE_EVENT } from "@/composables/useUserRole";
 import { useCurrentUser } from "@/composables/useCurrentUser";
+import { useLayoutStore } from "@/stores/layout";
 import { logout } from "@/services/auth.js";
 
 const router = useRouter();
 const { displayName, username, refreshIdentity } = useCurrentUser();
+const layoutStore = useLayoutStore();
 const userLabel = computed(() => displayName.value || username.value || "User");
+const toggleSidebar = () => layoutStore.toggleSidebar();
 
 const handleIdentityChange = (event) => {
   if (

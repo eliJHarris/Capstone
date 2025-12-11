@@ -27,6 +27,7 @@ from schemas.schedule import (
     ClassInSchedule,
     ScheduleStatus,
     SectionSearchItem,
+    AIScheduleNotificationRequest,
 )
 
 
@@ -161,7 +162,6 @@ class ScheduleService:
             .order_by(Schedule.createdWhen.desc())
         )
 
-        # Apply filters
         if advisee_id:
             query = query.filter(Schedule.adviseeID == advisee_id)
         if advisee_name:
@@ -186,7 +186,6 @@ class ScheduleService:
             )
             advisee_name_map = {advisee_id: username for advisee_id, username in rows}
 
-        # Build response with class count
         result = []
         for schedule in schedules:
             class_count = db.query(Class).filter(Class.scheduleID == schedule.scheduleID).count()
@@ -202,6 +201,7 @@ class ScheduleService:
                 createdWhen=schedule.createdWhen,
                 approvedWhen=schedule.approvedWhen,
                 rejectedWhen=schedule.rejectedWhen,
+                advisorFeedback=schedule.advisorFeedback,
                 classCount=class_count
             ))
 
@@ -209,9 +209,6 @@ class ScheduleService:
 
     @staticmethod
     def get_schedule_by_id(db: Session, schedule_id: int) -> ScheduleResponse:
-        """
-        Get a specific schedule by ID with all classes
-        """
         schedule = (
             db.query(Schedule)
             .options(
@@ -270,15 +267,18 @@ class ScheduleService:
             createdWhen=schedule.createdWhen,
             approvedWhen=schedule.approvedWhen,
             rejectedWhen=schedule.rejectedWhen,
+            advisorFeedback=schedule.advisorFeedback,
             classes=class_list
         )
 
     @staticmethod
-    def create_schedule(db: Session, schedule_data: ScheduleCreate) -> ScheduleResponse:
-        """
-        Create a new schedule
-        """
-        # Verify term exists
+    def create_schedule(
+        db: Session,
+        schedule_data: ScheduleCreate,
+        actor_role: str = "student",
+        actor_user_id: Optional[int] = None,
+    ) -> ScheduleResponse:
+
         term = db.query(Term).filter(Term.termID == schedule_data.termID).first()
         if not term:
             raise HTTPException(
@@ -286,7 +286,6 @@ class ScheduleService:
                 detail=f"Term with ID {schedule_data.termID} not found"
             )
 
-        # Create new schedule
         new_schedule = Schedule(
             adviseeID=schedule_data.adviseeID,
             termID=schedule_data.termID,
@@ -294,19 +293,25 @@ class ScheduleService:
             status=ScheduleStatusEnum(schedule_data.status.value),
             createdWhen=datetime.utcnow(),
             approvedWhen=None,
-            rejectedWhen=None
+            rejectedWhen=None,
+            advisorFeedback=schedule_data.advisorFeedback,
         )
 
         db.add(new_schedule)
         db.flush()
 
+        actor_label = "Advisor" if actor_role == "advisor" else "Student"
+        notification_description = (
+            f"{actor_label} created schedule {new_schedule.scheduleID} for term "
+            f"{term.code} with status {new_schedule.status.value}."
+        )
         NotificationService.notify_advisee_and_advisor(
             db,
             advisee_id=schedule_data.adviseeID,
-            description=(
-                f"Schedule {new_schedule.scheduleID} created for term "
-                f"{term.code} with status {new_schedule.status.value}."
-            ),
+            description=notification_description,
+            include_advisee=actor_role == "advisor",
+            include_advisor=actor_role != "advisor",
+            actor_user_id=actor_user_id,
         )
         db.commit()
         db.refresh(new_schedule)
@@ -314,10 +319,13 @@ class ScheduleService:
         return ScheduleService.get_schedule_by_id(db, new_schedule.scheduleID)
 
     @staticmethod
-    def update_schedule(db: Session, schedule_id: int, schedule_data: ScheduleUpdate) -> ScheduleResponse:
-        """
-        Update an existing schedule
-        """
+    def update_schedule(
+        db: Session,
+        schedule_id: int,
+        schedule_data: ScheduleUpdate,
+        actor_user_id: Optional[int] = None,
+    ) -> ScheduleResponse:
+
         schedule = db.query(Schedule).filter(Schedule.scheduleID == schedule_id).first()
 
         if not schedule:
@@ -327,7 +335,6 @@ class ScheduleService:
         )
 
         status_changed = False
-        # Update fields if provided
         if schedule_data.status is not None:
             if (
                 schedule_data.status == ScheduleStatus.APPROVED
@@ -343,7 +350,6 @@ class ScheduleService:
                 status_changed = True
             schedule.status = new_status
 
-            # Update timestamp based on status
             if schedule_data.status == ScheduleStatus.APPROVED:
                 schedule.approvedWhen = datetime.utcnow()
                 schedule.rejectedWhen = None
@@ -356,6 +362,8 @@ class ScheduleService:
 
         if schedule_data.source is not None:
             schedule.source = ScheduleSourceEnum(schedule_data.source.value)
+        if schedule_data.advisorFeedback is not None:
+            schedule.advisorFeedback = schedule_data.advisorFeedback.strip() or None
 
         if status_changed:
             term_code = ScheduleService._term_code(db, schedule.termID)
@@ -366,6 +374,9 @@ class ScheduleService:
                     f"Schedule {schedule_id} status updated to "
                     f"{schedule.status.value} for term {term_code}."
                 ),
+                include_advisee=True,
+                include_advisor=False,
+                actor_user_id=actor_user_id,
             )
 
         db.commit()
@@ -375,9 +386,6 @@ class ScheduleService:
 
     @staticmethod
     def delete_schedule(db: Session, schedule_id: int) -> dict:
-        """
-        Delete a schedule
-        """
         schedule = db.query(Schedule).filter(Schedule.scheduleID == schedule_id).first()
 
         if not schedule:
@@ -392,11 +400,15 @@ class ScheduleService:
         return {"message": f"Schedule {schedule_id} deleted successfully"}
 
     @staticmethod
-    def add_class_to_schedule(db: Session, schedule_id: int, section_id: int) -> ScheduleResponse:
-        """
-        Add a class (section) to a schedule
-        """
-        # Verify schedule exists
+    def add_class_to_schedule(
+        db: Session,
+        schedule_id: int,
+        section_id: int,
+        actor_role: str = "student",
+        ai_assisted: bool = False,
+        actor_user_id: Optional[int] = None,
+    ) -> ScheduleResponse:
+
         schedule = db.query(Schedule).filter(Schedule.scheduleID == schedule_id).first()
         if not schedule:
             raise HTTPException(
@@ -410,7 +422,6 @@ class ScheduleService:
                 detail="Only DRAFT schedules can be modified",
             )
 
-        # Verify section exists
         section = db.query(Section).filter(Section.sectionID == section_id).first()
         if not section:
             raise HTTPException(
@@ -418,7 +429,7 @@ class ScheduleService:
                 detail=f"Section with ID {section_id} not found"
             )
 
-        # Check if section belongs to the same term as schedule
+
         if section.termID != schedule.termID:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -437,7 +448,6 @@ class ScheduleService:
                 detail=f"Section {section_id} is full",
             )
 
-        # Check if class already exists in schedule
         existing_class = db.query(Class).filter(
             Class.scheduleID == schedule_id,
             Class.sectionID == section_id
@@ -449,14 +459,12 @@ class ScheduleService:
                 detail=f"Section {section_id} is already in schedule {schedule_id}"
             )
 
-        # Validate that the advisee has completed required prerequisites before scheduling
         ScheduleService._validate_prerequisites(
             db=db,
             advisee_id=schedule.adviseeID,
             target_course_id=section.courseID,
         )
 
-        # Create new class
         new_class = Class(
             sectionID=section_id,
             scheduleID=schedule_id,
@@ -467,7 +475,6 @@ class ScheduleService:
         db.add(new_class)
         section.enrolled = min(section.capacity, section.enrolled + 1)
 
-        # Mirror the scheduled class into enrollments so the transcript view reflects in-progress courses
         existing_enrollment = (
             db.query(Enrollment)
             .filter(
@@ -492,20 +499,25 @@ class ScheduleService:
 
         course_name = section.course.courseName if section.course else "Section"
         term_code = ScheduleService._term_code(db, schedule.termID)
+        actor_label = "Advisor" if actor_role == "advisor" else "Student"
+        mode_text = "using AI assistance" if ai_assisted else "manually"
+        description = (
+            f"{actor_label} added {course_name} ({section.crn}) to schedule "
+            f"{schedule_id} for term {term_code} {mode_text}."
+        )
         NotificationService.notify_advisee_and_advisor(
             db,
             advisee_id=schedule.adviseeID,
-            description=(
-                f"Added {course_name} ({section.crn}) to schedule "
-                f"{schedule_id} for term {term_code}."
-            ),
+            description=description,
+            include_advisee=actor_role == "advisor",
+            include_advisor=actor_role != "advisor",
+            actor_user_id=actor_user_id,
         )
 
         try:
             db.commit()
         except IntegrityError:
             db.rollback()
-            # Surface a clear message instead of a 500 when constraints are hit
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Unable to add class due to a database constraint (likely duplicate section for this schedule)",
@@ -514,10 +526,14 @@ class ScheduleService:
         return ScheduleService.get_schedule_by_id(db, schedule_id)
 
     @staticmethod
-    def remove_class_from_schedule(db: Session, schedule_id: int, class_id: int) -> ScheduleResponse:
-        """
-        Remove a class from a schedule
-        """
+    def remove_class_from_schedule(
+        db: Session,
+        schedule_id: int,
+        class_id: int,
+        actor_role: str = "student",
+        actor_user_id: Optional[int] = None,
+    ) -> ScheduleResponse:
+
         cls = (
             db.query(Class)
             .options(joinedload(Class.section), joinedload(Class.schedule))
@@ -537,11 +553,9 @@ class ScheduleService:
                 detail="Only DRAFT schedules can be modified",
         )
 
-        # Keep capacity accounting accurate
         if cls.section and cls.section.enrolled > 0:
             cls.section.enrolled -= 1
 
-        # Remove the mirrored enrollment so the transcript no longer lists the course
         enrollment = (
             db.query(Enrollment)
             .filter(
@@ -557,16 +571,71 @@ class ScheduleService:
         course_name = cls.section.course.courseName if cls.section and cls.section.course else "Section"
         crn = cls.section.crn if cls.section else "class"
         term_code = ScheduleService._term_code(db, cls.schedule.termID)
+        actor_label = "Advisor" if actor_role == "advisor" else "Student"
+        description = (
+            f"{actor_label} removed {course_name} ({crn}) from schedule "
+            f"{schedule_id} for term {term_code}."
+        )
         NotificationService.notify_advisee_and_advisor(
             db,
             advisee_id=cls.schedule.adviseeID,
-            description=(
-                f"Removed {course_name} ({crn}) from schedule "
-                f"{schedule_id} for term {term_code}."
-            ),
+            description=description,
+            include_advisee=actor_role == "advisor",
+            include_advisor=actor_role != "advisor",
+            actor_user_id=actor_user_id,
         )
 
         db.delete(cls)
         db.commit()
 
         return ScheduleService.get_schedule_by_id(db, schedule_id)
+
+    @staticmethod
+    def notify_ai_schedule_application(
+        db: Session,
+        schedule_id: int,
+        payload: AIScheduleNotificationRequest,
+        actor_user_id: Optional[int] = None,
+    ) -> dict:
+        """
+        Queue a notification when an AI schedule option has been applied.
+        """
+        if not payload.courseNames:
+            return {"message": "No new classes were reported for notification."}
+
+        schedule = db.query(Schedule).filter(Schedule.scheduleID == schedule_id).first()
+        if not schedule:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Schedule with ID {schedule_id} not found",
+            )
+
+        term_code = ScheduleService._term_code(db, schedule.termID)
+        sanitized_names = [
+            name.strip()
+            for name in payload.courseNames
+            if name and isinstance(name, str) and name.strip()
+        ]
+        if not sanitized_names:
+            return {"message": "Course names were empty; notification skipped."}
+
+        preview = ", ".join(sanitized_names[:3])
+        if len(sanitized_names) > 3:
+            preview = f"{preview}, ..."
+
+        course_label = "classes" if len(sanitized_names) != 1 else "class"
+        description = (
+            f"AI schedule option {payload.optionNumber} added {len(sanitized_names)} {course_label}"
+            f" ({preview}) to schedule {schedule_id} for term {term_code}."
+        )
+
+        NotificationService.notify_advisee_and_advisor(
+            db,
+            advisee_id=schedule.adviseeID,
+            description=description,
+            include_advisee=False,
+            include_advisor=True,
+            actor_user_id=actor_user_id,
+        )
+        db.commit()
+        return {"message": "Notification queued."}

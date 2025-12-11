@@ -226,18 +226,17 @@
           class="mb-4"
           :schedule="selectedSchedule"
           :status-options="statusOptions"
-          :loading="loadingDetail"
-          :mutation-loading="mutationLoading"
-          :section-options="sectionOptions"
-          :section-results="sectionResults"
-          :section-loading="sectionSearchLoading"
+  :loading="loadingDetail"
+  :mutation-loading="mutationLoading"
+  :section-options="sectionOptions"
+  :section-results="sectionResults"
+  :section-loading="sectionSearchLoading"
           :suggestions="suggestions"
           :suggestion-loading="suggestionLoading"
           :suggestion-error="suggestionError"
           :general-recommendations="suggestionRecommendations"
           :suggestion-note="suggestionNote"
           :disable-status-change="isStudent"
-          :can-delete="!isStudent"
           :status-change-hint="isStudent ? 'Students cannot change schedule status.' : ''"
           @update-status="handleStatusUpdate"
           @delete="handleDelete"
@@ -383,7 +382,6 @@ import { fetchAdvisees } from '@/services/advisees'
 import { fetchTerms } from '@/services/terms'
 import { useCurrentUser } from '@/composables/useCurrentUser'
 import { NORMALIZED_ROLES } from '@/utils/auth'
-import { apiFetch } from '@/services/apiClient'
 
 const scheduleStore = useScheduleStore()
 const {
@@ -678,17 +676,21 @@ const handleCreate = async () => {
   }
 }
 
-const handleStatusUpdate = async (newStatus) => {
+const handleStatusUpdate = async ({ status: newStatus, advisorFeedback } = {}) => {
   if (!selectedSchedule.value) return
   if (isStudent.value) {
     showFeedback('Students cannot change schedule status.', 'error')
     return
   }
+  if (newStatus === undefined && advisorFeedback === undefined) return
+  const payload = {}
+  if (newStatus !== undefined) payload.status = newStatus
+  if (advisorFeedback !== undefined) payload.advisorFeedback = advisorFeedback
   try {
-    await scheduleStore.updateSchedule(selectedSchedule.value.scheduleID, { status: newStatus })
-    showFeedback('Schedule status updated')
+    await scheduleStore.updateSchedule(selectedSchedule.value.scheduleID, payload)
+    showFeedback('Schedule updates saved')
   } catch (err) {
-    showFeedback(err.message || 'Failed to update status', 'error')
+    showFeedback(err.message || 'Failed to update schedule', 'error')
   }
 }
 
@@ -838,7 +840,6 @@ onMounted(async () => {
   await loadTerms()
 })
 
-// Prerequisite fallback UX
 const prereqDialog = ref(false)
 const prereqLoading = ref(false)
 const prereqError = ref('')

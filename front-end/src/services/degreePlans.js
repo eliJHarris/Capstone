@@ -19,22 +19,33 @@ const buildQuery = (params = {}) => {
   return query ? `?${query}` : ''
 }
 
-const adviseePath = (adviseeId, suffix) => `${DEGREE_PLANS_PREFIX}/advisees/${adviseeId}${suffix}`
+const adviseePath = (adviseeId, suffix) =>
+  `${DEGREE_PLANS_PREFIX}/advisees/${adviseeId}${suffix}`
 
-export async function fetchAdviseeSummary(adviseeId) {
+
+export async function fetchAdviseeSummary(adviseeId, options = {}) {
   requireAdviseeId(adviseeId)
-  return apiFetch(adviseePath(adviseeId, '/summary'))
+  const { allowBootstrap } = options
+  const query = buildQuery({ allow_bootstrap: allowBootstrap })
+  return apiFetch(`${adviseePath(adviseeId, '/summary')}${query}`)
 }
+
 
 export async function upsertAdviseeContext(adviseeId, payload = {}, options = {}) {
   requireAdviseeId(adviseeId)
   const { autoValidate, query: extraQuery = {} } = options
-  const query = buildQuery({ ...extraQuery, auto_validate: autoValidate })
+
+  const query = buildQuery({
+    ...extraQuery,
+    auto_validate: autoValidate,
+  })
+
   return apiFetch(`${adviseePath(adviseeId, '/context')}${query}`, {
     method: 'POST',
     body: payload,
   })
 }
+
 
 export async function requestPlanValidation(adviseeId, payload = {}, options = {}) {
   requireAdviseeId(adviseeId)
@@ -44,6 +55,7 @@ export async function requestPlanValidation(adviseeId, payload = {}, options = {
     body: payload,
   })
 }
+
 
 export async function saveRequirementSet(payload) {
   if (!payload) {
@@ -57,11 +69,21 @@ export async function saveRequirementSet(payload) {
 
 export async function importDegreePlanPdf(adviseeId, pdfUrl) {
   requireAdviseeId(adviseeId)
+
   if (!pdfUrl) {
     throw new Error('Missing PDF URL')
   }
+
   return apiFetch(`/import/pdf/${adviseeId}`, {
     method: 'POST',
     body: { pdfUrl },
   })
+}
+
+
+export async function fetchDegreeContext(adviseeId, options = {}) {
+  requireAdviseeId(adviseeId)
+  const { allowBootstrap } = options
+  const query = buildQuery({ allow_bootstrap: allowBootstrap })
+  return apiFetch(`${adviseePath(adviseeId, '/context')}${query}`)
 }

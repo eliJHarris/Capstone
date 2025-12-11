@@ -3,6 +3,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from db.database import get_db
+from models.degree_plan import DegreePlanValidation, ValidationRunType
+from models.user import User
 from schemas.degree_plan import (
     AdviseeContextResponse,
     AdviseeContextUpsert,
@@ -13,12 +15,19 @@ from schemas.degree_plan import (
     ValidationRequest,
     ValidationRunTypeEnum,
 )
-from services.degree_plan_service import DegreePlanService
-from models.degree_plan import ValidationRunType
+from services.degree_plan_service import (
+    DegreePlanService,
+    normalize_catalog_display,
+    _merge_completed_course_sources,
+    _transcript_completed_courses,
+)
 
 router = APIRouter(prefix="/degree-plans", tags=["degree plans"])
 
 
+# ------------------------------
+# REQUIREMENT SET MANAGEMENT
+# ------------------------------
 @router.post(
     "/requirements",
     response_model=DegreeRequirementSetResponse,
@@ -39,6 +48,9 @@ def list_requirement_sets(
     return DegreePlanService.list_requirement_sets(db, program_code)
 
 
+# ------------------------------
+# CONTEXT UPSERT
+# ------------------------------
 @router.post(
     "/advisees/{advisee_id}/context",
     response_model=AdviseeContextResponse,
@@ -47,13 +59,11 @@ def upsert_advisee_context(
     advisee_id: int,
     payload: AdviseeContextUpsert,
     background_tasks: BackgroundTasks,
-    auto_validate: bool = Query(
-        True,
-        description="Trigger an automatic validation after updating context",
-    ),
+    auto_validate: bool = Query(True),
     db: Session = Depends(get_db),
 ):
     context = DegreePlanService.upsert_context(db, advisee_id, payload)
+
     if auto_validate:
         try:
             DegreePlanService.enqueue_validation(
@@ -63,22 +73,26 @@ def upsert_advisee_context(
                 background_tasks=background_tasks,
             )
         except HTTPException:
-            # ignore missing context errors since we just created it
             pass
+
     return context
 
 
-@router.get(
-    "/advisees/{advisee_id}/summary",
-    response_model=AdviseePlanSummary,
-)
+# ------------------------------
+# SUMMARY ENDPOINT
+# ------------------------------
+@router.get("/advisees/{advisee_id}/summary")
 def get_advisee_summary(
     advisee_id: int,
+    allow_bootstrap: bool = Query(True),
     db: Session = Depends(get_db),
 ):
-    return DegreePlanService.get_advisee_summary(db, advisee_id)
+    return DegreePlanService.get_advisee_summary(db, advisee_id, allow_bootstrap=allow_bootstrap)
 
 
+# ------------------------------
+# VALIDATION TRIGGER
+# ------------------------------
 @router.post(
     "/advisees/{advisee_id}/validate",
     response_model=DegreePlanValidationResponse,
@@ -90,14 +104,13 @@ def request_validation(
     run_type: ValidationRunTypeEnum = ValidationRunTypeEnum.MANUAL,
     db: Session = Depends(get_db),
 ):
-    validation = DegreePlanService.enqueue_validation(
+    return DegreePlanService.enqueue_validation(
         db=db,
         advisee_id=advisee_id,
         run_type=ValidationRunType(run_type.value),
         triggered_by=payload.triggeredBy,
         background_tasks=background_tasks,
     )
-    return validation
 
 
 @router.get(
@@ -109,3 +122,99 @@ def list_validations(
     db: Session = Depends(get_db),
 ):
     return DegreePlanService.list_validations(db, advisee_id)
+
+
+# ------------------------------
+# NEW CONTEXT SNAPSHOT ENDPOINT
+# MATCHES DEGREE PLAN UI NEEDS
+# ------------------------------
+@router.get("/advisees/{advisee_id}/context")
+def get_degree_plan_context(
+    advisee_id: int,
+    allow_bootstrap: bool = Query(True),
+    db: Session = Depends(get_db),
+):
+    profile, context, requirement = DegreePlanService._ensure_context(
+        db,
+        advisee_id,
+        allow_bootstrap=allow_bootstrap,
+    )
+
+    if not profile:
+        raise HTTPException(status_code=404, detail="Advisee profile not found")
+
+    user = db.query(User).filter(User.userID == profile.userID).first()
+    profile_name = (user.username if user else None) or f"Advisee {advisee_id}"
+
+    requirement_payload = None
+    catalog_year = None
+
+    if requirement:
+        requirement_payload = {
+            "requirementSetID": requirement.requirementSetID,
+            "programCode": profile.major or requirement.programCode,
+            "catalogYear": normalize_catalog_display(requirement.catalogYear),
+            "programName": profile.degree_plan or requirement.programName,
+            "totalCredits": requirement.totalCredits,
+            "requirementGroups": requirement.requirementData or [],
+            "sourceDocument": requirement.sourceDocument,
+            "createdAt": requirement.createdAt,
+            "updatedAt": requirement.updatedAt,
+        }
+        catalog_year = requirement_payload["catalogYear"]
+
+    latest_validation = (
+        db.query(DegreePlanValidation)
+        .filter(DegreePlanValidation.adviseeID == advisee_id)
+        .order_by(DegreePlanValidation.createdAt.desc())
+        .first()
+    )
+
+    transcript_courses = _transcript_completed_courses(db, advisee_id)
+    merged_completed_courses = _merge_completed_course_sources(
+        context.completedCourses if context else [],
+        transcript_courses,
+    )
+    if context:
+        context.completedCourses = merged_completed_courses
+
+    validation_payload = None
+    if latest_validation:
+        computed = None
+        try:
+            computed = DegreePlanService.validate_degree_plan(db, advisee_id)
+        except HTTPException:
+            computed = None
+        normalized = DegreePlanService._normalize_validation_record(
+            latest_validation,
+            extras=computed,
+        )
+        validation_payload = DegreePlanValidationResponse.from_orm(normalized)
+
+    completed_courses = merged_completed_courses
+    try:
+        computed_credits = sum(
+            float(course.get("credits") or 0)
+            for course in completed_courses
+            if isinstance(course, dict)
+            and (course.get("status") or "").upper() not in {"IN_PROGRESS", "PLANNED"}
+        )
+    except Exception:
+        computed_credits = None
+
+    credits_completed = profile.credits_completed
+    if computed_credits:
+        if credits_completed is None or credits_completed <= 0 or credits_completed > computed_credits:
+            credits_completed = computed_credits
+
+    return {
+        "adviseeID": advisee_id,
+        "name": profile_name,
+        "major": profile.major,
+        "classification": getattr(profile.classification, "value", profile.classification),
+        "creditsCompleted": credits_completed,
+        "catalogYear": catalog_year,
+        "completedCourses": context.completedCourses if context else [],
+        "requirementSet": requirement_payload,
+        "validation": validation_payload,
+    }

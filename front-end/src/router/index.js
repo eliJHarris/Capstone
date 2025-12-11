@@ -10,6 +10,7 @@ import SchedulesView from '@/views/SchedulesView.vue'
 import PdfScraperView from '@/views/PdfScraperView.vue'
 import DegreePlanView from '@/views/DegreePlanView.vue'
 import StudentListView from '@/views/StudentListView.vue'
+import ProfileView from '@/views/ProfileView.vue'
 import TranscriptsView from '@/views/TranscriptsView.vue'
 
 const dashboardChildren = [
@@ -36,6 +37,11 @@ const dashboardChildren = [
     name: 'security',
     component: PlaceholderView,
     props: { title: 'Security', description: 'Account security settings and audit trails.' },
+  },
+  {
+    path: 'profile',
+    name: 'profile',
+    component: ProfileView,
   },
   { path: 'schedules', name: 'schedules', component: SchedulesView },
   { path: 'transcripts', name: 'transcripts', component: TranscriptsView },

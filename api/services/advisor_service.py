@@ -4,7 +4,7 @@ from datetime import datetime
 from fastapi import HTTPException, status
 
 from models.advisor import AdvisorProfile
-from models.user import User  # ensure this is correct path
+from models.user import User 
 
 from schemas.advisor import (
     AdvisorProfileCreate,
@@ -26,7 +26,6 @@ class AdvisorProfileService:
     ) -> List[AdvisorProfileResponse]:
         query = db.query(AdvisorProfile)
 
-        # Apply filters
         if advisorID:
             query = query.filter(AdvisorProfile.advisorID == advisorID)
         if name:
@@ -36,7 +35,6 @@ class AdvisorProfileService:
 
         advisors = query.offset(skip).limit(limit).all()
 
-        # Build response with class count
         result = []
         for advisor in advisors:
             result.append(AdvisorProfileResponse(
@@ -64,7 +62,6 @@ class AdvisorProfileService:
 
     @staticmethod
     def create(db: Session, profile_data: AdvisorProfileCreate) -> AdvisorProfileResponse:
-        # Confirm advisorID is a real user
         user = db.query(User).filter(User.userID == profile_data.advisorID).first()
         if not user:
             raise HTTPException(
@@ -72,7 +69,6 @@ class AdvisorProfileService:
                 detail=f"User with ID {profile_data.advisorID} not found"
             )
 
-        # Enforce single profile per advisor
         existing = db.query(AdvisorProfile).filter(
             AdvisorProfile.advisorID == profile_data.advisorID
         ).first()
@@ -108,7 +104,6 @@ class AdvisorProfileService:
                 detail=f"Advisor profile with ID {advisor_id} not found"
             )
 
-        # Only update provided fields
         if profile_data.name is not None:
             profile.name = profile_data.name
 

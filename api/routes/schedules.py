@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -14,17 +14,66 @@ from schemas.schedule import (
     SectionSearchItem,
     ScheduleSuggestionRequest,
     ScheduleSuggestionResponse,
+    AIScheduleNotificationRequest,
 )
 from services.schedule_service import ScheduleService
 from services.schedule_ai_service import ScheduleAISuggestionService
 from services.openai_service import get_openai_service
-from dependencies.auth import require_user
+from dependencies.auth import JWT_ALGO, JWT_SECRET, require_user
 from schemas.user import UserRole
+from jose import JWTError, jwt
+from models.user import User
 
 router = APIRouter(
     prefix="/schedules",
     tags=["schedules"]
 )
+
+
+def _normalize_role_label(value: Optional[str]) -> str:
+    if not value or not isinstance(value, str):
+        return ""
+    normalized = value.strip().lower()
+    if normalized in {"advisor", "adviser", "admin"}:
+        return "advisor"
+    if normalized in {"advisee", "student"}:
+        return "student"
+    return ""
+
+
+def _decode_authorization_claims(authorization: Optional[str]) -> dict:
+    if not authorization or not authorization.startswith("Bearer "):
+        return {}
+    token = authorization.split(" ", 1)[1]
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+    except JWTError:
+        return {}
+
+
+def _resolve_actor_role_from_authorization(authorization: Optional[str]) -> str:
+    claims = _decode_authorization_claims(authorization)
+    for key in ("role", "roles"):
+        value = claims.get(key)
+        if isinstance(value, list):
+            for entry in value:
+                normalized = _normalize_role_label(entry)
+                if normalized:
+                    return normalized
+        else:
+            normalized = _normalize_role_label(value)
+            if normalized:
+                return normalized
+    return "student"
+
+
+def _resolve_actor_user_id(authorization: Optional[str], db: Session) -> Optional[int]:
+    claims = _decode_authorization_claims(authorization)
+    username = claims.get("uid") or claims.get("sub") or claims.get("cn")
+    if not username:
+        return None
+    user = db.query(User).filter(User.username == username).first()
+    return user.userID if user else None
 
 
 @router.get("/", response_model=List[ScheduleListResponse])
@@ -38,17 +87,7 @@ def get_schedules(
     limit: int = Query(100, ge=1, le=500, description="Maximum number of records to return"),
     db: Session = Depends(get_db)
 ):
-    """
-    Get all schedules with optional filtering.
 
-    - **advisee_id**: Filter by advisee ID
-    - **advisee_name**: Filter by advisee username
-    - **term_id**: Filter by term ID
-    - **term_name**: Filter by term code/name
-    - **status**: Filter by schedule status (DRAFT, APPROVED, REJECTED)
-    - **skip**: Pagination - number of records to skip
-    - **limit**: Pagination - maximum number of records to return
-    """
     return ScheduleService.get_all_schedules(
         db=db,
         advisee_id=advisee_id,
@@ -72,9 +111,7 @@ def get_schedules_no_slash(
     limit: int = Query(100, ge=1, le=500, description="Maximum number of records to return"),
     db: Session = Depends(get_db)
 ):
-    """
-    Compatibility handler to avoid redirecting /schedules -> /schedules/ when callers omit the trailing slash.
-    """
+
     return get_schedules(
         advisee_id=advisee_id,
         advisee_name=advisee_name,
@@ -91,11 +128,7 @@ def get_schedule(
     schedule_id: int,
     db: Session = Depends(get_db)
 ):
-    """
-    Get a specific schedule by ID including all classes/sections.
 
-    - **schedule_id**: The ID of the schedule to retrieve
-    """
     return ScheduleService.get_schedule_by_id(db=db, schedule_id=schedule_id)
 
 
@@ -106,10 +139,7 @@ def search_sections_for_schedule(
     limit: Optional[int] = Query(None, ge=1, description="Optional max results"),
     db: Session = Depends(get_db)
 ):
-    """
-    List sections in the same term as the schedule, filtered by search, only OPEN sections.
-    Passing no limit returns all matching sections.
-    """
+
     return ScheduleService.list_sections_for_schedule(
         db=db,
         schedule_id=schedule_id,
@@ -124,9 +154,7 @@ async def generate_schedule_suggestions(
     payload: ScheduleSuggestionRequest = ScheduleSuggestionRequest(),
     db: Session = Depends(get_db),
 ):
-    """
-    Generate AI-assisted schedule suggestions using current degree context and open sections.
-    """
+
     try:
         openai_service = get_openai_service()
     except RuntimeError as exc:
@@ -137,44 +165,61 @@ async def generate_schedule_suggestions(
         return await run_in_threadpool(service.generate, schedule_id, payload.note)
     except HTTPException:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc: 
         raise HTTPException(
             status_code=502, detail=f"Failed to generate schedule suggestions: {exc}"
         ) from exc
 
 
+@router.post("/{schedule_id}/suggestions/notify")
+def notify_ai_schedule_application(
+    schedule_id: int,
+    payload: AIScheduleNotificationRequest,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+
+    ScheduleService.notify_ai_schedule_application(
+        db=db,
+        schedule_id=schedule_id,
+        payload=payload,
+        actor_user_id=_resolve_actor_user_id(authorization, db),
+    )
+    return {"message": "Notification queued."}
+
+
 @router.post("/", response_model=ScheduleResponse, status_code=201)
 def create_schedule(
     schedule: ScheduleCreate,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
-    """
-    Create a new schedule.
 
-    - **adviseeID**: ID of the advisee/student
-    - **termID**: ID of the academic term
-    - **source**: Source of the schedule (USER, ADVISOR, SYSTEM) - defaults to USER
-    - **status**: Status of the schedule (DRAFT, APPROVED, REJECTED) - defaults to DRAFT
-    """
-    return ScheduleService.create_schedule(db=db, schedule_data=schedule)
+    actor_role = _resolve_actor_role_from_authorization(authorization)
+    actor_user_id = _resolve_actor_user_id(authorization, db)
+    return ScheduleService.create_schedule(
+        db=db,
+        schedule_data=schedule,
+        actor_role=actor_role,
+        actor_user_id=actor_user_id,
+    )
 
 
 @router.put("/{schedule_id}", response_model=ScheduleResponse)
 def update_schedule(
     schedule_id: int,
     schedule: ScheduleUpdate,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
-    """
-    Update an existing schedule.
 
-    - **schedule_id**: The ID of the schedule to update
-    - **status**: New status (DRAFT, APPROVED, REJECTED)
-    - **source**: New source (USER, ADVISOR, SYSTEM)
-
-    Note: Updating status to APPROVED/REJECTED will automatically set the corresponding timestamp.
-    """
-    return ScheduleService.update_schedule(db=db, schedule_id=schedule_id, schedule_data=schedule)
+    actor_user_id = _resolve_actor_user_id(authorization, db)
+    return ScheduleService.update_schedule(
+        db=db,
+        schedule_id=schedule_id,
+        schedule_data=schedule,
+        actor_user_id=actor_user_id,
+    )
 
 
 @router.delete("/{schedule_id}")
@@ -183,13 +228,7 @@ def delete_schedule(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_user),
 ):
-    """
-    Delete a schedule.
 
-    - **schedule_id**: The ID of the schedule to delete
-
-    Note: This will cascade delete all classes associated with the schedule.
-    """
     role = str(current_user.get("role", "")).strip().lower()
     roles = current_user.get("roles") or []
     normalized_roles = {role}
@@ -210,20 +249,19 @@ def delete_schedule(
 def add_class_to_schedule(
     schedule_id: int,
     class_data: AddClassToSchedule,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
-    """
-    Add a class (section) to a schedule.
 
-    - **schedule_id**: The ID of the schedule
-    - **sectionID**: The ID of the section to add
-
-    Note: The section must belong to the same term as the schedule.
-    """
+    actor_role = _resolve_actor_role_from_authorization(authorization)
+    actor_user_id = _resolve_actor_user_id(authorization, db)
     return ScheduleService.add_class_to_schedule(
         db=db,
         schedule_id=schedule_id,
-        section_id=class_data.sectionID
+        section_id=class_data.sectionID,
+        actor_role=actor_role,
+        ai_assisted=class_data.aiAssisted,
+        actor_user_id=actor_user_id,
     )
 
 
@@ -231,16 +269,16 @@ def add_class_to_schedule(
 def remove_class_from_schedule(
     schedule_id: int,
     class_id: int,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
-    """
-    Remove a class from a schedule.
 
-    - **schedule_id**: The ID of the schedule
-    - **class_id**: The ID of the class to remove
-    """
+    actor_role = _resolve_actor_role_from_authorization(authorization)
+    actor_user_id = _resolve_actor_user_id(authorization, db)
     return ScheduleService.remove_class_from_schedule(
         db=db,
         schedule_id=schedule_id,
-        class_id=class_id
+        class_id=class_id,
+        actor_role=actor_role,
+        actor_user_id=actor_user_id,
     )

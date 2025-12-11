@@ -146,8 +146,6 @@ class ScheduleAISuggestionService:
             .first()
         )
 
-        # Fallback: if the advisee has no saved context, pull the most recent requirement set
-        # for their major/degree plan so schedules still align to the correct program.
         if not requirement:
             advisee = (
                 self.db.query(AdviseeProfile)
@@ -167,8 +165,35 @@ class ScheduleAISuggestionService:
 
         return context, requirement, validation
 
+    @staticmethod
+    def _collect_program_prerequisites(requirement: Optional[DegreeRequirementSet]) -> List[Dict[str, Any]]:
+        if not requirement:
+            return []
+        mapping: List[Dict[str, Any]] = []
+        for group in requirement.requirementData or []:
+            courses = group.get("courses") or []
+            for course in courses:
+                clauses = course.get("prerequisites") or []
+                if not clauses:
+                    continue
+                for clause in clauses:
+                    mapping.append(
+                        {
+                            "course": course.get("code"),
+                            "title": course.get("title"),
+                            "group": group.get("title"),
+                            "type": clause.get("type"),
+                            "options": clause.get("options"),
+                            "text": clause.get("text"),
+                        }
+                    )
+        return mapping
+
     def _load_available_sections(
-        self, term_id: int, advisee_id: Optional[int] = None, limit: Optional[int] = None
+        self,
+        term_id: int,
+        advisee_id: Optional[int] = None,
+        limit: Optional[int] = None,
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         sections_query = (
             self.db.query(Section)
@@ -211,7 +236,6 @@ class ScheduleAISuggestionService:
         prereq_map: Dict[int, List[tuple[int, str]]] = {}
         for course_id, prereq_id, prereq_name in prereq_rows:
             prereq_map.setdefault(course_id, []).append((prereq_id, prereq_name))
-
         results: List[Dict[str, Any]] = []
         blocked: List[Dict[str, Any]] = []
         for section in sections:
@@ -219,7 +243,6 @@ class ScheduleAISuggestionService:
             status_value = section.status.value if hasattr(section.status, "value") else str(section.status)
             seats_remaining = max((section.capacity or 0) - (section.enrolled or 0), 0)
             if seats_remaining <= 0:
-                # Skip sections that are already full to avoid unusable suggestions
                 continue
             prereqs = prereq_map.get(section.courseID, [])
             missing_prereqs: List[str] = []
@@ -356,7 +379,8 @@ class ScheduleAISuggestionService:
                     "missing_prerequisites": item.get("missing_prerequisites") or [],
                 }
                 for item in blocked_prerequisites
-            ]
+            ],
+            "program_prerequisites": self._collect_program_prerequisites(requirement),
         }
         advisor_info = None
         if advisor:
@@ -445,7 +469,7 @@ class ScheduleAISuggestionService:
 
         try:
             payload = json.loads(text)
-        except json.JSONDecodeError as exc:  # noqa: BLE001
+        except json.JSONDecodeError as exc:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="OpenAI response was not valid JSON.",

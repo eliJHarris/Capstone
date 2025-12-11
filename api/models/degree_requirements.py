@@ -4,7 +4,7 @@ These models now live in models.degree_plan; importing from here keeps existing 
 without duplicating table definitions.
 """
 
-from models.degree_plan import (  # noqa: F401
+from models.degree_plan import ( 
     DegreeRequirementSet,
     AdviseeDegreeContext,
     DegreePlanValidation,
